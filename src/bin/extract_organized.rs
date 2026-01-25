@@ -9,7 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mapping_file = std::env::args().nth(1).unwrap_or_else(|| "mappings/starcraft-remastered.yaml".to_string());
     let mapping = SpriteMapping::load(Path::new(&mapping_file))?;
     let archive = CascArchive::open("/Applications/StarCraft")?;
-    let base_output = Path::new("extracted/organized");
+    let base_output = Path::new("extracted");
     
     println!("🎮 StarCraft Sprite Extraction (Organized)");
     println!("📄 Using mapping: {}", mapping_file);

@@ -108,7 +108,7 @@ Each sprite is extracted as:
 ## File Locations
 
 ```
-extracted/organized/
+extracted/
 ├── terran/units/
 ├── terran/buildings/
 ├── protoss/units/

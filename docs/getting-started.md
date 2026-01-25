@@ -61,10 +61,10 @@ LD_LIBRARY_PATH=lib ./target/release/extract_organized
 
 ### Output
 
-Sprites are extracted to `extracted/organized/`:
+Sprites are extracted to `extracted/`:
 
 ```
-extracted/organized/
+extracted/
 ├── terran/
 │   ├── units/
 │   │   ├── marine.png
