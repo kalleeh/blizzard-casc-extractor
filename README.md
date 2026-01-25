@@ -6,31 +6,34 @@ Extract sprites from Blizzard games using CASC archives with authentic colors an
 
 ## Supported Games
 
-- ✅ **StarCraft: Remastered** - Fully tested (133 sprites)
-- 🔧 **Warcraft III: Reforged** - CASC compatible (untested)
-- 🔧 **Heroes of the Storm** - CASC compatible (untested)
-- 🔧 **World of Warcraft** - CASC compatible (untested)
-- 🔧 **Diablo III** - CASC compatible (untested)
-- 🔧 **Overwatch** - CASC compatible (untested)
+**StarCraft: Remastered** - Fully tested (133 sprites extracted)
 
-*Currently optimized for StarCraft: Remastered. Other games may require format-specific parsers.*
+Other CASC-based games are compatible but untested:
+- Warcraft III: Reforged
+- Heroes of the Storm
+- World of Warcraft
+- Diablo III
+- Overwatch
+
+*Note: Other games may require format-specific parsers.*
 
 ## Features
 
-- ✅ **Complete sprite extraction** - All game sprites (units, buildings, effects)
-- ✅ **Authentic colors** - Real game palettes from game files
-- ✅ **Full animations** - All animation frames preserved
-- ✅ **Unity integration** - JSON metadata for automatic sprite slicing
-- ✅ **Organized output** - Structured folders by type
-- ✅ **Extensible** - Add parsers for other Blizzard formats
+- Complete sprite extraction (units, buildings, effects)
+- Authentic game palettes from original files
+- Full animation frame preservation
+- Unity integration with JSON metadata
+- Organized output structure
+- Extensible parser architecture
 
-## StarCraft: Remastered Results
+## Extraction Results
 
-- **44 units** (Terran, Protoss, Zerg)
-- **46 buildings** (all structures)
-- **33 effects** (projectiles, explosions, fire, smoke, blood)
-- **7 neutral** (critters, resources)
-- **3 UI** (wireframes)
+StarCraft: Remastered includes:
+- 44 units (Terran, Protoss, Zerg)
+- 46 buildings (all structures)
+- 33 effects (projectiles, explosions, fire, smoke, blood)
+- 7 neutral (critters, resources)
+- 3 UI elements (wireframes)
 
 ## Requirements
 
@@ -79,44 +82,45 @@ extracted/organized/
 ```
 
 Each sprite includes:
-- `.png` - Sprite sheet with all animation frames
-- `.json` - Unity metadata for automatic slicing
-- `.txt` - Human-readable information
+- PNG sprite sheet with all animation frames
+- JSON metadata for Unity automatic slicing
+- Text file with human-readable information
 
 ## Unity Integration
 
-Automatic sprite slicing and animation creation:
+The extractor includes Unity Editor scripts for automatic sprite slicing and animation creation:
 
-1. Copy sprites to `Assets/YourFolder/`
-2. Copy `unity/*.cs` to `Assets/Editor/`
-3. Sprites auto-slice on import
-4. Create animations: Tools > StarCraft > Create Animations
+1. Copy extracted sprites to your Unity project
+2. Copy `unity/*.cs` scripts to `Assets/Editor/`
+3. Sprites will auto-slice on import
+4. Create animations via Tools > StarCraft > Create Animations
 
-See [UNITY_INTEGRATION.md](UNITY_INTEGRATION.md) for details.
+See [Unity Integration Guide](docs/unity-guide.md) for complete setup instructions.
 
 ## Technical Details
 
 ### Architecture
 
-- **CascLib FFI** - Rust bindings to CascLib for CASC archive access
-- **GRP Parser** - Custom parser for StarCraft's GRP sprite format
-- **RLE Decoder** - Handles run-length encoded sprite data
-- **Palette System** - Authentic 256-color StarCraft palette
+The extractor uses:
+- **CascLib FFI** - Rust bindings for CASC archive access
+- **GRP Parser** - Custom parser for StarCraft's sprite format
+- **RLE Decoder** - Run-length encoded sprite data handling
+- **Palette System** - Authentic 256-color game palette
 
 ### GRP Format
 
-StarCraft sprites use the GRP format:
-- Header: frame count, width, height
-- Frame table: 8 bytes per frame (offsets, dimensions)
-- Frame data: RLE-encoded pixel data
+StarCraft sprites use the GRP format with:
+- Header containing frame count, width, and height
+- Frame table with 8 bytes per frame (offsets, dimensions)
+- RLE-encoded pixel data for each frame
 
-See [TECHNICAL_REFERENCE.md](TECHNICAL_REFERENCE.md) for implementation details.
+See [Technical Guide](docs/technical-guide.md) for implementation details.
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md) - Complete setup guide
-- [Sprite Reference](docs/sprite-reference.md) - List of extractable sprites
-- [Unity Integration](docs/unity-guide.md) - Unity setup and usage
+- [Getting Started](docs/getting-started.md) - Installation and setup
+- [Sprite Reference](docs/sprite-reference.md) - Available sprites
+- [Unity Integration](docs/unity-guide.md) - Unity workflow
 - [Technical Guide](docs/technical-guide.md) - Implementation details
 
 ## License
@@ -133,21 +137,18 @@ This project is not affiliated with, endorsed by, or sponsored by Blizzard Enter
 
 ## Contributing
 
-Contributions welcome! Especially:
-- **Format parsers** for other Blizzard games (WC3, HotS, WoW, etc.)
-- **Platform support** - Windows, Linux builds
-- **Additional formats** - PCX, WAV, BLP, M2, etc.
-- **Documentation** - Game-specific extraction guides
+Contributions are welcome, especially:
+- Format parsers for other Blizzard games
+- Windows and Linux build support
+- Additional format support (PCX, WAV, BLP, M2)
+- Game-specific extraction guides
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
-Contributions welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new features
-4. Submit a pull request
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## Acknowledgments
+
+- [CascLib](https://github.com/ladislav-zezula/CascLib) by Ladislav Zezula
+- StarCraft sprite format research by the modding community
 
 - [CascLib](https://github.com/ladislav-zezula/CascLib) by Ladislav Zezula
 - StarCraft modding community
