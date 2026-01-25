@@ -4,7 +4,7 @@
 Cargo.lock
 
 # Extracted files
-/extracted/
+/output/
 *.png
 *.txt
 *.json

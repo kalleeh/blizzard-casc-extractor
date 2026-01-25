@@ -66,7 +66,7 @@ DYLD_LIBRARY_PATH=lib ./target/release/extract_organized
 ## Output Structure
 
 ```
-extracted/
+output/
 ├── terran/
 │   ├── units/          # Marine, Firebat, Ghost, etc.
 │   └── buildings/      # Command Center, Barracks, etc.

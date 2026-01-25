@@ -11,7 +11,7 @@ All 133 StarCraft sprites have been extracted with complete Unity integration me
 ## File Structure
 
 ```
-extracted/
+output/
 ├── terran/units/marine.png          # Sprite sheet
 ├── terran/units/marine.json         # Unity metadata
 ├── terran/units/marine.txt          # Human-readable info
@@ -22,7 +22,7 @@ extracted/
 
 ### Step 1: Copy Sprites to Unity
 
-1. Copy the entire `extracted/` folder to your Unity project:
+1. Copy the entire `output/` folder to your Unity project:
    ```
    Assets/StarCraftSprites/
    ```
@@ -219,7 +219,7 @@ animator.SetTrigger("Idle");
 
 ## Complete Asset List
 
-See `FINAL_COMPLETE.md` for the complete list of all 133 extracted sprites.
+All 133 sprites are available for extraction. See [Sprite Reference](sprite-reference.md) for the complete list.
 
 ## Support
 
@@ -231,4 +231,4 @@ For issues or questions:
 
 ---
 
-**All sprites ready for production use in your StarCraft: Reimagined Unity project!** 🚀
+All sprites are ready for production use in your Unity project.

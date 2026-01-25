@@ -259,5 +259,4 @@ Ensure using real palette from `src/palette.rs` (extracted from game files), not
 
 ---
 
-**Last Updated**: 2026-01-25  
-**Maintainer**: StarCraft: Reimagined Team
+**Last Updated**: 2026-01-25

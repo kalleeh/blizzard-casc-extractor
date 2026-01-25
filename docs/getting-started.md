@@ -61,10 +61,10 @@ LD_LIBRARY_PATH=lib ./target/release/extract_organized
 
 ### Output
 
-Sprites are extracted to `extracted/`:
+Sprites are extracted to `output/`:
 
 ```
-extracted/
+output/
 ├── terran/
 │   ├── units/
 │   │   ├── marine.png
@@ -143,5 +143,5 @@ cargo test
 
 # Clean
 cargo clean
-rm -rf extracted/
+rm -rf output/
 ```
