@@ -1,0 +1,2431 @@
+//! Research data generation module
+//! 
+//! This module provides functionality for collecting and generating research data
+//! during CASC extraction operations. The data is suitable for community contribution
+//! and helps improve understanding of CASC sprite storage formats.
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use serde::{Deserialize, Serialize};
+use anyhow::{Result, Context};
+
+/// Research data collected during extraction operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResearchData {
+    /// Timestamp when research data was collected
+    pub timestamp: String,
+    
+    /// Version of the extraction tool
+    pub tool_version: String,
+    
+    /// Installation path analyzed
+    pub installation_path: PathBuf,
+    
+    /// CASC archive statistics
+    pub casc_stats: CascStats,
+    
+    /// File format analysis results
+    pub format_analysis: FormatAnalysis,
+    
+    /// Extraction statistics
+    pub extraction_stats: ExtractionStats,
+    
+    /// Tool integration results
+    pub tool_integration: ToolIntegrationResults,
+    
+    /// Unknown file signatures discovered
+    pub unknown_signatures: Vec<UnknownSignature>,
+    
+    /// Format-specific success rates and patterns (Requirement 11.1)
+    pub format_statistics: FormatStatistics,
+    
+    /// New format variants discovered during analysis (Requirement 11.2)
+    pub format_variants: Vec<FormatVariant>,
+    
+    /// Performance metrics for community sharing (Requirement 11.3)
+    pub performance_metrics: PerformanceMetrics,
+}
+
+/// Statistics about the CASC archive structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CascStats {
+    /// Number of index files found
+    pub index_file_count: usize,
+    
+    /// Number of data files found
+    pub data_file_count: usize,
+    
+    /// Total size of all data files in bytes
+    pub total_data_size: u64,
+    
+    /// Total number of file entries across all indices
+    pub total_file_entries: usize,
+    
+    /// Average entropy of data files (indicates compression level)
+    pub average_entropy: f64,
+    
+    /// Missing or corrupted files detected
+    pub corrupted_files: Vec<String>,
+}
+
+/// Analysis of file formats found in the archive
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FormatAnalysis {
+    /// Number of PNG files detected
+    pub png_count: u32,
+    
+    /// Number of JPEG files detected
+    pub jpeg_count: u32,
+    
+    /// Number of DDS files detected
+    pub dds_count: u32,
+    
+    /// Number of ANIM files detected
+    pub anim_count: u32,
+    
+    /// Other file format signatures found
+    pub other_formats: HashMap<String, u32>,
+    
+    /// File size distribution
+    pub size_distribution: SizeDistribution,
+}
+
+/// Distribution of file sizes
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SizeDistribution {
+    /// Files smaller than 1KB
+    pub tiny_files: u32,
+    
+    /// Files between 1KB and 10KB
+    pub small_files: u32,
+    
+    /// Files between 10KB and 100KB
+    pub medium_files: u32,
+    
+    /// Files between 100KB and 1MB
+    pub large_files: u32,
+    
+    /// Files larger than 1MB
+    pub huge_files: u32,
+}
+
+/// Statistics about the extraction process
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtractionStats {
+    /// Number of files successfully extracted
+    pub files_extracted: u32,
+    
+    /// Number of files that failed to extract
+    pub extraction_failures: u32,
+    
+    /// Number of files converted to PNG
+    pub png_conversions: u32,
+    
+    /// Number of conversion failures
+    pub conversion_failures: u32,
+    
+    /// Total extraction time in seconds
+    pub extraction_time_seconds: f64,
+    
+    /// Average file processing time in milliseconds
+    pub average_processing_time_ms: f64,
+}
+
+/// Results of tool integration attempts
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolIntegrationResults {
+    /// External tools discovered and tested
+    pub tools_tested: Vec<ToolTestResult>,
+    
+    /// Best performing tool identified
+    pub recommended_tool: Option<String>,
+    
+    /// Integration approach used
+    pub integration_method: String,
+    
+    /// Success rate of tool integration
+    pub integration_success_rate: f64,
+}
+
+/// Result of testing an external extraction tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolTestResult {
+    /// Name of the tool tested
+    pub tool_name: String,
+    
+    /// Version of the tool (if available)
+    pub tool_version: Option<String>,
+    
+    /// Whether the tool was compatible
+    pub is_compatible: bool,
+    
+    /// Number of files successfully extracted by the tool
+    pub files_extracted: u32,
+    
+    /// Time taken for extraction in seconds
+    pub extraction_time_seconds: f64,
+    
+    /// Quality assessment of extracted files
+    pub output_quality: OutputQuality,
+    
+    /// Any errors encountered during testing
+    pub errors: Vec<String>,
+}
+
+/// Assessment of extraction output quality
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutputQuality {
+    /// Percentage of files that are valid images
+    pub valid_image_percentage: f64,
+    
+    /// Percentage of files with correct metadata
+    pub correct_metadata_percentage: f64,
+    
+    /// Whether file structure matches expected format
+    pub correct_structure: bool,
+    
+    /// Overall quality score (0.0 to 1.0)
+    pub overall_score: f64,
+}
+
+/// Unknown file signature discovered during analysis
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnknownSignature {
+    /// First 16 bytes of the file as hex string
+    pub signature: String,
+    
+    /// Number of files with this signature
+    pub occurrence_count: u32,
+    
+    /// Average file size for this signature
+    pub average_size: u64,
+    
+    /// Sample file paths (up to 5)
+    pub sample_paths: Vec<String>,
+}
+
+/// Format-specific statistics for success rates and patterns (Requirement 11.1)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FormatStatistics {
+    /// Success rates by format type
+    pub format_success_rates: HashMap<String, FormatSuccessRate>,
+    
+    /// Pattern analysis for each format
+    pub format_patterns: HashMap<String, FormatPattern>,
+    
+    /// Overall extraction success rate
+    pub overall_success_rate: f64,
+    
+    /// Most successful format parsers
+    pub top_performing_formats: Vec<String>,
+}
+
+/// Success rate data for a specific format
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FormatSuccessRate {
+    /// Format name (ANIM, GRP, PCX, etc.)
+    pub format_name: String,
+    
+    /// Number of files successfully processed
+    pub successful_extractions: u32,
+    
+    /// Number of files that failed processing
+    pub failed_extractions: u32,
+    
+    /// Success rate as percentage (0.0 to 100.0)
+    pub success_percentage: f64,
+    
+    /// Average processing time for successful extractions (ms)
+    pub average_processing_time_ms: f64,
+    
+    /// Common failure reasons
+    pub failure_reasons: HashMap<String, u32>,
+}
+
+/// Pattern analysis for a specific format
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FormatPattern {
+    /// Format name
+    pub format_name: String,
+    
+    /// Common file size ranges
+    pub size_patterns: Vec<SizeRange>,
+    
+    /// Header patterns discovered
+    pub header_patterns: Vec<HeaderPattern>,
+    
+    /// Compression patterns (if applicable)
+    pub compression_patterns: Vec<CompressionPattern>,
+    
+    /// Quality indicators for format detection
+    pub detection_confidence_distribution: Vec<ConfidenceRange>,
+}
+
+/// File size range pattern
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SizeRange {
+    /// Minimum size in bytes
+    pub min_size: u64,
+    
+    /// Maximum size in bytes
+    pub max_size: u64,
+    
+    /// Number of files in this range
+    pub file_count: u32,
+    
+    /// Success rate for files in this range
+    pub success_rate: f64,
+}
+
+/// Header pattern discovered in format analysis
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeaderPattern {
+    /// Pattern description
+    pub description: String,
+    
+    /// Hex pattern (first 32 bytes)
+    pub hex_pattern: String,
+    
+    /// Number of files matching this pattern
+    pub occurrence_count: u32,
+    
+    /// Success rate for files with this pattern
+    pub success_rate: f64,
+}
+
+/// Compression pattern analysis
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompressionPattern {
+    /// Compression type detected
+    pub compression_type: String,
+    
+    /// Number of files using this compression
+    pub file_count: u32,
+    
+    /// Average compression ratio
+    pub average_compression_ratio: f64,
+    
+    /// Decompression success rate
+    pub decompression_success_rate: f64,
+}
+
+/// Confidence range for format detection
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfidenceRange {
+    /// Minimum confidence (0.0 to 1.0)
+    pub min_confidence: f64,
+    
+    /// Maximum confidence (0.0 to 1.0)
+    pub max_confidence: f64,
+    
+    /// Number of detections in this range
+    pub detection_count: u32,
+    
+    /// Actual success rate for detections in this range
+    pub actual_success_rate: f64,
+}
+
+/// New format variants discovered during analysis (Requirement 11.2)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FormatVariant {
+    /// Base format name (ANIM, GRP, PCX, etc.)
+    pub base_format: String,
+    
+    /// Variant identifier
+    pub variant_id: String,
+    
+    /// Description of the variant
+    pub description: String,
+    
+    /// Key differences from base format
+    pub differences: Vec<FormatDifference>,
+    
+    /// Sample files exhibiting this variant
+    pub sample_files: Vec<String>,
+    
+    /// First discovered timestamp
+    pub discovered_timestamp: String,
+    
+    /// Number of files found with this variant
+    pub occurrence_count: u32,
+    
+    /// Extraction success rate for this variant
+    pub extraction_success_rate: f64,
+}
+
+/// Specific difference from base format
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FormatDifference {
+    /// Type of difference (header, structure, compression, etc.)
+    pub difference_type: String,
+    
+    /// Detailed description
+    pub description: String,
+    
+    /// Byte offset where difference occurs (if applicable)
+    pub byte_offset: Option<u32>,
+    
+    /// Expected value in base format
+    pub expected_value: Option<String>,
+    
+    /// Actual value found in variant
+    pub actual_value: Option<String>,
+}
+
+/// Performance metrics for community sharing (Requirement 11.3)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerformanceMetrics {
+    /// System information
+    pub system_info: SystemInfo,
+    
+    /// Processing performance by operation type
+    pub operation_performance: HashMap<String, OperationPerformance>,
+    
+    /// Memory usage patterns
+    pub memory_usage: MemoryUsageMetrics,
+    
+    /// I/O performance metrics
+    pub io_performance: IoPerformanceMetrics,
+    
+    /// Scalability metrics
+    pub scalability_metrics: ScalabilityMetrics,
+    
+    /// Comparison with baseline performance
+    pub performance_comparison: Option<PerformanceComparison>,
+}
+
+/// System information for performance context
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemInfo {
+    /// Operating system
+    pub os: String,
+    
+    /// CPU information
+    pub cpu: String,
+    
+    /// Total RAM in bytes
+    pub total_ram: u64,
+    
+    /// Available RAM at start in bytes
+    pub available_ram: u64,
+    
+    /// Storage type (SSD, HDD, etc.)
+    pub storage_type: String,
+    
+    /// Number of CPU cores
+    pub cpu_cores: u32,
+}
+
+/// Performance metrics for a specific operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OperationPerformance {
+    /// Operation name
+    pub operation_name: String,
+    
+    /// Number of operations performed
+    pub operation_count: u32,
+    
+    /// Total time spent in seconds
+    pub total_time_seconds: f64,
+    
+    /// Average time per operation in milliseconds
+    pub average_time_ms: f64,
+    
+    /// Minimum time per operation in milliseconds
+    pub min_time_ms: f64,
+    
+    /// Maximum time per operation in milliseconds
+    pub max_time_ms: f64,
+    
+    /// Standard deviation of operation times
+    pub time_std_dev_ms: f64,
+    
+    /// Operations per second
+    pub operations_per_second: f64,
+}
+
+/// Memory usage metrics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryUsageMetrics {
+    /// Peak memory usage in bytes
+    pub peak_memory_usage: u64,
+    
+    /// Average memory usage in bytes
+    pub average_memory_usage: u64,
+    
+    /// Memory usage by component
+    pub component_memory_usage: HashMap<String, u64>,
+    
+    /// Number of garbage collections (if applicable)
+    pub gc_count: u32,
+    
+    /// Time spent in garbage collection
+    pub gc_time_seconds: f64,
+}
+
+/// I/O performance metrics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IoPerformanceMetrics {
+    /// Total bytes read
+    pub total_bytes_read: u64,
+    
+    /// Total bytes written
+    pub total_bytes_written: u64,
+    
+    /// Average read speed in MB/s
+    pub average_read_speed_mbps: f64,
+    
+    /// Average write speed in MB/s
+    pub average_write_speed_mbps: f64,
+    
+    /// Number of file operations
+    pub file_operations: u32,
+    
+    /// Average file operation time in milliseconds
+    pub average_file_op_time_ms: f64,
+}
+
+/// Scalability metrics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScalabilityMetrics {
+    /// Performance with different file counts
+    pub file_count_scaling: Vec<ScalingDataPoint>,
+    
+    /// Performance with different file sizes
+    pub file_size_scaling: Vec<ScalingDataPoint>,
+    
+    /// Performance with different thread counts
+    pub thread_count_scaling: Vec<ScalingDataPoint>,
+    
+    /// Memory scaling characteristics
+    pub memory_scaling: Vec<ScalingDataPoint>,
+}
+
+/// Single data point for scalability analysis
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScalingDataPoint {
+    /// Input parameter value (file count, size, threads, etc.)
+    pub parameter_value: f64,
+    
+    /// Processing time in seconds
+    pub processing_time_seconds: f64,
+    
+    /// Memory usage in bytes
+    pub memory_usage_bytes: u64,
+    
+    /// Throughput (operations per second)
+    pub throughput: f64,
+}
+
+/// Performance comparison with baseline
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerformanceComparison {
+    /// Baseline version or configuration
+    pub baseline_version: String,
+    
+    /// Performance improvement factor (>1.0 = improvement, <1.0 = regression)
+    pub performance_factor: f64,
+    
+    /// Memory usage factor (>1.0 = more memory, <1.0 = less memory)
+    pub memory_factor: f64,
+    
+    /// Detailed comparison by operation
+    pub operation_comparisons: HashMap<String, f64>,
+}
+
+/// Validation result for research data quality
+#[derive(Debug, Clone)]
+pub struct ValidationResult {
+    /// Whether the data passes basic validation
+    pub is_valid: bool,
+    
+    /// Non-critical issues found
+    pub warnings: Vec<String>,
+    
+    /// Critical issues that prevent use
+    pub errors: Vec<String>,
+    
+    /// Completeness score (0.0 to 1.0)
+    pub completeness_score: f64,
+    
+    /// Quality indicators
+    pub quality_indicators: HashMap<String, f64>,
+}
+
+/// Research data collector that gathers information during extraction
+pub struct ResearchDataCollector {
+    data: ResearchData,
+    start_time: std::time::Instant,
+}
+
+impl ResearchDataCollector {
+    /// Create a new research data collector
+    pub fn new(installation_path: PathBuf) -> Self {
+        let data = ResearchData {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            tool_version: env!("CARGO_PKG_VERSION").to_string(),
+            installation_path,
+            casc_stats: CascStats {
+                index_file_count: 0,
+                data_file_count: 0,
+                total_data_size: 0,
+                total_file_entries: 0,
+                average_entropy: 0.0,
+                corrupted_files: Vec::new(),
+            },
+            format_analysis: FormatAnalysis {
+                png_count: 0,
+                jpeg_count: 0,
+                dds_count: 0,
+                anim_count: 0,
+                other_formats: HashMap::new(),
+                size_distribution: SizeDistribution {
+                    tiny_files: 0,
+                    small_files: 0,
+                    medium_files: 0,
+                    large_files: 0,
+                    huge_files: 0,
+                },
+            },
+            extraction_stats: ExtractionStats {
+                files_extracted: 0,
+                extraction_failures: 0,
+                png_conversions: 0,
+                conversion_failures: 0,
+                extraction_time_seconds: 0.0,
+                average_processing_time_ms: 0.0,
+            },
+            tool_integration: ToolIntegrationResults {
+                tools_tested: Vec::new(),
+                recommended_tool: None,
+                integration_method: "direct_casc_parsing".to_string(),
+                integration_success_rate: 0.0,
+            },
+            unknown_signatures: Vec::new(),
+            format_statistics: FormatStatistics {
+                format_success_rates: HashMap::new(),
+                format_patterns: HashMap::new(),
+                overall_success_rate: 0.0,
+                top_performing_formats: Vec::new(),
+            },
+            format_variants: Vec::new(),
+            performance_metrics: PerformanceMetrics {
+                system_info: SystemInfo {
+                    os: std::env::consts::OS.to_string(),
+                    cpu: "Unknown".to_string(),
+                    total_ram: 0,
+                    available_ram: 0,
+                    storage_type: "Unknown".to_string(),
+                    cpu_cores: num_cpus::get() as u32,
+                },
+                operation_performance: HashMap::new(),
+                memory_usage: MemoryUsageMetrics {
+                    peak_memory_usage: 0,
+                    average_memory_usage: 0,
+                    component_memory_usage: HashMap::new(),
+                    gc_count: 0,
+                    gc_time_seconds: 0.0,
+                },
+                io_performance: IoPerformanceMetrics {
+                    total_bytes_read: 0,
+                    total_bytes_written: 0,
+                    average_read_speed_mbps: 0.0,
+                    average_write_speed_mbps: 0.0,
+                    file_operations: 0,
+                    average_file_op_time_ms: 0.0,
+                },
+                scalability_metrics: ScalabilityMetrics {
+                    file_count_scaling: Vec::new(),
+                    file_size_scaling: Vec::new(),
+                    thread_count_scaling: Vec::new(),
+                    memory_scaling: Vec::new(),
+                },
+                performance_comparison: None,
+            },
+        };
+        
+        Self {
+            data,
+            start_time: std::time::Instant::now(),
+        }
+    }
+    
+    /// Record CASC archive statistics
+    pub fn record_casc_stats(&mut self, stats: CascStats) {
+        self.data.casc_stats = stats;
+    }
+    
+    /// Record file format analysis results
+    pub fn record_format_analysis(&mut self, analysis: FormatAnalysis) {
+        self.data.format_analysis = analysis;
+    }
+    
+    /// Record extraction statistics
+    pub fn record_extraction_stats(&mut self, stats: ExtractionStats) {
+        self.data.extraction_stats = stats;
+    }
+    
+    /// Record tool integration results
+    pub fn record_tool_integration(&mut self, results: ToolIntegrationResults) {
+        self.data.tool_integration = results;
+    }
+    
+    /// Add an unknown file signature
+    pub fn add_unknown_signature(&mut self, signature: UnknownSignature) {
+        // Check if we already have this signature
+        if let Some(existing) = self.data.unknown_signatures.iter_mut()
+            .find(|s| s.signature == signature.signature) {
+            // Update existing signature with new data
+            existing.occurrence_count += signature.occurrence_count;
+            existing.average_size = (existing.average_size + signature.average_size) / 2;
+            existing.sample_paths.extend(signature.sample_paths);
+            existing.sample_paths.truncate(5); // Keep only first 5 samples
+        } else {
+            self.data.unknown_signatures.push(signature);
+        }
+    }
+    
+    /// Record format statistics (Requirement 11.1)
+    pub fn record_format_success(&mut self, format_name: &str, success: bool, processing_time_ms: f64, failure_reason: Option<String>) {
+        let success_rate = self.data.format_statistics.format_success_rates
+            .entry(format_name.to_string())
+            .or_insert_with(|| FormatSuccessRate {
+                format_name: format_name.to_string(),
+                successful_extractions: 0,
+                failed_extractions: 0,
+                success_percentage: 0.0,
+                average_processing_time_ms: 0.0,
+                failure_reasons: HashMap::new(),
+            });
+        
+        if success {
+            success_rate.successful_extractions += 1;
+            // Update running average of processing time
+            let total_successful = success_rate.successful_extractions as f64;
+            success_rate.average_processing_time_ms = 
+                (success_rate.average_processing_time_ms * (total_successful - 1.0) + processing_time_ms) / total_successful;
+        } else {
+            success_rate.failed_extractions += 1;
+            if let Some(reason) = failure_reason {
+                *success_rate.failure_reasons.entry(reason).or_insert(0) += 1;
+            }
+        }
+        
+        // Recalculate success percentage
+        let total_attempts = success_rate.successful_extractions + success_rate.failed_extractions;
+        if total_attempts > 0 {
+            success_rate.success_percentage = (success_rate.successful_extractions as f64 / total_attempts as f64) * 100.0;
+        }
+    }
+    
+    /// Record format pattern analysis (Requirement 11.1)
+    pub fn record_format_pattern(&mut self, format_name: &str, file_size: u64, header_data: &[u8], detection_confidence: f64) {
+        let pattern = self.data.format_statistics.format_patterns
+            .entry(format_name.to_string())
+            .or_insert_with(|| FormatPattern {
+                format_name: format_name.to_string(),
+                size_patterns: Vec::new(),
+                header_patterns: Vec::new(),
+                compression_patterns: Vec::new(),
+                detection_confidence_distribution: Vec::new(),
+            });
+        
+        // Update size patterns
+        let size_range = match file_size {
+            0..=1024 => (0, 1024),
+            1025..=10240 => (1025, 10240),
+            10241..=102400 => (10241, 102400),
+            102401..=1048576 => (102401, 1048576),
+            _ => (1048577, u64::MAX),
+        };
+        
+        if let Some(existing_range) = pattern.size_patterns.iter_mut()
+            .find(|r| r.min_size == size_range.0 && r.max_size == size_range.1) {
+            existing_range.file_count += 1;
+        } else {
+            pattern.size_patterns.push(SizeRange {
+                min_size: size_range.0,
+                max_size: size_range.1,
+                file_count: 1,
+                success_rate: 0.0, // Will be calculated later
+            });
+        }
+        
+        // Record header pattern (first 16 bytes)
+        if header_data.len() >= 16 {
+            let hex_pattern = header_data.iter()
+                .take(16)
+                .map(|b| format!("{:02X}", b))
+                .collect::<String>();
+            
+            if let Some(existing_pattern) = pattern.header_patterns.iter_mut()
+                .find(|p| p.hex_pattern == hex_pattern) {
+                existing_pattern.occurrence_count += 1;
+            } else {
+                pattern.header_patterns.push(HeaderPattern {
+                    description: format!("Header pattern for {}", format_name),
+                    hex_pattern,
+                    occurrence_count: 1,
+                    success_rate: 0.0, // Will be calculated later
+                });
+            }
+        }
+        
+        // Record detection confidence
+        let confidence_range = match detection_confidence {
+            0.0..=0.2 => (0.0, 0.2),
+            0.2..=0.4 => (0.2, 0.4),
+            0.4..=0.6 => (0.4, 0.6),
+            0.6..=0.8 => (0.6, 0.8),
+            0.8..=1.0 => (0.8, 1.0),
+            _ => (0.0, 1.0),
+        };
+        
+        if let Some(existing_range) = pattern.detection_confidence_distribution.iter_mut()
+            .find(|r| (r.min_confidence - confidence_range.0).abs() < f64::EPSILON && 
+                      (r.max_confidence - confidence_range.1).abs() < f64::EPSILON) {
+            existing_range.detection_count += 1;
+        } else {
+            pattern.detection_confidence_distribution.push(ConfidenceRange {
+                min_confidence: confidence_range.0,
+                max_confidence: confidence_range.1,
+                detection_count: 1,
+                actual_success_rate: 0.0, // Will be calculated later
+            });
+        }
+    }
+    
+    /// Record a new format variant discovery (Requirement 11.2)
+    pub fn record_format_variant(&mut self, variant: FormatVariant) {
+        // Check if we already have this variant
+        if let Some(existing) = self.data.format_variants.iter_mut()
+            .find(|v| v.base_format == variant.base_format && v.variant_id == variant.variant_id) {
+            // Update existing variant
+            existing.occurrence_count += variant.occurrence_count;
+            existing.sample_files.extend(variant.sample_files);
+            existing.sample_files.truncate(10); // Keep only first 10 samples
+            
+            // Update success rate (running average)
+            let total_count = existing.occurrence_count as f64;
+            existing.extraction_success_rate = 
+                (existing.extraction_success_rate * (total_count - variant.occurrence_count as f64) + 
+                 variant.extraction_success_rate * variant.occurrence_count as f64) / total_count;
+        } else {
+            self.data.format_variants.push(variant);
+        }
+    }
+    
+    /// Record performance metrics for an operation (Requirement 11.3)
+    pub fn record_operation_performance(&mut self, operation_name: &str, duration_ms: f64) {
+        let performance = self.data.performance_metrics.operation_performance
+            .entry(operation_name.to_string())
+            .or_insert_with(|| OperationPerformance {
+                operation_name: operation_name.to_string(),
+                operation_count: 0,
+                total_time_seconds: 0.0,
+                average_time_ms: 0.0,
+                min_time_ms: f64::MAX,
+                max_time_ms: 0.0,
+                time_std_dev_ms: 0.0,
+                operations_per_second: 0.0,
+            });
+        
+        performance.operation_count += 1;
+        performance.total_time_seconds += duration_ms / 1000.0;
+        performance.min_time_ms = performance.min_time_ms.min(duration_ms);
+        performance.max_time_ms = performance.max_time_ms.max(duration_ms);
+        
+        // Update running average
+        performance.average_time_ms = (performance.total_time_seconds * 1000.0) / performance.operation_count as f64;
+        
+        // Calculate operations per second
+        if performance.total_time_seconds > 0.0 {
+            performance.operations_per_second = performance.operation_count as f64 / performance.total_time_seconds;
+        }
+    }
+    
+    /// Record memory usage metrics (Requirement 11.3)
+    pub fn record_memory_usage(&mut self, component: &str, memory_bytes: u64) {
+        self.data.performance_metrics.memory_usage.component_memory_usage
+            .insert(component.to_string(), memory_bytes);
+        
+        // Update peak memory usage
+        let total_memory: u64 = self.data.performance_metrics.memory_usage.component_memory_usage
+            .values().sum();
+        
+        if total_memory > self.data.performance_metrics.memory_usage.peak_memory_usage {
+            self.data.performance_metrics.memory_usage.peak_memory_usage = total_memory;
+        }
+    }
+    
+    /// Record I/O performance metrics (Requirement 11.3)
+    pub fn record_io_performance(&mut self, bytes_read: u64, bytes_written: u64, operation_time_ms: f64) {
+        let io_metrics = &mut self.data.performance_metrics.io_performance;
+        
+        io_metrics.total_bytes_read += bytes_read;
+        io_metrics.total_bytes_written += bytes_written;
+        io_metrics.file_operations += 1;
+        
+        // Update running average of file operation time
+        let total_ops = io_metrics.file_operations as f64;
+        io_metrics.average_file_op_time_ms = 
+            (io_metrics.average_file_op_time_ms * (total_ops - 1.0) + operation_time_ms) / total_ops;
+        
+        // Calculate average speeds (MB/s)
+        let total_time_seconds = (io_metrics.average_file_op_time_ms * total_ops) / 1000.0;
+        if total_time_seconds > 0.0 {
+            io_metrics.average_read_speed_mbps = (io_metrics.total_bytes_read as f64 / 1_048_576.0) / total_time_seconds;
+            io_metrics.average_write_speed_mbps = (io_metrics.total_bytes_written as f64 / 1_048_576.0) / total_time_seconds;
+        }
+    }
+    
+    /// Add scalability data point (Requirement 11.3)
+    pub fn add_scalability_data_point(&mut self, metric_type: &str, parameter_value: f64, processing_time_seconds: f64, memory_usage_bytes: u64, throughput: f64) {
+        let data_point = ScalingDataPoint {
+            parameter_value,
+            processing_time_seconds,
+            memory_usage_bytes,
+            throughput,
+        };
+        
+        match metric_type {
+            "file_count" => self.data.performance_metrics.scalability_metrics.file_count_scaling.push(data_point),
+            "file_size" => self.data.performance_metrics.scalability_metrics.file_size_scaling.push(data_point),
+            "thread_count" => self.data.performance_metrics.scalability_metrics.thread_count_scaling.push(data_point),
+            "memory" => self.data.performance_metrics.scalability_metrics.memory_scaling.push(data_point),
+            _ => log::warn!("Unknown scalability metric type: {}", metric_type),
+        }
+    }
+    
+    /// Finalize research data collection
+    pub fn finalize(&mut self) {
+        let elapsed = self.start_time.elapsed();
+        self.data.extraction_stats.extraction_time_seconds = elapsed.as_secs_f64();
+        
+        // Calculate average processing time
+        if self.data.extraction_stats.files_extracted > 0 {
+            self.data.extraction_stats.average_processing_time_ms = 
+                (elapsed.as_millis() as f64) / (self.data.extraction_stats.files_extracted as f64);
+        }
+        
+        // Calculate overall success rate (Requirement 11.1)
+        let total_successful: u32 = self.data.format_statistics.format_success_rates
+            .values()
+            .map(|rate| rate.successful_extractions)
+            .sum();
+        
+        let total_failed: u32 = self.data.format_statistics.format_success_rates
+            .values()
+            .map(|rate| rate.failed_extractions)
+            .sum();
+        
+        let total_attempts = total_successful + total_failed;
+        if total_attempts > 0 {
+            self.data.format_statistics.overall_success_rate = 
+                (total_successful as f64 / total_attempts as f64) * 100.0;
+        }
+        
+        // Identify top performing formats
+        let mut format_performances: Vec<_> = self.data.format_statistics.format_success_rates
+            .iter()
+            .map(|(name, rate)| (name.clone(), rate.success_percentage))
+            .collect();
+        
+        format_performances.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        
+        self.data.format_statistics.top_performing_formats = format_performances
+            .into_iter()
+            .take(5)
+            .map(|(name, _)| name)
+            .collect();
+        
+        // Update success rates for patterns
+        for (format_name, pattern) in &mut self.data.format_statistics.format_patterns {
+            if let Some(success_rate_data) = self.data.format_statistics.format_success_rates.get(format_name) {
+                let overall_success = success_rate_data.success_percentage / 100.0;
+                
+                // Update size pattern success rates (simplified - assume uniform distribution)
+                for size_range in &mut pattern.size_patterns {
+                    size_range.success_rate = overall_success;
+                }
+                
+                // Update header pattern success rates
+                for header_pattern in &mut pattern.header_patterns {
+                    header_pattern.success_rate = overall_success;
+                }
+                
+                // Update confidence range success rates
+                for confidence_range in &mut pattern.detection_confidence_distribution {
+                    confidence_range.actual_success_rate = overall_success;
+                }
+            }
+        }
+        
+        // Calculate average memory usage
+        if !self.data.performance_metrics.memory_usage.component_memory_usage.is_empty() {
+            let total_memory: u64 = self.data.performance_metrics.memory_usage.component_memory_usage
+                .values().sum();
+            self.data.performance_metrics.memory_usage.average_memory_usage = total_memory;
+        }
+    }
+    
+    /// Get the collected research data
+    pub fn get_data(&self) -> &ResearchData {
+        &self.data
+    }
+    
+    /// Save research data to a JSON file
+    pub fn save_to_file(&self, output_path: &Path) -> Result<()> {
+        let json_data = serde_json::to_string_pretty(&self.data)
+            .context("Failed to serialize research data to JSON")?;
+        
+        std::fs::write(output_path, json_data)
+            .with_context(|| format!("Failed to write research data to {:?}", output_path))?;
+        
+        log::info!("Research data saved to: {:?}", output_path);
+        Ok(())
+    }
+    
+    /// Generate a community-shareable research report
+    pub fn generate_community_report(&self, output_path: &Path) -> Result<()> {
+        let report = self.format_community_report();
+        
+        std::fs::write(output_path, report)
+            .with_context(|| format!("Failed to write community report to {:?}", output_path))?;
+        
+        log::info!("Community research report saved to: {:?}", output_path);
+        Ok(())
+    }
+    
+    /// Generate a detailed format analysis report for community contribution (Requirement 11.4)
+    pub fn generate_format_analysis_report(&self, output_path: &Path) -> Result<()> {
+        let report = self.format_detailed_analysis_report();
+        
+        std::fs::write(output_path, report)
+            .with_context(|| format!("Failed to write format analysis report to {:?}", output_path))?;
+        
+        log::info!("Format analysis report saved to: {:?}", output_path);
+        Ok(())
+    }
+    
+    /// Generate a performance benchmark report for community sharing (Requirement 11.4)
+    pub fn generate_performance_report(&self, output_path: &Path) -> Result<()> {
+        let report = self.format_performance_report();
+        
+        std::fs::write(output_path, report)
+            .with_context(|| format!("Failed to write performance report to {:?}", output_path))?;
+        
+        log::info!("Performance benchmark report saved to: {:?}", output_path);
+        Ok(())
+    }
+    
+    /// Generate a contribution package for open-source documentation (Requirement 11.5)
+    pub fn generate_contribution_package(&self, output_dir: &Path) -> Result<()> {
+        // Create output directory if it doesn't exist
+        std::fs::create_dir_all(output_dir)
+            .with_context(|| format!("Failed to create output directory {:?}", output_dir))?;
+        
+        // Generate main research report
+        let main_report_path = output_dir.join("research_report.md");
+        self.generate_community_report(&main_report_path)?;
+        
+        // Generate detailed format analysis
+        let format_report_path = output_dir.join("format_analysis.md");
+        self.generate_format_analysis_report(&format_report_path)?;
+        
+        // Generate performance benchmarks
+        let performance_report_path = output_dir.join("performance_benchmarks.md");
+        self.generate_performance_report(&performance_report_path)?;
+        
+        // Generate raw data in JSON format for programmatic use
+        let json_data_path = output_dir.join("research_data.json");
+        self.save_to_file(&json_data_path)?;
+        
+        // Generate contribution metadata
+        let metadata_path = output_dir.join("contribution_metadata.json");
+        self.generate_contribution_metadata(&metadata_path)?;
+        
+        // Generate README for the contribution package
+        let readme_path = output_dir.join("README.md");
+        self.generate_contribution_readme(&readme_path)?;
+        
+        log::info!("Contribution package generated in: {:?}", output_dir);
+        Ok(())
+    }
+    
+    /// Validate research data quality and completeness (Requirement 11.5)
+    pub fn validate_research_data(&self) -> ValidationResult {
+        let mut validation = ValidationResult {
+            is_valid: true,
+            warnings: Vec::new(),
+            errors: Vec::new(),
+            completeness_score: 0.0,
+            quality_indicators: HashMap::new(),
+        };
+        
+        // Check basic data completeness
+        if self.data.timestamp.is_empty() {
+            validation.errors.push("Missing timestamp".to_string());
+            validation.is_valid = false;
+        }
+        
+        if self.data.tool_version.is_empty() {
+            validation.errors.push("Missing tool version".to_string());
+            validation.is_valid = false;
+        }
+        
+        // Check CASC statistics
+        if self.data.casc_stats.index_file_count == 0 {
+            validation.warnings.push("No index files recorded".to_string());
+        }
+        
+        if self.data.casc_stats.total_file_entries == 0 {
+            validation.warnings.push("No file entries recorded".to_string());
+        }
+        
+        // Check format analysis
+        let total_formats = self.data.format_analysis.png_count + 
+                           self.data.format_analysis.jpeg_count + 
+                           self.data.format_analysis.dds_count + 
+                           self.data.format_analysis.anim_count;
+        
+        if total_formats == 0 && self.data.format_analysis.other_formats.is_empty() {
+            validation.warnings.push("No format analysis data recorded".to_string());
+        }
+        
+        // Check extraction statistics
+        if self.data.extraction_stats.files_extracted == 0 {
+            validation.warnings.push("No successful extractions recorded".to_string());
+        }
+        
+        // Check format statistics (new requirement)
+        if self.data.format_statistics.format_success_rates.is_empty() {
+            validation.warnings.push("No format success rates recorded".to_string());
+        }
+        
+        // Check performance metrics
+        if self.data.performance_metrics.operation_performance.is_empty() {
+            validation.warnings.push("No operation performance metrics recorded".to_string());
+        }
+        
+        // Calculate completeness score
+        let mut completeness_factors = Vec::new();
+        
+        // Basic data (20%)
+        completeness_factors.push(if !self.data.timestamp.is_empty() && !self.data.tool_version.is_empty() { 1.0 } else { 0.0 });
+        
+        // CASC statistics (15%)
+        completeness_factors.push(if self.data.casc_stats.total_file_entries > 0 { 1.0 } else { 0.0 });
+        
+        // Format analysis (20%)
+        completeness_factors.push(if total_formats > 0 || !self.data.format_analysis.other_formats.is_empty() { 1.0 } else { 0.0 });
+        
+        // Extraction statistics (15%)
+        completeness_factors.push(if self.data.extraction_stats.files_extracted > 0 { 1.0 } else { 0.0 });
+        
+        // Format statistics (15%)
+        completeness_factors.push(if !self.data.format_statistics.format_success_rates.is_empty() { 1.0 } else { 0.0 });
+        
+        // Performance metrics (15%)
+        completeness_factors.push(if !self.data.performance_metrics.operation_performance.is_empty() { 1.0 } else { 0.0 });
+        
+        validation.completeness_score = completeness_factors.iter().sum::<f64>() / completeness_factors.len() as f64;
+        
+        // Quality indicators
+        validation.quality_indicators.insert("format_coverage".to_string(), 
+            self.data.format_statistics.format_success_rates.len() as f64);
+        validation.quality_indicators.insert("sample_size".to_string(), 
+            self.data.extraction_stats.files_extracted as f64);
+        validation.quality_indicators.insert("performance_metrics_count".to_string(), 
+            self.data.performance_metrics.operation_performance.len() as f64);
+        
+        validation
+    }
+    
+    /// Generate detailed format analysis report (Requirement 11.4)
+    fn format_detailed_analysis_report(&self) -> String {
+        let mut report = String::new();
+        
+        report.push_str("# CASC Sprite Format Analysis Report\n\n");
+        report.push_str(&format!("**Generated:** {}\n", self.data.timestamp));
+        report.push_str(&format!("**Tool Version:** {}\n", self.data.tool_version));
+        report.push_str(&format!("**Installation:** {:?}\n\n", self.data.installation_path));
+        
+        // Executive Summary
+        report.push_str("## Executive Summary\n\n");
+        report.push_str(&format!("This report analyzes {} file entries from a StarCraft: Remastered CASC archive, ", 
+                                self.data.casc_stats.total_file_entries));
+        report.push_str(&format!("achieving an overall extraction success rate of {:.1}%. ", 
+                                self.data.format_statistics.overall_success_rate));
+        report.push_str(&format!("A total of {} files were successfully extracted with {} conversion failures.\n\n", 
+                                self.data.extraction_stats.files_extracted, 
+                                self.data.extraction_stats.conversion_failures));
+        
+        // Format Success Analysis
+        report.push_str("## Format Success Analysis\n\n");
+        
+        if !self.data.format_statistics.format_success_rates.is_empty() {
+            report.push_str("### Success Rates by Format\n\n");
+            report.push_str("| Format | Success Rate | Successful | Failed | Avg Time (ms) | Top Failure Reason |\n");
+            report.push_str("|--------|--------------|------------|--------|---------------|--------------------|\n");
+            
+            for (format_name, rate) in &self.data.format_statistics.format_success_rates {
+                let top_failure = rate.failure_reasons.iter()
+                    .max_by_key(|(_, count)| *count)
+                    .map(|(reason, _)| reason.as_str())
+                    .unwrap_or("N/A");
+                
+                report.push_str(&format!("| {} | {:.1}% | {} | {} | {:.2} | {} |\n",
+                                        format_name, rate.success_percentage,
+                                        rate.successful_extractions, rate.failed_extractions,
+                                        rate.average_processing_time_ms, top_failure));
+            }
+            report.push_str("\n");
+        }
+        
+        // Pattern Analysis
+        if !self.data.format_statistics.format_patterns.is_empty() {
+            report.push_str("## Pattern Analysis\n\n");
+            
+            for (format_name, pattern) in &self.data.format_statistics.format_patterns {
+                report.push_str(&format!("### {} Format Patterns\n\n", format_name));
+                
+                // Size patterns
+                if !pattern.size_patterns.is_empty() {
+                    report.push_str("#### File Size Distribution\n\n");
+                    report.push_str("| Size Range | File Count | Success Rate |\n");
+                    report.push_str("|------------|------------|-------------|\n");
+                    
+                    for size_range in &pattern.size_patterns {
+                        let size_desc = if size_range.max_size == u64::MAX {
+                            format!("> {} bytes", size_range.min_size)
+                        } else {
+                            format!("{} - {} bytes", size_range.min_size, size_range.max_size)
+                        };
+                        
+                        report.push_str(&format!("| {} | {} | {:.1}% |\n",
+                                                size_desc, size_range.file_count, 
+                                                size_range.success_rate * 100.0));
+                    }
+                    report.push_str("\n");
+                }
+                
+                // Header patterns
+                if !pattern.header_patterns.is_empty() {
+                    report.push_str("#### Header Patterns\n\n");
+                    
+                    for header_pattern in &pattern.header_patterns {
+                        report.push_str(&format!("**Pattern:** `{}`\n", header_pattern.hex_pattern));
+                        report.push_str(&format!("- **Occurrences:** {}\n", header_pattern.occurrence_count));
+                        report.push_str(&format!("- **Success Rate:** {:.1}%\n", header_pattern.success_rate * 100.0));
+                        report.push_str(&format!("- **Description:** {}\n\n", header_pattern.description));
+                    }
+                }
+                
+                // Compression patterns
+                if !pattern.compression_patterns.is_empty() {
+                    report.push_str("#### Compression Analysis\n\n");
+                    
+                    for comp_pattern in &pattern.compression_patterns {
+                        report.push_str(&format!("**{}:**\n", comp_pattern.compression_type));
+                        report.push_str(&format!("- **Files:** {}\n", comp_pattern.file_count));
+                        report.push_str(&format!("- **Avg Compression Ratio:** {:.2}\n", comp_pattern.average_compression_ratio));
+                        report.push_str(&format!("- **Decompression Success:** {:.1}%\n\n", comp_pattern.decompression_success_rate * 100.0));
+                    }
+                }
+            }
+        }
+        
+        // Format Variants
+        if !self.data.format_variants.is_empty() {
+            report.push_str("## Format Variants Discovered\n\n");
+            report.push_str("The following format variants were discovered during analysis:\n\n");
+            
+            for variant in &self.data.format_variants {
+                report.push_str(&format!("### {} - {}\n\n", variant.base_format, variant.variant_id));
+                report.push_str(&format!("**Description:** {}\n\n", variant.description));
+                report.push_str(&format!("**Statistics:**\n"));
+                report.push_str(&format!("- Occurrences: {}\n", variant.occurrence_count));
+                report.push_str(&format!("- Success Rate: {:.1}%\n", variant.extraction_success_rate * 100.0));
+                report.push_str(&format!("- First Discovered: {}\n\n", variant.discovered_timestamp));
+                
+                if !variant.differences.is_empty() {
+                    report.push_str("**Key Differences:**\n\n");
+                    
+                    for diff in &variant.differences {
+                        report.push_str(&format!("- **{}:** {}\n", diff.difference_type, diff.description));
+                        
+                        if let Some(offset) = diff.byte_offset {
+                            report.push_str(&format!("  - Byte Offset: {}\n", offset));
+                        }
+                        
+                        if let Some(ref expected) = diff.expected_value {
+                            report.push_str(&format!("  - Expected: `{}`\n", expected));
+                        }
+                        
+                        if let Some(ref actual) = diff.actual_value {
+                            report.push_str(&format!("  - Actual: `{}`\n", actual));
+                        }
+                    }
+                    report.push_str("\n");
+                }
+                
+                if !variant.sample_files.is_empty() {
+                    report.push_str("**Sample Files:**\n");
+                    for sample in &variant.sample_files {
+                        report.push_str(&format!("- `{}`\n", sample));
+                    }
+                    report.push_str("\n");
+                }
+            }
+        }
+        
+        // Recommendations
+        report.push_str("## Recommendations for Community\n\n");
+        
+        // Find the most problematic format
+        if let Some((worst_format, worst_rate)) = self.data.format_statistics.format_success_rates
+            .iter()
+            .min_by(|a, b| a.1.success_percentage.partial_cmp(&b.1.success_percentage).unwrap()) {
+            
+            report.push_str(&format!("1. **Priority Format for Improvement:** {} (current success rate: {:.1}%)\n", 
+                                    worst_format, worst_rate.success_percentage));
+            
+            if let Some(top_failure) = worst_rate.failure_reasons.iter()
+                .max_by_key(|(_, count)| *count) {
+                report.push_str(&format!("   - Primary issue: {} ({} occurrences)\n", top_failure.0, top_failure.1));
+            }
+        }
+        
+        // Suggest areas for research
+        if !self.data.unknown_signatures.is_empty() {
+            report.push_str(&format!("2. **Unknown Signatures to Investigate:** {} unique signatures found\n", 
+                                    self.data.unknown_signatures.len()));
+            
+            // Show the most common unknown signature
+            if let Some(common_sig) = self.data.unknown_signatures.iter()
+                .max_by_key(|sig| sig.occurrence_count) {
+                report.push_str(&format!("   - Most common: `{}` ({} files)\n", 
+                                        common_sig.signature, common_sig.occurrence_count));
+            }
+        }
+        
+        if !self.data.format_variants.is_empty() {
+            report.push_str(&format!("3. **Format Variants to Document:** {} variants need community documentation\n", 
+                                    self.data.format_variants.len()));
+        }
+        
+        report.push_str("\n---\n\n");
+        report.push_str("*This analysis was generated by the CASC Sprite Extractor research system.*\n");
+        report.push_str("*Please contribute improvements and findings back to the StarCraft modding community.*\n");
+        
+        report
+    }
+    
+    /// Generate performance benchmark report (Requirement 11.4)
+    fn format_performance_report(&self) -> String {
+        let mut report = String::new();
+        
+        report.push_str("# CASC Sprite Extractor Performance Benchmarks\n\n");
+        report.push_str(&format!("**Generated:** {}\n", self.data.timestamp));
+        report.push_str(&format!("**Tool Version:** {}\n", self.data.tool_version));
+        report.push_str(&format!("**Installation:** {:?}\n\n", self.data.installation_path));
+        
+        // System Configuration
+        report.push_str("## System Configuration\n\n");
+        let sys_info = &self.data.performance_metrics.system_info;
+        report.push_str(&format!("- **Operating System:** {}\n", sys_info.os));
+        report.push_str(&format!("- **CPU:** {}\n", sys_info.cpu));
+        report.push_str(&format!("- **CPU Cores:** {}\n", sys_info.cpu_cores));
+        report.push_str(&format!("- **Total RAM:** {:.2} GB\n", sys_info.total_ram as f64 / 1_073_741_824.0));
+        report.push_str(&format!("- **Available RAM:** {:.2} GB\n", sys_info.available_ram as f64 / 1_073_741_824.0));
+        report.push_str(&format!("- **Storage Type:** {}\n\n", sys_info.storage_type));
+        
+        // Performance Summary
+        report.push_str("## Performance Summary\n\n");
+        
+        if !self.data.performance_metrics.operation_performance.is_empty() {
+            let total_operations: u32 = self.data.performance_metrics.operation_performance
+                .values()
+                .map(|perf| perf.operation_count)
+                .sum();
+            
+            let total_time: f64 = self.data.performance_metrics.operation_performance
+                .values()
+                .map(|perf| perf.total_time_seconds)
+                .sum();
+            
+            report.push_str(&format!("- **Total Operations:** {}\n", total_operations));
+            report.push_str(&format!("- **Total Processing Time:** {:.2} seconds\n", total_time));
+            report.push_str(&format!("- **Overall Throughput:** {:.2} operations/second\n\n", 
+                                    total_operations as f64 / total_time));
+        }
+        
+        // Detailed Operation Performance
+        if !self.data.performance_metrics.operation_performance.is_empty() {
+            report.push_str("## Operation Performance Details\n\n");
+            report.push_str("| Operation | Count | Total Time (s) | Avg Time (ms) | Min (ms) | Max (ms) | Ops/sec |\n");
+            report.push_str("|-----------|-------|----------------|---------------|----------|----------|----------|\n");
+            
+            for (op_name, perf) in &self.data.performance_metrics.operation_performance {
+                report.push_str(&format!("| {} | {} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} |\n",
+                                        op_name, perf.operation_count, perf.total_time_seconds,
+                                        perf.average_time_ms, perf.min_time_ms, perf.max_time_ms,
+                                        perf.operations_per_second));
+            }
+            report.push_str("\n");
+        }
+        
+        // Memory Usage Analysis
+        let mem_usage = &self.data.performance_metrics.memory_usage;
+        if mem_usage.peak_memory_usage > 0 {
+            report.push_str("## Memory Usage Analysis\n\n");
+            report.push_str(&format!("- **Peak Memory Usage:** {:.2} MB\n", 
+                                    mem_usage.peak_memory_usage as f64 / 1_048_576.0));
+            report.push_str(&format!("- **Average Memory Usage:** {:.2} MB\n", 
+                                    mem_usage.average_memory_usage as f64 / 1_048_576.0));
+            
+            if !mem_usage.component_memory_usage.is_empty() {
+                report.push_str("\n### Memory Usage by Component\n\n");
+                report.push_str("| Component | Memory Usage (MB) | Percentage |\n");
+                report.push_str("|-----------|-------------------|------------|\n");
+                
+                let total_memory = mem_usage.peak_memory_usage as f64;
+                
+                for (component, memory) in &mem_usage.component_memory_usage {
+                    let memory_mb = *memory as f64 / 1_048_576.0;
+                    let percentage = (*memory as f64 / total_memory) * 100.0;
+                    
+                    report.push_str(&format!("| {} | {:.2} | {:.1}% |\n", 
+                                            component, memory_mb, percentage));
+                }
+                report.push_str("\n");
+            }
+        }
+        
+        // I/O Performance
+        let io_perf = &self.data.performance_metrics.io_performance;
+        if io_perf.file_operations > 0 {
+            report.push_str("## I/O Performance\n\n");
+            report.push_str(&format!("- **File Operations:** {}\n", io_perf.file_operations));
+            report.push_str(&format!("- **Total Data Read:** {:.2} MB\n", 
+                                    io_perf.total_bytes_read as f64 / 1_048_576.0));
+            report.push_str(&format!("- **Total Data Written:** {:.2} MB\n", 
+                                    io_perf.total_bytes_written as f64 / 1_048_576.0));
+            report.push_str(&format!("- **Average Read Speed:** {:.2} MB/s\n", io_perf.average_read_speed_mbps));
+            report.push_str(&format!("- **Average Write Speed:** {:.2} MB/s\n", io_perf.average_write_speed_mbps));
+            report.push_str(&format!("- **Average File Operation Time:** {:.2} ms\n\n", 
+                                    io_perf.average_file_op_time_ms));
+        }
+        
+        // Scalability Analysis
+        let scalability = &self.data.performance_metrics.scalability_metrics;
+        
+        if !scalability.file_count_scaling.is_empty() {
+            report.push_str("## Scalability Analysis\n\n");
+            
+            report.push_str("### File Count Scaling\n\n");
+            report.push_str("| File Count | Processing Time (s) | Memory (MB) | Throughput (ops/s) |\n");
+            report.push_str("|------------|---------------------|-------------|--------------------|\n");
+            
+            for point in &scalability.file_count_scaling {
+                report.push_str(&format!("| {:.0} | {:.2} | {:.2} | {:.2} |\n",
+                                        point.parameter_value, point.processing_time_seconds,
+                                        point.memory_usage_bytes as f64 / 1_048_576.0, point.throughput));
+            }
+            report.push_str("\n");
+        }
+        
+        if !scalability.thread_count_scaling.is_empty() {
+            report.push_str("### Thread Count Scaling\n\n");
+            report.push_str("| Thread Count | Processing Time (s) | Memory (MB) | Throughput (ops/s) |\n");
+            report.push_str("|--------------|---------------------|-------------|--------------------|\n");
+            
+            for point in &scalability.thread_count_scaling {
+                report.push_str(&format!("| {:.0} | {:.2} | {:.2} | {:.2} |\n",
+                                        point.parameter_value, point.processing_time_seconds,
+                                        point.memory_usage_bytes as f64 / 1_048_576.0, point.throughput));
+            }
+            report.push_str("\n");
+        }
+        
+        // Performance Comparison
+        if let Some(ref comparison) = self.data.performance_metrics.performance_comparison {
+            report.push_str("## Performance Comparison\n\n");
+            report.push_str(&format!("**Baseline Version:** {}\n\n", comparison.baseline_version));
+            report.push_str(&format!("- **Overall Performance Factor:** {:.2}x ", comparison.performance_factor));
+            
+            if comparison.performance_factor > 1.0 {
+                report.push_str("(improvement)\n");
+            } else if comparison.performance_factor < 1.0 {
+                report.push_str("(regression)\n");
+            } else {
+                report.push_str("(no change)\n");
+            }
+            
+            report.push_str(&format!("- **Memory Usage Factor:** {:.2}x ", comparison.memory_factor));
+            
+            if comparison.memory_factor > 1.0 {
+                report.push_str("(more memory used)\n");
+            } else if comparison.memory_factor < 1.0 {
+                report.push_str("(less memory used)\n");
+            } else {
+                report.push_str("(no change)\n");
+            }
+            
+            if !comparison.operation_comparisons.is_empty() {
+                report.push_str("\n### Operation-Specific Comparisons\n\n");
+                report.push_str("| Operation | Performance Factor | Change |\n");
+                report.push_str("|-----------|--------------------|---------|\n");
+                
+                for (op_name, factor) in &comparison.operation_comparisons {
+                    let change = if *factor > 1.0 {
+                        format!("+{:.1}% improvement", (*factor - 1.0) * 100.0)
+                    } else if *factor < 1.0 {
+                        format!("-{:.1}% regression", (1.0 - *factor) * 100.0)
+                    } else {
+                        "No change".to_string()
+                    };
+                    
+                    report.push_str(&format!("| {} | {:.2}x | {} |\n", op_name, factor, change));
+                }
+                report.push_str("\n");
+            }
+        }
+        
+        // Recommendations
+        report.push_str("## Performance Recommendations\n\n");
+        
+        // Find slowest operation
+        if let Some((slowest_op, slowest_perf)) = self.data.performance_metrics.operation_performance
+            .iter()
+            .max_by(|a, b| a.1.average_time_ms.partial_cmp(&b.1.average_time_ms).unwrap()) {
+            
+            report.push_str(&format!("1. **Optimize {} operation** - Currently averaging {:.2}ms per operation\n", 
+                                    slowest_op, slowest_perf.average_time_ms));
+        }
+        
+        // Memory recommendations
+        if mem_usage.peak_memory_usage > 1_073_741_824 { // > 1GB
+            report.push_str(&format!("2. **Consider memory optimization** - Peak usage of {:.2} GB may be excessive\n", 
+                                    mem_usage.peak_memory_usage as f64 / 1_073_741_824.0));
+        }
+        
+        // I/O recommendations
+        if io_perf.average_file_op_time_ms > 10.0 {
+            report.push_str(&format!("3. **I/O optimization needed** - Average file operation time of {:.2}ms is high\n", 
+                                    io_perf.average_file_op_time_ms));
+        }
+        
+        report.push_str("\n---\n\n");
+        report.push_str("*This benchmark report was generated by the CASC Sprite Extractor research system.*\n");
+        report.push_str("*Please share performance improvements and optimizations with the community.*\n");
+        
+        report
+    }
+    
+    /// Generate contribution metadata (Requirement 11.5)
+    fn generate_contribution_metadata(&self, output_path: &Path) -> Result<()> {
+        let metadata = serde_json::json!({
+            "contribution_info": {
+                "generated_timestamp": self.data.timestamp,
+                "tool_version": self.data.tool_version,
+                "data_version": "1.0",
+                "contributor": "CASC Sprite Extractor Research System",
+                "license": "MIT",
+                "attribution": "Please cite this data when used in research or documentation"
+            },
+            "data_summary": {
+                "installation_analyzed": self.data.installation_path,
+                "total_files_analyzed": self.data.casc_stats.total_file_entries,
+                "successful_extractions": self.data.extraction_stats.files_extracted,
+                "overall_success_rate": self.data.format_statistics.overall_success_rate,
+                "formats_analyzed": self.data.format_statistics.format_success_rates.keys().collect::<Vec<_>>(),
+                "format_variants_discovered": self.data.format_variants.len(),
+                "unknown_signatures_found": self.data.unknown_signatures.len()
+            },
+            "quality_metrics": {
+                "completeness_score": self.validate_research_data().completeness_score,
+                "sample_size": self.data.extraction_stats.files_extracted,
+                "analysis_depth": self.data.format_statistics.format_patterns.len(),
+                "performance_metrics_available": !self.data.performance_metrics.operation_performance.is_empty()
+            },
+            "usage_guidelines": {
+                "recommended_use": "Community documentation, format specification improvement, performance benchmarking",
+                "limitations": "Data specific to analyzed installation, may not represent all StarCraft versions",
+                "update_frequency": "Generated per analysis run, not continuously updated",
+                "contact": "Please contribute improvements back to the StarCraft modding community"
+            }
+        });
+        
+        let json_data = serde_json::to_string_pretty(&metadata)
+            .context("Failed to serialize contribution metadata")?;
+        
+        std::fs::write(output_path, json_data)
+            .with_context(|| format!("Failed to write contribution metadata to {:?}", output_path))?;
+        
+        Ok(())
+    }
+    
+    /// Generate README for contribution package (Requirement 11.5)
+    fn generate_contribution_readme(&self, output_path: &Path) -> Result<()> {
+        let mut readme = String::new();
+        
+        readme.push_str("# CASC Sprite Extractor Research Data Contribution\n\n");
+        readme.push_str("This package contains research data generated by the CASC Sprite Extractor tool ");
+        readme.push_str("for the StarCraft modding and reverse engineering community.\n\n");
+        
+        readme.push_str("## Contents\n\n");
+        readme.push_str("- `research_report.md` - Main community-readable research report\n");
+        readme.push_str("- `format_analysis.md` - Detailed format analysis and patterns\n");
+        readme.push_str("- `performance_benchmarks.md` - Performance metrics and benchmarks\n");
+        readme.push_str("- `research_data.json` - Raw data in JSON format for programmatic use\n");
+        readme.push_str("- `contribution_metadata.json` - Metadata about this contribution\n");
+        readme.push_str("- `README.md` - This file\n\n");
+        
+        readme.push_str("## Data Summary\n\n");
+        readme.push_str(&format!("- **Generated:** {}\n", self.data.timestamp));
+        readme.push_str(&format!("- **Tool Version:** {}\n", self.data.tool_version));
+        readme.push_str(&format!("- **Files Analyzed:** {}\n", self.data.casc_stats.total_file_entries));
+        readme.push_str(&format!("- **Successful Extractions:** {}\n", self.data.extraction_stats.files_extracted));
+        readme.push_str(&format!("- **Overall Success Rate:** {:.1}%\n", self.data.format_statistics.overall_success_rate));
+        readme.push_str(&format!("- **Formats Analyzed:** {}\n", self.data.format_statistics.format_success_rates.len()));
+        readme.push_str(&format!("- **Format Variants Discovered:** {}\n", self.data.format_variants.len()));
+        readme.push_str(&format!("- **Unknown Signatures Found:** {}\n\n", self.data.unknown_signatures.len()));
+        
+        readme.push_str("## How to Use This Data\n\n");
+        readme.push_str("### For Researchers and Developers\n\n");
+        readme.push_str("1. **Format Specification Improvement:** Use the format analysis data to improve ");
+        readme.push_str("existing format parsers and documentation\n");
+        readme.push_str("2. **Performance Benchmarking:** Compare your tools against the performance metrics provided\n");
+        readme.push_str("3. **Format Variant Documentation:** Help document the newly discovered format variants\n");
+        readme.push_str("4. **Unknown Signature Investigation:** Research the unknown file signatures to expand format support\n\n");
+        
+        readme.push_str("### For the StarCraft Modding Community\n\n");
+        readme.push_str("1. **Tool Improvement:** Use failure analysis to improve existing extraction tools\n");
+        readme.push_str("2. **Format Documentation:** Contribute to community format documentation projects\n");
+        readme.push_str("3. **Quality Assurance:** Use success rates to validate extraction tool improvements\n");
+        readme.push_str("4. **Performance Optimization:** Share performance improvements back to the community\n\n");
+        
+        readme.push_str("## Data Quality\n\n");
+        let validation = self.validate_research_data();
+        readme.push_str(&format!("- **Completeness Score:** {:.1}%\n", validation.completeness_score * 100.0));
+        readme.push_str(&format!("- **Sample Size:** {} files\n", self.data.extraction_stats.files_extracted));
+        readme.push_str(&format!("- **Analysis Depth:** {} format patterns analyzed\n", self.data.format_statistics.format_patterns.len()));
+        
+        if !validation.warnings.is_empty() {
+            readme.push_str("\n**Data Quality Warnings:**\n");
+            for warning in &validation.warnings {
+                readme.push_str(&format!("- {}\n", warning));
+            }
+        }
+        
+        readme.push_str("\n## Contributing Back\n\n");
+        readme.push_str("If you use this data to improve tools or documentation, please consider:\n\n");
+        readme.push_str("1. **Sharing Improvements:** Contribute your improvements back to open-source StarCraft tools\n");
+        readme.push_str("2. **Documentation Updates:** Update community format documentation with new findings\n");
+        readme.push_str("3. **Performance Comparisons:** Share performance improvements and benchmarks\n");
+        readme.push_str("4. **Format Discoveries:** Document any new format variants or signatures you discover\n\n");
+        
+        readme.push_str("## License and Attribution\n\n");
+        readme.push_str("This data is provided under the MIT License. When using this data in research, ");
+        readme.push_str("documentation, or tool development, please provide appropriate attribution:\n\n");
+        readme.push_str("```\n");
+        readme.push_str("Data generated by CASC Sprite Extractor Research System\n");
+        readme.push_str(&format!("Version: {}\n", self.data.tool_version));
+        readme.push_str(&format!("Generated: {}\n", self.data.timestamp));
+        readme.push_str("```\n\n");
+        
+        readme.push_str("## Contact and Support\n\n");
+        readme.push_str("For questions about this data or to contribute improvements:\n\n");
+        readme.push_str("- Join the StarCraft modding community discussions\n");
+        readme.push_str("- Contribute to open-source StarCraft format documentation projects\n");
+        readme.push_str("- Share your findings with the reverse engineering community\n\n");
+        
+        readme.push_str("---\n\n");
+        readme.push_str("*Generated by the CASC Sprite Extractor Research System*\n");
+        
+        std::fs::write(output_path, readme)
+            .with_context(|| format!("Failed to write contribution README to {:?}", output_path))?;
+        
+        Ok(())
+    }
+    
+    /// Format research data as a community-shareable markdown report
+    fn format_community_report(&self) -> String {
+        let mut report = String::new();
+        
+        report.push_str("# StarCraft: Remastered CASC Extraction Research Report\n\n");
+        report.push_str(&format!("**Generated:** {}\n", self.data.timestamp));
+        report.push_str(&format!("**Tool Version:** {}\n", self.data.tool_version));
+        report.push_str(&format!("**Installation:** {:?}\n\n", self.data.installation_path));
+        
+        // CASC Archive Statistics
+        report.push_str("## CASC Archive Statistics\n\n");
+        report.push_str(&format!("- **Index Files:** {}\n", self.data.casc_stats.index_file_count));
+        report.push_str(&format!("- **Data Files:** {}\n", self.data.casc_stats.data_file_count));
+        report.push_str(&format!("- **Total Size:** {:.2} GB\n", self.data.casc_stats.total_data_size as f64 / 1_073_741_824.0));
+        report.push_str(&format!("- **File Entries:** {}\n", self.data.casc_stats.total_file_entries));
+        report.push_str(&format!("- **Average Entropy:** {:.3}\n", self.data.casc_stats.average_entropy));
+        
+        if !self.data.casc_stats.corrupted_files.is_empty() {
+            report.push_str(&format!("- **Corrupted Files:** {}\n", self.data.casc_stats.corrupted_files.len()));
+        }
+        report.push_str("\n");
+        
+        // File Format Analysis
+        report.push_str("## File Format Analysis\n\n");
+        report.push_str(&format!("- **PNG Files:** {}\n", self.data.format_analysis.png_count));
+        report.push_str(&format!("- **JPEG Files:** {}\n", self.data.format_analysis.jpeg_count));
+        report.push_str(&format!("- **DDS Files:** {}\n", self.data.format_analysis.dds_count));
+        report.push_str(&format!("- **ANIM Files:** {}\n", self.data.format_analysis.anim_count));
+        
+        if !self.data.format_analysis.other_formats.is_empty() {
+            report.push_str("- **Other Formats:**\n");
+            for (format, count) in &self.data.format_analysis.other_formats {
+                report.push_str(&format!("  - {}: {}\n", format, count));
+            }
+        }
+        report.push_str("\n");
+        
+        // Size Distribution
+        report.push_str("### File Size Distribution\n\n");
+        let dist = &self.data.format_analysis.size_distribution;
+        report.push_str(&format!("- **< 1KB:** {}\n", dist.tiny_files));
+        report.push_str(&format!("- **1KB - 10KB:** {}\n", dist.small_files));
+        report.push_str(&format!("- **10KB - 100KB:** {}\n", dist.medium_files));
+        report.push_str(&format!("- **100KB - 1MB:** {}\n", dist.large_files));
+        report.push_str(&format!("- **> 1MB:** {}\n", dist.huge_files));
+        report.push_str("\n");
+        
+        // Extraction Results
+        report.push_str("## Extraction Results\n\n");
+        report.push_str(&format!("- **Files Extracted:** {}\n", self.data.extraction_stats.files_extracted));
+        report.push_str(&format!("- **Extraction Failures:** {}\n", self.data.extraction_stats.extraction_failures));
+        report.push_str(&format!("- **PNG Conversions:** {}\n", self.data.extraction_stats.png_conversions));
+        report.push_str(&format!("- **Conversion Failures:** {}\n", self.data.extraction_stats.conversion_failures));
+        report.push_str(&format!("- **Total Time:** {:.2} seconds\n", self.data.extraction_stats.extraction_time_seconds));
+        report.push_str(&format!("- **Avg Processing Time:** {:.2} ms/file\n", self.data.extraction_stats.average_processing_time_ms));
+        report.push_str("\n");
+        
+        // Format Statistics (Requirement 11.1)
+        if !self.data.format_statistics.format_success_rates.is_empty() {
+            report.push_str("## Format Statistics\n\n");
+            report.push_str(&format!("- **Overall Success Rate:** {:.1}%\n", self.data.format_statistics.overall_success_rate));
+            
+            if !self.data.format_statistics.top_performing_formats.is_empty() {
+                report.push_str("- **Top Performing Formats:**\n");
+                for format in &self.data.format_statistics.top_performing_formats {
+                    if let Some(rate) = self.data.format_statistics.format_success_rates.get(format) {
+                        report.push_str(&format!("  - {}: {:.1}% ({} successful, {} failed)\n", 
+                                               format, rate.success_percentage, 
+                                               rate.successful_extractions, rate.failed_extractions));
+                    }
+                }
+            }
+            
+            report.push_str("\n### Detailed Format Performance\n\n");
+            for (format_name, rate) in &self.data.format_statistics.format_success_rates {
+                report.push_str(&format!("#### {}\n", format_name));
+                report.push_str(&format!("- **Success Rate:** {:.1}%\n", rate.success_percentage));
+                report.push_str(&format!("- **Successful Extractions:** {}\n", rate.successful_extractions));
+                report.push_str(&format!("- **Failed Extractions:** {}\n", rate.failed_extractions));
+                report.push_str(&format!("- **Average Processing Time:** {:.2} ms\n", rate.average_processing_time_ms));
+                
+                if !rate.failure_reasons.is_empty() {
+                    report.push_str("- **Common Failure Reasons:**\n");
+                    for (reason, count) in &rate.failure_reasons {
+                        report.push_str(&format!("  - {}: {} occurrences\n", reason, count));
+                    }
+                }
+                report.push_str("\n");
+            }
+        }
+        
+        // Format Variants (Requirement 11.2)
+        if !self.data.format_variants.is_empty() {
+            report.push_str("## Format Variants Discovered\n\n");
+            report.push_str("New format variants discovered during analysis:\n\n");
+            
+            for variant in &self.data.format_variants {
+                report.push_str(&format!("### {} Variant: {}\n", variant.base_format, variant.variant_id));
+                report.push_str(&format!("- **Description:** {}\n", variant.description));
+                report.push_str(&format!("- **Occurrences:** {}\n", variant.occurrence_count));
+                report.push_str(&format!("- **Success Rate:** {:.1}%\n", variant.extraction_success_rate * 100.0));
+                report.push_str(&format!("- **First Discovered:** {}\n", variant.discovered_timestamp));
+                
+                if !variant.differences.is_empty() {
+                    report.push_str("- **Key Differences:**\n");
+                    for diff in &variant.differences {
+                        report.push_str(&format!("  - **{}:** {}\n", diff.difference_type, diff.description));
+                        if let Some(offset) = diff.byte_offset {
+                            report.push_str(&format!("    - Byte Offset: {}\n", offset));
+                        }
+                        if let Some(ref expected) = diff.expected_value {
+                            report.push_str(&format!("    - Expected: {}\n", expected));
+                        }
+                        if let Some(ref actual) = diff.actual_value {
+                            report.push_str(&format!("    - Actual: {}\n", actual));
+                        }
+                    }
+                }
+                
+                if !variant.sample_files.is_empty() {
+                    report.push_str("- **Sample Files:**\n");
+                    for sample in variant.sample_files.iter().take(5) {
+                        report.push_str(&format!("  - `{}`\n", sample));
+                    }
+                }
+                report.push_str("\n");
+            }
+        }
+        
+        // Performance Metrics (Requirement 11.3)
+        report.push_str("## Performance Metrics\n\n");
+        
+        // System Information
+        report.push_str("### System Information\n\n");
+        let sys_info = &self.data.performance_metrics.system_info;
+        report.push_str(&format!("- **OS:** {}\n", sys_info.os));
+        report.push_str(&format!("- **CPU:** {}\n", sys_info.cpu));
+        report.push_str(&format!("- **CPU Cores:** {}\n", sys_info.cpu_cores));
+        report.push_str(&format!("- **Total RAM:** {:.2} GB\n", sys_info.total_ram as f64 / 1_073_741_824.0));
+        report.push_str(&format!("- **Available RAM:** {:.2} GB\n", sys_info.available_ram as f64 / 1_073_741_824.0));
+        report.push_str(&format!("- **Storage Type:** {}\n", sys_info.storage_type));
+        report.push_str("\n");
+        
+        // Operation Performance
+        if !self.data.performance_metrics.operation_performance.is_empty() {
+            report.push_str("### Operation Performance\n\n");
+            for (op_name, perf) in &self.data.performance_metrics.operation_performance {
+                report.push_str(&format!("#### {}\n", op_name));
+                report.push_str(&format!("- **Operations:** {}\n", perf.operation_count));
+                report.push_str(&format!("- **Total Time:** {:.2}s\n", perf.total_time_seconds));
+                report.push_str(&format!("- **Average Time:** {:.2}ms\n", perf.average_time_ms));
+                report.push_str(&format!("- **Min Time:** {:.2}ms\n", perf.min_time_ms));
+                report.push_str(&format!("- **Max Time:** {:.2}ms\n", perf.max_time_ms));
+                report.push_str(&format!("- **Operations/sec:** {:.2}\n", perf.operations_per_second));
+                report.push_str("\n");
+            }
+        }
+        
+        // Memory Usage
+        let mem_usage = &self.data.performance_metrics.memory_usage;
+        if mem_usage.peak_memory_usage > 0 {
+            report.push_str("### Memory Usage\n\n");
+            report.push_str(&format!("- **Peak Memory:** {:.2} MB\n", mem_usage.peak_memory_usage as f64 / 1_048_576.0));
+            report.push_str(&format!("- **Average Memory:** {:.2} MB\n", mem_usage.average_memory_usage as f64 / 1_048_576.0));
+            
+            if !mem_usage.component_memory_usage.is_empty() {
+                report.push_str("- **Memory by Component:**\n");
+                for (component, memory) in &mem_usage.component_memory_usage {
+                    report.push_str(&format!("  - {}: {:.2} MB\n", component, *memory as f64 / 1_048_576.0));
+                }
+            }
+            report.push_str("\n");
+        }
+        
+        // I/O Performance
+        let io_perf = &self.data.performance_metrics.io_performance;
+        if io_perf.file_operations > 0 {
+            report.push_str("### I/O Performance\n\n");
+            report.push_str(&format!("- **File Operations:** {}\n", io_perf.file_operations));
+            report.push_str(&format!("- **Total Bytes Read:** {:.2} MB\n", io_perf.total_bytes_read as f64 / 1_048_576.0));
+            report.push_str(&format!("- **Total Bytes Written:** {:.2} MB\n", io_perf.total_bytes_written as f64 / 1_048_576.0));
+            report.push_str(&format!("- **Average Read Speed:** {:.2} MB/s\n", io_perf.average_read_speed_mbps));
+            report.push_str(&format!("- **Average Write Speed:** {:.2} MB/s\n", io_perf.average_write_speed_mbps));
+            report.push_str(&format!("- **Average File Op Time:** {:.2} ms\n", io_perf.average_file_op_time_ms));
+            report.push_str("\n");
+        }
+        
+        // Tool Integration
+        if !self.data.tool_integration.tools_tested.is_empty() {
+            report.push_str("## Tool Integration Results\n\n");
+            report.push_str(&format!("- **Integration Method:** {}\n", self.data.tool_integration.integration_method));
+            report.push_str(&format!("- **Success Rate:** {:.1}%\n", self.data.tool_integration.integration_success_rate * 100.0));
+            
+            if let Some(ref recommended) = self.data.tool_integration.recommended_tool {
+                report.push_str(&format!("- **Recommended Tool:** {}\n", recommended));
+            }
+            
+            report.push_str("\n### Tools Tested\n\n");
+            for tool in &self.data.tool_integration.tools_tested {
+                report.push_str(&format!("#### {}\n", tool.tool_name));
+                if let Some(ref version) = tool.tool_version {
+                    report.push_str(&format!("- **Version:** {}\n", version));
+                }
+                report.push_str(&format!("- **Compatible:** {}\n", if tool.is_compatible { "Yes" } else { "No" }));
+                report.push_str(&format!("- **Files Extracted:** {}\n", tool.files_extracted));
+                report.push_str(&format!("- **Extraction Time:** {:.2}s\n", tool.extraction_time_seconds));
+                report.push_str(&format!("- **Quality Score:** {:.2}/1.0\n", tool.output_quality.overall_score));
+                
+                if !tool.errors.is_empty() {
+                    report.push_str("- **Errors:**\n");
+                    for error in &tool.errors {
+                        report.push_str(&format!("  - {}\n", error));
+                    }
+                }
+                report.push_str("\n");
+            }
+        }
+        
+        // Unknown Signatures
+        if !self.data.unknown_signatures.is_empty() {
+            report.push_str("## Unknown File Signatures\n\n");
+            report.push_str("These signatures were found but not recognized as standard formats:\n\n");
+            
+            for sig in &self.data.unknown_signatures {
+                report.push_str(&format!("### Signature: `{}`\n", sig.signature));
+                report.push_str(&format!("- **Occurrences:** {}\n", sig.occurrence_count));
+                report.push_str(&format!("- **Average Size:** {} bytes\n", sig.average_size));
+                
+                if !sig.sample_paths.is_empty() {
+                    report.push_str("- **Sample Paths:**\n");
+                    for path in &sig.sample_paths {
+                        report.push_str(&format!("  - `{}`\n", path));
+                    }
+                }
+                report.push_str("\n");
+            }
+        }
+        
+        // Footer
+        report.push_str("---\n\n");
+        report.push_str("*This report was generated by the CASC Sprite Extractor research system.*\n");
+        report.push_str("*Please share this data with the StarCraft modding community to improve our collective understanding.*\n");
+        
+        report
+    }
+}
+
+/// Analyze file data to detect format and generate signature
+pub fn analyze_file_data(data: &[u8]) -> (String, Option<String>) {
+    if data.len() < 4 {
+        return ("unknown".to_string(), None);
+    }
+    
+    // Check for common image formats
+    if data.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
+        return ("PNG".to_string(), Some("89504E47".to_string()));
+    }
+    
+    if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return ("JPEG".to_string(), Some("FFD8FF".to_string()));
+    }
+    
+    if data.starts_with(b"DDS ") {
+        return ("DDS".to_string(), Some("44445320".to_string()));
+    }
+    
+    if data.starts_with(b"ANIM") {
+        return ("ANIM".to_string(), Some("414E494D".to_string()));
+    }
+    
+    // Generate hex signature for unknown formats
+    let signature = data.iter()
+        .take(16)
+        .map(|b| format!("{:02X}", b))
+        .collect::<String>();
+    
+    ("unknown".to_string(), Some(signature))
+}
+
+/// Calculate entropy of data (measure of compression/randomness)
+pub fn calculate_entropy(data: &[u8]) -> f64 {
+    if data.is_empty() {
+        return 0.0;
+    }
+    
+    let mut counts = [0u32; 256];
+    for &byte in data {
+        counts[byte as usize] += 1;
+    }
+    
+    let len = data.len() as f64;
+    let mut entropy = 0.0;
+    
+    for &count in &counts {
+        if count > 0 {
+            let p = count as f64 / len;
+            entropy -= p * p.log2();
+        }
+    }
+    
+    entropy
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    use proptest::prelude::*;
+    
+    #[test]
+    fn test_research_data_collector_creation() {
+        let temp_dir = TempDir::new().unwrap();
+        let collector = ResearchDataCollector::new(temp_dir.path().to_path_buf());
+        
+        assert_eq!(collector.data.tool_version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(collector.data.installation_path, temp_dir.path());
+        assert_eq!(collector.data.casc_stats.index_file_count, 0);
+    }
+    
+    #[test]
+    fn test_analyze_file_data_png() {
+        let png_data = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        let (format, signature) = analyze_file_data(&png_data);
+        
+        assert_eq!(format, "PNG");
+        assert_eq!(signature, Some("89504E47".to_string()));
+    }
+    
+    #[test]
+    fn test_analyze_file_data_jpeg() {
+        let jpeg_data = vec![0xFF, 0xD8, 0xFF, 0xE0];
+        let (format, signature) = analyze_file_data(&jpeg_data);
+        
+        assert_eq!(format, "JPEG");
+        assert_eq!(signature, Some("FFD8FF".to_string()));
+    }
+    
+    #[test]
+    fn test_analyze_file_data_unknown() {
+        let unknown_data = vec![0x12, 0x34, 0x56, 0x78];
+        let (format, signature) = analyze_file_data(&unknown_data);
+        
+        assert_eq!(format, "unknown");
+        assert_eq!(signature, Some("12345678".to_string()));
+    }
+    
+    #[test]
+    fn test_calculate_entropy_uniform() {
+        // Uniform distribution should have high entropy
+        let data: Vec<u8> = (0..=255).collect();
+        let entropy = calculate_entropy(&data);
+        
+        // Should be close to 8.0 (maximum entropy for bytes)
+        assert!(entropy > 7.9);
+        assert!(entropy <= 8.0);
+    }
+    
+    #[test]
+    fn test_calculate_entropy_single_value() {
+        // Single repeated value should have zero entropy
+        let data = vec![0x42; 1000];
+        let entropy = calculate_entropy(&data);
+        
+        assert_eq!(entropy, 0.0);
+    }
+    
+    #[test]
+    fn test_unknown_signature_deduplication() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut collector = ResearchDataCollector::new(temp_dir.path().to_path_buf());
+        
+        // Add the same signature twice
+        let sig1 = UnknownSignature {
+            signature: "12345678".to_string(),
+            occurrence_count: 5,
+            average_size: 1000,
+            sample_paths: vec!["path1".to_string()],
+        };
+        
+        let sig2 = UnknownSignature {
+            signature: "12345678".to_string(),
+            occurrence_count: 3,
+            average_size: 2000,
+            sample_paths: vec!["path2".to_string()],
+        };
+        
+        collector.add_unknown_signature(sig1);
+        collector.add_unknown_signature(sig2);
+        
+        // Should have only one signature with combined data
+        assert_eq!(collector.data.unknown_signatures.len(), 1);
+        let combined = &collector.data.unknown_signatures[0];
+        assert_eq!(combined.occurrence_count, 8); // 5 + 3
+        assert_eq!(combined.average_size, 1500); // (1000 + 2000) / 2
+        assert_eq!(combined.sample_paths.len(), 2);
+    }
+    
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+        
+        /// **Feature: casc-sprite-format-improvements, Property 13: Research data consistency**
+        /// **Validates: Requirements 11.1, 11.2**
+        /// 
+        /// For any research data collection operation, the system should consistently
+        /// record format statistics and format variants in a reliable manner.
+        /// This property ensures that:
+        /// 1. Format success rates are accurately tracked and calculated (Requirement 11.1)
+        /// 2. Format variants are properly documented and deduplicated (Requirement 11.2)
+        /// 3. Research data maintains consistency across multiple collection operations
+        /// 4. Data validation produces consistent quality metrics
+        #[test]
+        fn property_13_research_data_consistency(
+            research_data in crate::generators::research_data_strategy()
+        ) {
+            // Property 13.1: Format statistics consistency (Requirement 11.1)
+            // Format success rates should be calculated consistently
+            
+            let temp_dir = TempDir::new().unwrap();
+            let mut collector = ResearchDataCollector::new(temp_dir.path().to_path_buf());
+            
+            // Record multiple format operations for the same format
+            let format_name = "TEST_FORMAT";
+            let mut expected_successful = 0u32;
+            let mut expected_failed = 0u32;
+            let mut total_processing_time = 0.0f64;
+            
+            // Record a series of successful and failed operations
+            for i in 0..10 {
+                let success = i % 3 != 0; // 2/3 success rate
+                let processing_time = (i + 1) as f64 * 10.0; // 10ms, 20ms, 30ms, etc.
+                
+                if success {
+                    expected_successful += 1;
+                    total_processing_time += processing_time;
+                } else {
+                    expected_failed += 1;
+                }
+                
+                let failure_reason = if !success { Some("Test failure".to_string()) } else { None };
+                collector.record_format_success(format_name, success, processing_time, failure_reason);
+            }
+            
+            // Verify format statistics consistency
+            let format_stats = &collector.data.format_statistics.format_success_rates;
+            prop_assert!(format_stats.contains_key(format_name), 
+                        "Format statistics should contain recorded format");
+            
+            let recorded_stats = &format_stats[format_name];
+            prop_assert_eq!(recorded_stats.successful_extractions, expected_successful,
+                           "Successful extraction count should match recorded operations");
+            prop_assert_eq!(recorded_stats.failed_extractions, expected_failed,
+                           "Failed extraction count should match recorded operations");
+            
+            // Verify success percentage calculation
+            let expected_percentage = if expected_successful + expected_failed > 0 {
+                (expected_successful as f64 / (expected_successful + expected_failed) as f64) * 100.0
+            } else {
+                0.0
+            };
+            prop_assert!((recorded_stats.success_percentage - expected_percentage).abs() < 0.01,
+                        "Success percentage should be calculated correctly: expected {}, got {}",
+                        expected_percentage, recorded_stats.success_percentage);
+            
+            // Verify average processing time calculation
+            if expected_successful > 0 {
+                let expected_avg_time = total_processing_time / expected_successful as f64;
+                prop_assert!((recorded_stats.average_processing_time_ms - expected_avg_time).abs() < 0.01,
+                            "Average processing time should be calculated correctly: expected {}, got {}",
+                            expected_avg_time, recorded_stats.average_processing_time_ms);
+            }
+            
+            // Property 13.2: Format variant deduplication (Requirement 11.2)
+            // Format variants should be properly deduplicated and aggregated
+            
+            let variant1 = FormatVariant {
+                base_format: "TEST_BASE".to_string(),
+                variant_id: "variant_1".to_string(),
+                description: "Test variant".to_string(),
+                differences: vec![],
+                sample_files: vec!["file1.dat".to_string()],
+                discovered_timestamp: chrono::Utc::now().to_rfc3339(),
+                occurrence_count: 5,
+                extraction_success_rate: 0.8,
+            };
+            
+            let variant2 = FormatVariant {
+                base_format: "TEST_BASE".to_string(),
+                variant_id: "variant_1".to_string(), // Same variant ID - should be deduplicated
+                description: "Test variant".to_string(),
+                differences: vec![],
+                sample_files: vec!["file2.dat".to_string()],
+                discovered_timestamp: chrono::Utc::now().to_rfc3339(),
+                occurrence_count: 3,
+                extraction_success_rate: 0.9,
+            };
+            
+            collector.record_format_variant(variant1);
+            collector.record_format_variant(variant2);
+            
+            // Verify deduplication occurred
+            prop_assert_eq!(collector.data.format_variants.len(), 1,
+                           "Duplicate format variants should be deduplicated");
+            
+            let merged_variant = &collector.data.format_variants[0];
+            prop_assert_eq!(merged_variant.occurrence_count, 8, // 5 + 3
+                           "Occurrence counts should be summed during deduplication");
+            prop_assert_eq!(merged_variant.sample_files.len(), 2,
+                           "Sample files should be merged during deduplication");
+            
+            // Verify success rate is properly averaged
+            let expected_success_rate = (0.8 * 5.0 + 0.9 * 3.0) / 8.0;
+            prop_assert!((merged_variant.extraction_success_rate - expected_success_rate).abs() < 0.01,
+                        "Success rate should be properly averaged during deduplication: expected {}, got {}",
+                        expected_success_rate, merged_variant.extraction_success_rate);
+            
+            // Property 13.3: Performance metrics consistency (Requirement 11.3)
+            // Performance metrics should be consistently tracked and aggregated
+            
+            let operation_name = "test_operation";
+            let mut expected_count = 0u32;
+            let mut expected_total_time = 0.0f64;
+            let mut expected_min_time = f64::MAX;
+            let mut expected_max_time = 0.0f64;
+            
+            // Record multiple performance measurements
+            for i in 1..=5 {
+                let duration_ms = i as f64 * 50.0; // 50ms, 100ms, 150ms, 200ms, 250ms
+                collector.record_operation_performance(operation_name, duration_ms);
+                
+                expected_count += 1;
+                expected_total_time += duration_ms / 1000.0; // Convert to seconds
+                expected_min_time = expected_min_time.min(duration_ms);
+                expected_max_time = expected_max_time.max(duration_ms);
+            }
+            
+            let perf_metrics = &collector.data.performance_metrics.operation_performance;
+            prop_assert!(perf_metrics.contains_key(operation_name),
+                        "Performance metrics should contain recorded operation");
+            
+            let recorded_perf = &perf_metrics[operation_name];
+            prop_assert_eq!(recorded_perf.operation_count, expected_count,
+                           "Operation count should match recorded operations");
+            prop_assert!((recorded_perf.total_time_seconds - expected_total_time).abs() < 0.001,
+                        "Total time should match recorded operations");
+            prop_assert!((recorded_perf.min_time_ms - expected_min_time).abs() < 0.01,
+                        "Minimum time should be tracked correctly");
+            prop_assert!((recorded_perf.max_time_ms - expected_max_time).abs() < 0.01,
+                        "Maximum time should be tracked correctly");
+            
+            // Verify operations per second calculation
+            if expected_total_time > 0.0 {
+                let expected_ops_per_sec = expected_count as f64 / expected_total_time;
+                prop_assert!((recorded_perf.operations_per_second - expected_ops_per_sec).abs() < 0.01,
+                            "Operations per second should be calculated correctly");
+            }
+            
+            // Property 13.4: Data validation consistency
+            // Research data validation should produce consistent quality metrics
+            
+            collector.finalize();
+            let validation_result1 = collector.validate_research_data();
+            let validation_result2 = collector.validate_research_data();
+            
+            prop_assert_eq!(validation_result1.is_valid, validation_result2.is_valid,
+                           "Validation results should be consistent");
+            prop_assert!((validation_result1.completeness_score - validation_result2.completeness_score).abs() < 0.001,
+                        "Completeness scores should be consistent");
+            prop_assert_eq!(validation_result1.warnings.len(), validation_result2.warnings.len(),
+                           "Warning counts should be consistent");
+            prop_assert_eq!(validation_result1.errors.len(), validation_result2.errors.len(),
+                           "Error counts should be consistent");
+            
+            // Property 13.5: Overall success rate calculation consistency
+            // The overall success rate should be calculated consistently from individual format rates
+            
+            collector.finalize(); // Ensure calculations are complete
+            
+            let total_successful: u32 = collector.data.format_statistics.format_success_rates
+                .values()
+                .map(|rate| rate.successful_extractions)
+                .sum();
+            
+            let total_failed: u32 = collector.data.format_statistics.format_success_rates
+                .values()
+                .map(|rate| rate.failed_extractions)
+                .sum();
+            
+            let total_attempts = total_successful + total_failed;
+            if total_attempts > 0 {
+                let expected_overall_rate = (total_successful as f64 / total_attempts as f64) * 100.0;
+                prop_assert!((collector.data.format_statistics.overall_success_rate - expected_overall_rate).abs() < 0.01,
+                            "Overall success rate should be calculated consistently from individual format rates");
+            }
+        }
+    }
+    
+    #[test]
+    fn test_save_and_load_research_data() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut collector = ResearchDataCollector::new(temp_dir.path().to_path_buf());
+        
+        // Add some test data using the proper methods
+        let casc_stats = CascStats {
+            index_file_count: 16,
+            data_file_count: 6,
+            total_data_size: 5_687_091_200,
+            total_file_entries: 1000,
+            average_entropy: 7.97,
+            corrupted_files: Vec::new(),
+        };
+        collector.record_casc_stats(casc_stats);
+        
+        let format_analysis = FormatAnalysis {
+            png_count: 24,
+            jpeg_count: 8,
+            dds_count: 12,
+            anim_count: 4,
+            other_formats: HashMap::new(),
+            size_distribution: SizeDistribution {
+                tiny_files: 10,
+                small_files: 20,
+                medium_files: 30,
+                large_files: 15,
+                huge_files: 5,
+            },
+        };
+        collector.record_format_analysis(format_analysis);
+
+        let output_file = temp_dir.path().join("research_data.json");
+        collector.save_to_file(&output_file).unwrap();
+        
+        // Verify file was created and contains expected data
+        assert!(output_file.exists());
+        let content = std::fs::read_to_string(&output_file).unwrap();
+        assert!(content.contains("\"index_file_count\": 16"));
+        assert!(content.contains("\"png_count\": 24"));
+    }
+    
+    #[test]
+    fn test_generate_community_report() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut collector = ResearchDataCollector::new(temp_dir.path().to_path_buf());
+        
+        // Add some test data
+        collector.data.casc_stats.index_file_count = 16;
+        collector.data.casc_stats.data_file_count = 6;
+        collector.data.format_analysis.png_count = 24;
+        collector.data.format_analysis.jpeg_count = 8;
+        
+        let output_file = temp_dir.path().join("community_report.md");
+        collector.generate_community_report(&output_file).unwrap();
+        
+        // Verify report was created and contains expected sections
+        assert!(output_file.exists());
+        let content = std::fs::read_to_string(&output_file).unwrap();
+        assert!(content.contains("# StarCraft: Remastered CASC Extraction Research Report"));
+        assert!(content.contains("## CASC Archive Statistics"));
+        assert!(content.contains("## File Format Analysis"));
+        assert!(content.contains("**Index Files:** 16"));
+        assert!(content.contains("**PNG Files:** 24"));
+    }
+    
+    // Property-based tests
+    #[cfg(test)]
+    mod property_tests {
+        use super::*;
+        use proptest::prelude::*;
+        
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(100))]
+            
+            /// Property 8: Research Data Generation
+            /// For any extraction operation, the research logger should generate comprehensive data 
+            /// suitable for community contribution, including file signatures, format analysis, 
+            /// and extraction statistics.
+            /// Validates: Requirements 12.1, 12.3, 12.5
+            #[test]
+            fn property_research_data_generation_completeness(
+                research_data in research_data_strategy()
+            ) {
+                // Test that research data contains all required fields for community contribution
+                
+                // Requirement 12.1: Log detailed format information
+                assert!(!research_data.timestamp.is_empty(), "Research data must have timestamp");
+                assert!(!research_data.tool_version.is_empty(), "Research data must have tool version");
+                // Note: installation_path may not exist after temp dir is dropped, but should be a valid path
+                assert!(!research_data.installation_path.as_os_str().is_empty(), "Installation path must not be empty");
+                
+                // Verify CASC statistics are present
+                assert!(research_data.casc_stats.index_file_count > 0, "Must have index file count");
+                assert!(research_data.casc_stats.data_file_count > 0, "Must have data file count");
+                assert!(research_data.casc_stats.total_data_size > 0, "Must have total data size");
+                
+                // Requirement 12.3: Generate research data including file signatures, sizes, and format analysis
+                let format_analysis = &research_data.format_analysis;
+                
+                // Verify format analysis completeness
+                let total_known_formats = format_analysis.png_count + 
+                                        format_analysis.jpeg_count + 
+                                        format_analysis.dds_count + 
+                                        format_analysis.anim_count;
+                
+                assert!(total_known_formats > 0 || !format_analysis.other_formats.is_empty(), 
+                       "Must have some format analysis data");
+                
+                // Verify size distribution is tracked
+                let size_dist = &format_analysis.size_distribution;
+                let total_size_files = size_dist.tiny_files + size_dist.small_files + 
+                                     size_dist.medium_files + size_dist.large_files + 
+                                     size_dist.huge_files;
+                assert!(total_size_files >= 0, "Size distribution should be non-negative");
+                
+                // Verify extraction statistics are meaningful
+                let extraction_stats = &research_data.extraction_stats;
+                assert!(extraction_stats.extraction_time_seconds >= 0.0, "Extraction time must be non-negative");
+                
+                if extraction_stats.files_extracted > 0 {
+                    assert!(extraction_stats.average_processing_time_ms >= 0.0, 
+                           "Average processing time must be non-negative when files were extracted");
+                }
+                
+                // Requirement 12.5: Generate research report suitable for community sharing
+                // Test that we can generate both JSON and community report formats
+                let temp_dir = tempfile::TempDir::new().unwrap();
+                let collector = ResearchDataCollector {
+                    data: research_data.clone(),
+                    start_time: std::time::Instant::now(),
+                };
+                
+                // Test JSON serialization (for programmatic use)
+                let json_file = temp_dir.path().join("research.json");
+                collector.save_to_file(&json_file).expect("Should be able to save JSON research data");
+                assert!(json_file.exists(), "JSON research file should be created");
+                
+                let json_content = std::fs::read_to_string(&json_file).unwrap();
+                assert!(json_content.contains(&research_data.timestamp), "JSON should contain timestamp");
+                assert!(json_content.contains(&research_data.tool_version), "JSON should contain tool version");
+                
+                // Test community report generation (for human consumption)
+                let report_file = temp_dir.path().join("community_report.md");
+                collector.generate_community_report(&report_file).expect("Should be able to generate community report");
+                assert!(report_file.exists(), "Community report file should be created");
+                
+                let report_content = std::fs::read_to_string(&report_file).unwrap();
+                assert!(report_content.contains("# StarCraft: Remastered CASC Extraction Research Report"), 
+                       "Report should have proper title");
+                assert!(report_content.contains("## CASC Archive Statistics"), 
+                       "Report should have CASC statistics section");
+                assert!(report_content.contains("## File Format Analysis"), 
+                       "Report should have format analysis section");
+                assert!(report_content.contains("## Extraction Results"), 
+                       "Report should have extraction results section");
+                
+                // Verify the report contains actual data, not just structure
+                assert!(report_content.contains(&format!("**Index Files:** {}", research_data.casc_stats.index_file_count)),
+                       "Report should contain actual index file count");
+                assert!(report_content.contains(&format!("**Data Files:** {}", research_data.casc_stats.data_file_count)),
+                       "Report should contain actual data file count");
+                
+                // Verify tool integration results are included if present
+                if !research_data.tool_integration.tools_tested.is_empty() {
+                    assert!(report_content.contains("## Tool Integration Results"), 
+                           "Report should include tool integration section when tools were tested");
+                }
+                
+                // Verify unknown signatures are included if present
+                if !research_data.unknown_signatures.is_empty() {
+                    assert!(report_content.contains("## Unknown File Signatures"), 
+                           "Report should include unknown signatures section when signatures were found");
+                }
+                
+                // Verify community contribution footer
+                assert!(report_content.contains("*Please share this data with the StarCraft modding community to improve our collective understanding.*"),
+                       "Report should encourage community contribution");
+            }
+        }
+    }
+}

@@ -1,0 +1,197 @@
+# Extended StarCraft Sprite Mappings
+# Includes common alternate names and patterns
+
+# Terran Units (with alternates)
+terran/units/marine: unit\terran\marine.grp
+terran/units/firebat: unit\terran\firebat.grp
+terran/units/ghost: unit\terran\ghost.grp
+terran/units/vulture: unit\terran\vulture.grp
+terran/units/goliath: unit\terran\goliath.grp
+terran/units/siege_tank: unit\terran\tank.grp
+terran/units/siege_tank_sieged: unit\terran\tsieged.grp
+terran/units/scv: unit\terran\scv.grp
+terran/units/wraith: unit\terran\phoenix.grp
+terran/units/dropship: unit\terran\dropship.grp
+terran/units/battlecruiser: unit\terran\battlecr.grp
+terran/units/valkyrie: unit\terran\bomber.grp
+terran/units/science_vessel: unit\terran\wessel.grp
+terran/units/medic: unit\terran\medic.grp
+terran/units/nuclear_missile: unit\terran\nuke.grp
+
+# Terran Buildings
+terran/buildings/command_center: unit\terran\comsat.grp
+terran/buildings/supply_depot: unit\terran\depot.grp
+terran/buildings/refinery: unit\terran\refinery.grp
+terran/buildings/barracks: unit\terran\tbarrack.grp
+terran/buildings/academy: unit\terran\academy.grp
+terran/buildings/factory: unit\terran\factory.grp
+terran/buildings/starport: unit\terran\starport.grp
+terran/buildings/control_tower: unit\terran\control.grp
+terran/buildings/science_facility: unit\terran\research.grp
+terran/buildings/missile_turret: unit\terran\missile.grp
+terran/buildings/engineering_bay: unit\terran\weaponpl.grp
+terran/buildings/armory: unit\terran\machines.grp
+terran/buildings/bunker: unit\terran\pillbox.grp
+terran/buildings/physics_lab: unit\terran\physics.grp
+terran/buildings/machine_shop: unit\terran\machinec.grp
+
+# Protoss Units
+protoss/units/probe: unit\protoss\probe.grp
+protoss/units/zealot: unit\protoss\zealot.grp
+protoss/units/dragoon: unit\protoss\dragoon.grp
+protoss/units/high_templar: unit\protoss\templar.grp
+protoss/units/dark_templar: unit\protoss\dtemplar.grp
+protoss/units/archon: unit\protoss\archon.grp
+protoss/units/dark_archon: unit\protoss\darchn.grp
+protoss/units/shuttle: unit\protoss\shuttle.grp
+protoss/units/scout: unit\protoss\scout.grp
+protoss/units/corsair: unit\protoss\corsair.grp
+protoss/units/carrier: unit\protoss\carrier.grp
+protoss/units/arbiter: unit\protoss\arbiter.grp
+protoss/units/reaver: unit\protoss\sapper.grp
+protoss/units/observer: unit\protoss\witness.grp
+protoss/units/interceptor: unit\protoss\intercep.grp
+protoss/units/scarab: unit\protoss\scarab.grp
+
+# Protoss Buildings
+protoss/buildings/nexus: unit\protoss\nexus.grp
+protoss/buildings/pylon: unit\protoss\pylon.grp
+protoss/buildings/assimilator: unit\protoss\assim.grp
+protoss/buildings/gateway: unit\protoss\gateway.grp
+protoss/buildings/forge: unit\protoss\forge.grp
+protoss/buildings/cybernetics_core: unit\protoss\gencore.grp
+protoss/buildings/photon_cannon: unit\protoss\photon.grp
+protoss/buildings/citadel: unit\protoss\citadel.grp
+protoss/buildings/robotics_facility: unit\protoss\robotic.grp
+protoss/buildings/stargate: unit\protoss\stargate.grp
+protoss/buildings/templar_archives: unit\protoss\archives.grp
+protoss/buildings/observatory: unit\protoss\beacon.grp
+protoss/buildings/arbiter_tribunal: unit\protoss\warp.grp
+protoss/buildings/robotics_support_bay: unit\protoss\prism.grp
+protoss/buildings/fleet_beacon: unit\protoss\texture.grp
+protoss/buildings/shield_battery: unit\protoss\sbattery.grp
+
+# Zerg Units
+zerg/units/larva: unit\zerg\larva.grp
+zerg/units/egg: unit\zerg\egg.grp
+zerg/units/cocoon: unit\zerg\cocoon.grp
+zerg/units/drone: unit\zerg\drone.grp
+zerg/units/zergling: unit\zerg\zergling.grp
+zerg/units/hydralisk: unit\zerg\hydra.grp
+zerg/units/ultralisk: unit\zerg\ultra.grp
+zerg/units/mutalisk: unit\zerg\mutalid.grp
+zerg/units/guardian: unit\zerg\guardian.grp
+zerg/units/devourer: unit\zerg\devour.grp
+zerg/units/scourge: unit\zerg\bugguy.grp
+zerg/units/queen: unit\zerg\queen.grp
+zerg/units/defiler: unit\zerg\defiler.grp
+zerg/units/overlord: unit\zerg\overlord.grp
+zerg/units/lurker: unit\zerg\lurker.grp
+zerg/units/broodling: unit\zerg\brood.grp
+zerg/units/infested_terran: unit\zerg\infested.grp
+
+# Zerg Buildings
+zerg/buildings/hatchery: unit\zerg\hatchery.grp
+zerg/buildings/lair: unit\zerg\lair.grp
+zerg/buildings/hive: unit\zerg\hive.grp
+zerg/buildings/creep_colony: unit\zerg\fcolony.grp
+zerg/buildings/sunken_colony: unit\zerg\scolony.grp
+zerg/buildings/spore_colony: unit\zerg\rcluster.grp
+zerg/buildings/extractor: unit\zerg\extract.grp
+zerg/buildings/spawning_pool: unit\zerg\mutapit.grp
+zerg/buildings/evolution_chamber: unit\zerg\mutacham.grp
+zerg/buildings/hydralisk_den: unit\zerg\snakey.grp
+zerg/buildings/spire: unit\zerg\spire.grp
+zerg/buildings/queens_nest: unit\zerg\nest.grp
+zerg/buildings/nydus_canal: unit\zerg\nyduspit.grp
+zerg/buildings/ultralisk_cavern: unit\zerg\cerebrat.grp
+zerg/buildings/defiler_mound: unit\zerg\ucereb.grp
+
+# Neutral/Critters
+neutral/critters/rhynadon: unit\neutral\rhynadon.grp
+neutral/critters/bengalaas: unit\neutral\bengalaa.grp
+neutral/critters/scantid: unit\neutral\scantid.grp
+neutral/critters/kakaru: unit\neutral\kakaru.grp
+neutral/critters/ragnasaur: unit\neutral\ragnasau.grp
+neutral/critters/ursadon: unit\neutral\ursadon.grp
+
+# Neutral Buildings
+neutral/buildings/vespene_geyser: unit\neutral\geyser.grp
+
+# Projectiles (Weapons)
+effects/projectiles/marine_bullet: unit\bullet\dragbull.grp
+effects/projectiles/gauss_rifle: unit\bullet\dragbull.grp
+effects/projectiles/missile: unit\bullet\missile.grp
+effects/projectiles/yamato_cannon: unit\bullet\blastcan.grp
+effects/projectiles/psi_storm: unit\bullet\psibeam.grp
+effects/projectiles/psi_blade: unit\bullet\pspark.grp
+effects/projectiles/scarab: unit\bullet\gemini.grp
+effects/projectiles/photon_blast: unit\bullet\epbbul.grp
+effects/projectiles/phase_disruptor: unit\bullet\pdriphit.grp
+effects/projectiles/needle_spine: unit\bullet\spike.grp
+effects/projectiles/acid_spore: unit\bullet\spores.grp
+effects/projectiles/glave_wurm: unit\bullet\spore2.grp
+effects/projectiles/seeker_spore: unit\bullet\spore2.grp
+effects/projectiles/subterranean_spines: unit\bullet\tentacle.grp
+effects/projectiles/corrosive_acid: unit\bullet\hks.grp
+effects/projectiles/particle_beam: unit\bullet\eycbull.grp
+effects/projectiles/grenade: unit\bullet\grenade.grp
+effects/projectiles/fragmentation_grenade: unit\bullet\shockbmb.grp
+
+# Explosions
+effects/explosions/small: unit\thingy\explo1.grp
+effects/explosions/medium: unit\thingy\explo2.grp
+effects/explosions/large: unit\thingy\hkexplod.grp
+effects/explosions/nuclear_hit: unit\thingy\nukehit.grp
+effects/explosions/nuclear_beam: unit\thingy\nukebeam.grp
+effects/explosions/emp: unit\thingy\emp.grp
+
+# Fire & Smoke
+effects/fire/flame: unit\thingy\flamer.grp
+effects/fire/building_large: unit\thingy\elbfire.grp
+effects/fire/building_small: unit\thingy\esifire.grp
+effects/smoke/small: unit\thingy\bsmoke.grp
+effects/smoke/building: unit\thingy\gsmoke.grp
+effects/smoke/green: unit\thingy\gresmoke.grp
+effects/blood/terran_small: unit\thingy\blood01.grp
+effects/blood/terran_large: unit\thingy\blood02.grp
+effects/blood/zerg_small: unit\thingy\bblood01.grp
+effects/blood/zerg_large: unit\thingy\bblood02.grp
+effects/dust/small: unit\thingy\dust01.grp
+effects/shields/protoss_hit: unit\thingy\pshield.grp
+
+# Critters
+neutral/buildings/vespene_geyser: unit\neutral\geyser.grp
+neutral/buildings/mineral_field: unit\neutral\mineral1.grp
+neutral/buildings/mineral_field_small: unit\neutral\mineral2.grp
+neutral/buildings/mineral_field_large: unit\neutral\mineral3.grp
+
+# Effects
+effects/explosions/small: unit\thingy\explosion1.grp
+effects/explosions/medium: unit\thingy\explosion2.grp
+effects/explosions/large: unit\thingy\explosion3.grp
+effects/fire/small: unit\thingy\fire1.grp
+effects/fire/medium: unit\thingy\fire2.grp
+effects/fire/large: unit\thingy\fire3.grp
+effects/smoke/small: unit\thingy\smoke1.grp
+effects/smoke/medium: unit\thingy\smoke2.grp
+
+# Projectiles
+effects/projectiles/plasma: unit\thingy\plasma.grp
+
+# Critters
+neutral/critters/rhynadon: unit\neutral\acritter.grp
+neutral/critters/bengalaas: unit\neutral\bcritter.grp
+neutral/critters/scantid: unit\neutral\scritter.grp
+neutral/critters/kakaru: unit\neutral\kcritter.grp
+neutral/critters/ragnasaur: unit\neutral\icritter.grp
+neutral/critters/ursadon: unit\neutral\jcritter.grp
+
+# UI Elements
+ui/wireframes/terran: unit\wirefram\tranwire.grp
+ui/wireframes/protoss: unit\wirefram\grpwire.grp
+ui/wireframes/zerg: unit\wirefram\wirefram.grp
+ui/buttons/command_icons: unit\cmdbtns\cmdicons.grp
+ui/buttons/terran: unit\cmdbtns\tcmdbtns.grp
+ui/buttons/protoss: unit\cmdbtns\pcmdbtns.grp
+ui/buttons/zerg: unit\cmdbtns\zcmdbtns.grp

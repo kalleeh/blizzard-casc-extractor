@@ -1,0 +1,38 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# Extracted files
+/extracted/
+*.png
+*.txt
+*.json
+
+# Build artifacts
+/lib/*.dylib
+/lib/*.so
+/lib/*.dll
+!/lib/README.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# AI/Dev Tools
+.kiro/
+.amazonq/
+.cursor/
+.aider*
+
+# OS
+.DS_Store
+Thumbs.db
+._*
+
+# Temporary files
+*.tmp
+*.log

@@ -1,0 +1,122 @@
+[package]
+name = "casc-extractor"
+version = "1.0.0"
+edition = "2021"
+authors = ["Karl Wallbom <kalleeh@users.noreply.github.com>"]
+description = "Extract sprites from Blizzard CASC archives with Unity integration"
+license = "MIT"
+repository = "https://github.com/kalleeh/blizzard-casc-extractor"
+keywords = ["blizzard", "casc", "sprite", "extraction", "starcraft"]
+categories = ["command-line-utilities", "game-development"]
+readme = "README.md"
+
+[[bin]]
+name = "extract_organized"
+path = "src/bin/extract_organized.rs"
+
+[[bin]]
+name = "validate-extracted-sprites"
+path = "validate_extracted_sprites.rs"
+
+[dependencies]
+# CLI and argument parsing
+clap = { version = "4.5", features = ["derive"] }
+regex = "1.10"
+
+# Progress reporting
+indicatif = "0.17"
+
+# Image processing
+image = "0.24"
+ddsfile = "0.5"
+png = "0.17"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Date/time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Binary data handling
+byteorder = "1.5"
+
+# Compression libraries for BLTE decompression
+flate2 = "1.0"  # ZLIB/DEFLATE compression
+miniz_oxide = "0.7"  # Pure Rust DEFLATE implementation
+lz4_flex = "0.11"  # LZ4 compression for ANIM texture decompression
+
+# Cryptographic hashing for validation
+sha2 = "0.10"  # SHA256 hashing for byte-level comparison
+
+# BLTE decryption for StarCraft: Remastered CASC files
+blte = "0.3"  # BLTE decompression library for Blizzard's NGDP/CASC system
+ngdp-crypto = "0.3"  # Required for encrypted BLTE content
+
+# Encoding/decoding libraries
+base64 = "0.21"  # Base64 encoding/decoding for data analysis
+
+# Logging
+env_logger = "0.11"
+log = "0.4"
+
+# System information
+num_cpus = "1.16"
+dirs = "6.0.0"
+glob = "0.3"  # File path pattern matching for finding Unity Editor
+
+[dev-dependencies]
+# Property-based testing
+proptest = "1.4"
+
+# Temporary directories for tests
+tempfile = "3.10"
+
+# Filesystem assertions
+assert_fs = "1.1"
+
+# Benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }
+
+# Test coverage (optional - only available on Linux)
+# tarpaulin = "0.27"
+
+# JSON handling for test metadata
+serde_json = "1.0"
+
+# Image processing for test validation
+image = "0.24"
+png = "0.17"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+# Development profile for faster builds
+[profile.dev]
+opt-level = 0
+debug = true
+overflow-checks = true
+
+# Profile for distribution builds
+[profile.dist]
+inherits = "release"
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+# Cross-compilation targets for distribution
+[target.x86_64-apple-darwin]
+[target.aarch64-apple-darwin]
+[target.x86_64-unknown-linux-gnu]
+[target.x86_64-pc-windows-msvc]
+[target.aarch64-unknown-linux-gnu]
