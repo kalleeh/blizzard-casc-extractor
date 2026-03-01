@@ -8,6 +8,7 @@ pub mod encryption;
 pub mod salsa20;
 pub mod decrypt;
 pub mod casclib_ffi;
+pub mod discovery;
 
 #[cfg(test)]
 pub mod integration_properties;

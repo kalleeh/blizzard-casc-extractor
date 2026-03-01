@@ -11,8 +11,24 @@ categories = ["command-line-utilities", "game-development"]
 readme = "README.md"
 
 [[bin]]
+name = "casc-extractor"
+path = "src/main.rs"
+
+[[bin]]
 name = "extract_organized"
 path = "src/bin/extract_organized.rs"
+
+[[bin]]
+name = "extract_hd"
+path = "src/bin/extract_hd.rs"
+
+[[bin]]
+name = "extract_sounds"
+path = "src/bin/extract_sounds.rs"
+
+[[bin]]
+name = "probe_sounds"
+path = "src/bin/probe_sounds.rs"
 
 [[bin]]
 name = "validate-extracted-sprites"

@@ -3381,3 +3381,5 @@ mod tests {
         }
     }
 }
+pub mod hd_parser;
+pub use hd_parser::{HdAnimFile, HdAnimHeader, HdAnimEntry, HdAnimFrame};

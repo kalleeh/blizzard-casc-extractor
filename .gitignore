@@ -1,7 +1,7 @@
 # Rust
 /target/
 **/*.rs.bk
-Cargo.lock
+# Cargo.lock intentionally tracked — binary crate
 
 # Extracted files
 /output/
@@ -36,3 +36,5 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.log
+# casc.framework symlink for macOS rpath resolution
+lib/casc.framework/
