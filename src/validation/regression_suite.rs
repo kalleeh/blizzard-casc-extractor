@@ -4,11 +4,11 @@
 // that changes don't break previously working sprite extractions.
 
 use super::{ValidationError, byte_comparison::ByteComparison};
+use super::visual_validation::create_pixel_diff_image;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use log::{debug, info, warn};
-use image::GenericImageView;
 
 /// A known-good extraction that serves as a regression test baseline
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -301,30 +301,6 @@ impl RegressionTestSuite {
         expected_img: &image::DynamicImage,
         actual_img: &image::DynamicImage,
     ) -> Result<String, ValidationError> {
-        use image::{RgbaImage, Rgba};
-
-        let (width, height) = expected_img.dimensions();
-        let mut diff_img = RgbaImage::new(width, height);
-
-        // Create diff image: red where pixels differ, gray where they match
-        for y in 0..height {
-            for x in 0..width {
-                let exp_pixel = expected_img.get_pixel(x, y);
-                let act_pixel = actual_img.get_pixel(x, y);
-
-                let diff_pixel = if exp_pixel != act_pixel {
-                    Rgba([255, 0, 0, 255]) // Red for differences
-                } else {
-                    // Gray for matching pixels
-                    let gray = exp_pixel[0] / 2;
-                    Rgba([gray, gray, gray, 255])
-                };
-
-                diff_img.put_pixel(x, y, diff_pixel);
-            }
-        }
-
-        // Save diff image
         let diff_path = expected_path
             .parent()
             .unwrap_or_else(|| Path::new("."))
@@ -333,8 +309,7 @@ impl RegressionTestSuite {
                 expected_path.file_stem().unwrap().to_string_lossy()
             ));
 
-        diff_img.save(&diff_path)?;
-        Ok(diff_path.to_string_lossy().to_string())
+        create_pixel_diff_image(expected_img, actual_img, &diff_path)
     }
 
     /// Run all regression tests

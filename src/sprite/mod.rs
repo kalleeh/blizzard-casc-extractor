@@ -909,25 +909,19 @@ impl DirectSpriteExtractor {
             }
         }
         
-        // 5. Check for PCX format (another StarCraft format)
-        if raw_data.len() >= 4 && raw_data[0] == 0x0A {
-            log::info!("✅ DETECTED potential PCX format in {}", file_info.name);
-            return Ok(Some(self.convert_pcx_to_png(raw_data, file_info)?));
-        }
-        
-        // 6. Check for BMP format
+        // 5. Check for BMP format
         if raw_data.len() >= 2 && &raw_data[0..2] == b"BM" {
             log::info!("✅ DETECTED BMP format in {}", file_info.name);
             return Ok(Some(self.convert_bmp_to_png(raw_data, file_info)?));
         }
         
-        // 7. Check for palette data (256 colors * 3 bytes RGB = 768 bytes)
+        // 6. Check for palette data (256 colors * 3 bytes RGB = 768 bytes)
         if raw_data.len() == 768 {
             log::info!("✅ DETECTED palette data (768 bytes) in {}", file_info.name);
             return Ok(Some(self.convert_palette_to_png(raw_data, file_info)?));
         }
         
-        // 8. Check for raw image data patterns (common in StarCraft: Remastered)
+        // 7. Check for raw image data patterns (common in StarCraft: Remastered)
         if raw_data.len() >= 64 {
             if let Some(result) = self.try_interpret_as_raw_image_data(raw_data, file_info)? {
                 log::info!("✅ INTERPRETED as raw image data in {}", file_info.name);
@@ -935,7 +929,7 @@ impl DirectSpriteExtractor {
             }
         }
         
-        // 9. Check for encrypted/compressed data (StarCraft: Remastered uses encryption)
+        // 8. Check for encrypted/compressed data (StarCraft: Remastered uses encryption)
         // High entropy indicates encryption - try BLTE decompression
         if raw_data.len() >= 64 && entropy_ratio > 0.90 {
             log::info!("🔍 DETECTED high entropy data ({:.3}) - attempting decryption for StarCraft: Remastered", entropy_ratio);
@@ -947,7 +941,7 @@ impl DirectSpriteExtractor {
             }
         }
         
-        // 10. Check for actual BLTE signature
+        // 9. Check for actual BLTE signature
         if raw_data.len() >= 4 && &raw_data[0..4] == b"BLTE" {
             log::info!("✅ DETECTED actual BLTE signature in {}", file_info.name);
             return Ok(Some(self.try_decompress_and_convert_with_depth(raw_data, file_info, depth)?));
@@ -966,130 +960,6 @@ impl DirectSpriteExtractor {
         Ok(None)
     }
     
-    #[allow(dead_code)]
-    fn looks_like_compressed_data(&self, data: &[u8]) -> bool {
-        if data.len() < 8 {
-            return false;
-        }
-        
-        // Check for actual BLTE signature
-        if data.len() >= 4 && &data[0..4] == b"BLTE" {
-            log::debug!("Data has actual BLTE signature");
-            return true;
-        }
-        
-        // Check for ZLIB headers
-        if data.len() >= 2 && data[0] == 0x78 && (data[1] == 0x01 || data[1] == 0x9C || data[1] == 0xDA) {
-            log::debug!("Data has ZLIB header");
-            return true;
-        }
-        
-        // Check for LZ4 magic number
-        if data.len() >= 4 && &data[0..4] == b"\x04\"M\x18" {
-            log::debug!("Data has LZ4 magic number");
-            return true;
-        }
-        
-        // CRITICAL FIX: Be much more conservative about entropy-based detection
-        // High entropy alone is NOT sufficient to identify compressed data
-        // StarCraft: Remastered uses many formats that naturally have high entropy
-        if data.len() >= 1024 {
-            let mut byte_counts = [0u32; 256];
-            let sample_size = data.len().min(1024);
-            for &byte in &data[0..sample_size] {
-                byte_counts[byte as usize] += 1;
-            }
-            
-            let unique_bytes = byte_counts.iter().filter(|&&count| count > 0).count();
-            let entropy_ratio = unique_bytes as f64 / 256.0;
-            
-            // MUCH MORE CONSERVATIVE: Only treat as compressed if entropy is EXTREMELY high
-            // AND we have other indicators like specific byte patterns
-            if entropy_ratio > 0.98 {
-                // Additional checks for compression indicators
-                let has_compression_patterns = self.has_compression_byte_patterns(data);
-                if has_compression_patterns {
-                    log::debug!("Data has extremely high entropy ({:.3}) AND compression patterns, likely compressed", entropy_ratio);
-                    return true;
-                } else {
-                    log::debug!("Data has high entropy ({:.3}) but no compression patterns, likely raw game data", entropy_ratio);
-                    return false;
-                }
-            }
-        }
-        
-        false
-    }
-    
-    /// Check for byte patterns that indicate compression (not just high entropy)
-    fn has_compression_byte_patterns(&self, data: &[u8]) -> bool {
-        if data.len() < 32 {
-            return false;
-        }
-        
-        // Look for patterns common in compressed data:
-        // 1. Repeated byte sequences (compression artifacts)
-        // 2. Specific compression algorithm signatures
-        // 3. Dictionary/LZ77 back-references
-        
-        let mut repeated_sequences = 0;
-        let window_size = 4;
-        
-        for i in 0..(data.len() - window_size * 2) {
-            let pattern = &data[i..i + window_size];
-            
-            // Look for this pattern later in the data (LZ77-style back-references)
-            for j in (i + window_size)..(data.len() - window_size) {
-                if &data[j..j + window_size] == pattern {
-                    repeated_sequences += 1;
-                    break;
-                }
-            }
-            
-            // Don't check every byte to avoid performance issues
-            if i % 16 == 0 && repeated_sequences > 5 {
-                return true;
-            }
-        }
-        
-        // If we found several repeated sequences, it might be compressed
-        repeated_sequences > 3
-    }
-    
-    #[allow(dead_code)]
-    fn convert_raw_sprite_to_png(&self, raw_data: &[u8], offset: usize, width: u16, height: u16) -> Result<Vec<u8>, SpriteError> {
-        log::info!("Converting raw sprite data: {}x{} at offset {} in {} bytes", width, height, offset, raw_data.len());
-        
-        let pixel_count = (width as usize) * (height as usize);
-        let data_start = offset + 4; // Skip width/height header
-        
-        if data_start + pixel_count > raw_data.len() {
-            log::warn!("Not enough data for sprite: need {}, have {}", data_start + pixel_count, raw_data.len());
-            // Use available data
-            let available_pixels = raw_data.len().saturating_sub(data_start);
-            let mut pixel_data = vec![0u8; pixel_count];
-            if available_pixels > 0 {
-                let copy_len = available_pixels.min(pixel_count);
-                pixel_data[0..copy_len].copy_from_slice(&raw_data[data_start..data_start + copy_len]);
-            }
-            return self.create_png_from_pixels(&pixel_data, width as u32, height as u32, false);
-        }
-        
-        // Extract pixel data
-        let pixel_data = &raw_data[data_start..data_start + pixel_count];
-        
-        self.create_png_from_pixels(pixel_data, width as u32, height as u32, false)
-    }
-
-    /// Convert PCX format to PNG
-    fn convert_pcx_to_png(&self, _pcx_data: &[u8], file_info: &crate::casc::FileInfo) -> Result<Vec<u8>, SpriteError> {
-        // PCX format parsing not yet implemented
-        Err(SpriteError::DecodeError(format!(
-            "PCX format parsing not implemented for {}", 
-            file_info.name
-        )))
-    }
-    
     /// Convert BMP format to PNG
     fn convert_bmp_to_png(&self, bmp_data: &[u8], file_info: &crate::casc::FileInfo) -> Result<Vec<u8>, SpriteError> {
         log::debug!("Converting BMP to PNG for {}", file_info.name);
@@ -1105,11 +975,6 @@ impl DirectSpriteExtractor {
         }
         
         self.create_png_from_pixels(&pixel_data, width, height, false)
-    }
-    
-    #[allow(dead_code)]
-    fn try_decompress_and_convert(&self, compressed_data: &[u8], file_info: &FileInfo) -> Result<Vec<u8>, SpriteError> {
-        self.try_decompress_and_convert_with_depth(compressed_data, file_info, 0)
     }
     
     /// Try to decompress and convert compressed data with recursion depth tracking

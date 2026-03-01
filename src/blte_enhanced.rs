@@ -11,7 +11,6 @@ use log::{debug, info, warn, error};
 
 // Re-export from existing BLTE library
 use blte::decompress_blte;
-use ngdp_crypto::KeyService;
 
 #[derive(Debug, Error)]
 pub enum BlteError {
@@ -36,7 +35,6 @@ pub enum BlteError {
 
 /// Enhanced BLTE decompressor with fallback chains and secure key management
 pub struct BlteDecompressor {
-    key_service: Option<KeyService>,
     #[allow(dead_code)]
     fallback_keys: Vec<Vec<u8>>,
     key_manager: KeyManager,
@@ -65,12 +63,12 @@ impl KeyManager {
     /// Load primary decryption keys (most likely to succeed)
     fn load_primary_keys() -> Vec<Vec<u8>> {
         vec![
-            // StarCraft: Remastered specific keys (from successful decryption tests)
-            vec![0x53, 0x43, 0x52], // "SCR" - StarCraft Remastered (WORKING!)
-            vec![0x42, 0x4C, 0x5A], // "BLZ" - Blizzard (WORKING!)
-            vec![0x43, 0x41, 0x53, 0x43], // "CASC" (WORKING!)
-            vec![0x53, 0x74, 0x61, 0x72], // "Star" (WORKING!)
-            vec![0x43, 0x72, 0x61, 0x66, 0x74], // "Craft" (WORKING!)
+            // StarCraft: Remastered XOR key candidates
+            vec![0x53, 0x43, 0x52], // "SCR" - XOR candidate
+            vec![0x42, 0x4C, 0x5A], // "BLZ" - XOR candidate
+            vec![0x43, 0x41, 0x53, 0x43], // "CASC" - XOR candidate
+            vec![0x53, 0x74, 0x61, 0x72], // "Star" - XOR candidate
+            vec![0x43, 0x72, 0x61, 0x66, 0x74], // "Craft" - XOR candidate
         ]
     }
     
@@ -183,7 +181,6 @@ impl BlteDecompressor {
     /// Create a new BLTE decompressor with fallback capabilities and secure key management
     pub fn new() -> Self {
         Self {
-            key_service: Some(KeyService::new()),
             fallback_keys: Self::load_legacy_fallback_keys(),
             key_manager: KeyManager::new(),
         }
@@ -225,13 +222,6 @@ impl BlteDecompressor {
             return Ok(result);
         }
         
-        // Method 2: Try standard BLTE decompression (encrypted with key service)
-        if let Ok(result) = self.try_standard_blte_encrypted(data) {
-            info!("✅ Standard BLTE decompression (encrypted) successful: {} -> {} bytes", 
-                  data.len(), result.len());
-            return Ok(result);
-        }
-        
         // Method 3: Try manual BLTE parsing
         if let Ok(result) = self.try_manual_blte_parsing(data) {
             info!("✅ Manual BLTE parsing successful: {} -> {} bytes", 
@@ -253,14 +243,7 @@ impl BlteDecompressor {
             return Ok(result);
         }
         
-        // Method 6: Try alternative compression formats (LZ4, etc.)
-        if let Ok(result) = self.try_alternative_compression(data) {
-            info!("✅ Alternative compression successful: {} -> {} bytes", 
-                  data.len(), result.len());
-            return Ok(result);
-        }
-        
-        // Method 7: Return raw data if it looks valid (last resort)
+        // Method 6: Return raw data if it looks valid (last resort)
         if self.looks_like_valid_data(data) {
             warn!("⚠️  All decompression methods failed, returning raw data as fallback");
             return Ok(data.to_vec());
@@ -276,18 +259,6 @@ impl BlteDecompressor {
         
         decompress_blte(data.to_vec(), None)
             .map_err(|e| BlteError::DecompressionFailed(format!("Standard BLTE (unencrypted): {}", e)))
-    }
-    
-    /// Method 2: Try standard BLTE decompression with key service
-    fn try_standard_blte_encrypted(&self, data: &[u8]) -> Result<Vec<u8>, BlteError> {
-        debug!("Trying standard BLTE decompression (encrypted)");
-        
-        if let Some(ref key_service) = self.key_service {
-            decompress_blte(data.to_vec(), Some(key_service))
-                .map_err(|e| BlteError::DecompressionFailed(format!("Standard BLTE (encrypted): {}", e)))
-        } else {
-            Err(BlteError::DecompressionFailed("No key service available".to_string()))
-        }
     }
     
     /// Method 3: Try manual BLTE parsing for edge cases
@@ -407,17 +378,6 @@ impl BlteDecompressor {
         }
         
         Err(BlteError::DecompressionFailed("Cached key decryption failed".to_string()))
-    }
-    
-    /// Method 6: Try alternative compression formats
-    fn try_alternative_compression(&self, _data: &[u8]) -> Result<Vec<u8>, BlteError> {
-        debug!("Trying alternative compression formats");
-        
-        // Try LZ4 decompression (not implemented yet, but placeholder)
-        // LZ4 doesn't have a standard header, so this is speculative
-        
-        // For now, just return an error
-        Err(BlteError::DecompressionFailed("Alternative compression not implemented".to_string()))
     }
     
     /// Decrypt data with a specific key using XOR

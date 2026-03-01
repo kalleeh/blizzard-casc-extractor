@@ -21,7 +21,7 @@ pub mod format_converter;
 pub mod format_analyzer;
 pub mod validation;
 
-pub use casc::{CascArchive, CascError, FileEntry, FileAnalysis, CascNavigator, Installation, GameVersion, FileSystemType, NavigatorError, EncryptionHandler, FileAccessLayer, EncryptionError, EncryptionMethod, DecryptionKey};
+pub use casc::{CascArchive, CascError, FileEntry, FileAnalysis};
 pub use casc::discovery::{locate_starcraft, open_archive};
 pub use anim::{AnimFile, AnimError, CompressionType, PixelFormat, AnimPalette};
 pub use grp::{GrpFile, GrpFrame, GrpError};

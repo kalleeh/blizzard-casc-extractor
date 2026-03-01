@@ -416,44 +416,48 @@ impl ErrorReporter {
 
     /// Get actionable recommendations for error type
     fn get_recommendations(&self, error_type: &ErrorType) -> Vec<String> {
+        Self::recommendations_for(error_type).iter().map(|s| s.to_string()).collect()
+    }
+
+    fn recommendations_for(error_type: &ErrorType) -> &'static [&'static str] {
         match error_type {
-            ErrorType::ByteMismatch => vec![
-                "Compare hex dumps byte-by-byte to identify differences".to_string(),
-                "Check endianness in binary parsing (little-endian vs big-endian)".to_string(),
-                "Verify all header fields are correctly parsed".to_string(),
-                "Compare with reference tool source code if available".to_string(),
+            ErrorType::ByteMismatch => &[
+                "Compare hex dumps byte-by-byte to identify differences",
+                "Check endianness in binary parsing (little-endian vs big-endian)",
+                "Verify all header fields are correctly parsed",
+                "Compare with reference tool source code if available",
             ],
-            ErrorType::VisualMismatch => vec![
-                "Review visual diff image to identify pixel differences".to_string(),
-                "Check color palette conversion logic".to_string(),
-                "Verify transparency handling (alpha channel)".to_string(),
-                "Ensure correct pixel format conversion (RGB/RGBA)".to_string(),
+            ErrorType::VisualMismatch => &[
+                "Review visual diff image to identify pixel differences",
+                "Check color palette conversion logic",
+                "Verify transparency handling (alpha channel)",
+                "Ensure correct pixel format conversion (RGB/RGBA)",
             ],
-            ErrorType::MetadataMismatch => vec![
-                "Verify sprite dimensions match expected values".to_string(),
-                "Check frame count and animation timing".to_string(),
-                "Validate texture format and compression settings".to_string(),
+            ErrorType::MetadataMismatch => &[
+                "Verify sprite dimensions match expected values",
+                "Check frame count and animation timing",
+                "Validate texture format and compression settings",
             ],
-            ErrorType::UnityImportFailure => vec![
-                "Check PNG format compatibility with Unity".to_string(),
-                "Verify sprite dimensions are within Unity limits".to_string(),
-                "Ensure proper alpha channel handling".to_string(),
-                "Check Unity import settings (texture type, compression)".to_string(),
+            ErrorType::UnityImportFailure => &[
+                "Check PNG format compatibility with Unity",
+                "Verify sprite dimensions are within Unity limits",
+                "Ensure proper alpha channel handling",
+                "Check Unity import settings (texture type, compression)",
             ],
-            ErrorType::ReferenceToolMismatch => vec![
-                "Compare extraction output with reference tool byte-by-byte".to_string(),
-                "Study reference tool source code if available".to_string(),
-                "Verify decompression algorithm matches reference implementation".to_string(),
+            ErrorType::ReferenceToolMismatch => &[
+                "Compare extraction output with reference tool byte-by-byte",
+                "Study reference tool source code if available",
+                "Verify decompression algorithm matches reference implementation",
             ],
-            ErrorType::FormatParsingError => vec![
-                "Review format specification documentation".to_string(),
-                "Check for correct header parsing".to_string(),
-                "Verify offset calculations and bounds checking".to_string(),
+            ErrorType::FormatParsingError => &[
+                "Review format specification documentation",
+                "Check for correct header parsing",
+                "Verify offset calculations and bounds checking",
             ],
-            ErrorType::DecompressionError => vec![
-                "Verify compression type detection (ZLIB, LZ4, etc.)".to_string(),
-                "Check decompression library usage".to_string(),
-                "Validate compressed data size and format".to_string(),
+            ErrorType::DecompressionError => &[
+                "Verify compression type detection (ZLIB, LZ4, etc.)",
+                "Check decompression library usage",
+                "Validate compressed data size and format",
             ],
         }
     }

@@ -7,6 +7,41 @@ use super::ValidationError;
 use image::{DynamicImage, GenericImageView, Rgba, RgbaImage};
 use std::path::Path;
 
+/// Write a red/gray pixel diff image to `output_path`.
+///
+/// Pixels that match between `expected` and `actual` are rendered as grayscale;
+/// pixels that differ are rendered as solid red.  The two images must have the
+/// same dimensions.
+pub fn create_pixel_diff_image(
+    expected: &DynamicImage,
+    actual: &DynamicImage,
+    output_path: &Path,
+) -> Result<String, ValidationError> {
+    let (width, height) = expected.dimensions();
+    let mut diff_img = RgbaImage::new(width, height);
+
+    for y in 0..height {
+        for x in 0..width {
+            let pixel1 = expected.get_pixel(x, y);
+            let pixel2 = actual.get_pixel(x, y);
+
+            let diff_pixel = if pixel1 == pixel2 {
+                // Matching pixel - show in grayscale
+                let gray = (pixel1[0] as u16 + pixel1[1] as u16 + pixel1[2] as u16) / 3;
+                Rgba([gray as u8, gray as u8, gray as u8, 255])
+            } else {
+                // Different pixel - highlight in red
+                Rgba([255, 0, 0, 255])
+            };
+
+            diff_img.put_pixel(x, y, diff_pixel);
+        }
+    }
+
+    diff_img.save(output_path)?;
+    Ok(output_path.to_string_lossy().to_string())
+}
+
 /// Result of a visual comparison
 #[derive(Debug, Clone)]
 pub struct VisualComparisonResult {
@@ -222,27 +257,6 @@ impl VisualComparison {
     /// - Matching pixels are shown in grayscale
     /// - Different pixels are highlighted in red
     fn generate_diff_image(img1: &DynamicImage, img2: &DynamicImage) -> Result<String, ValidationError> {
-        let (width, height) = img1.dimensions();
-        let mut diff_img = RgbaImage::new(width, height);
-
-        for y in 0..height {
-            for x in 0..width {
-                let pixel1 = img1.get_pixel(x, y);
-                let pixel2 = img2.get_pixel(x, y);
-
-                let diff_pixel = if pixel1 == pixel2 {
-                    // Matching pixel - show in grayscale
-                    let gray = (pixel1[0] as u16 + pixel1[1] as u16 + pixel1[2] as u16) / 3;
-                    Rgba([gray as u8, gray as u8, gray as u8, 255])
-                } else {
-                    // Different pixel - highlight in red
-                    Rgba([255, 0, 0, 255])
-                };
-
-                diff_img.put_pixel(x, y, diff_pixel);
-            }
-        }
-
         // Save diff image
         let output_dir = std::env::temp_dir().join("casc_validation");
         std::fs::create_dir_all(&output_dir)?;
@@ -252,7 +266,7 @@ impl VisualComparison {
             chrono::Utc::now().format("%Y%m%d_%H%M%S")
         ));
 
-        diff_img.save(&diff_path)?;
+        create_pixel_diff_image(img1, img2, &diff_path)?;
         Ok(diff_path.to_string_lossy().to_string())
     }
 
