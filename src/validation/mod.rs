@@ -18,8 +18,8 @@ pub use unity_import::{UnityImportValidator, UnityImportResult, SpriteMetadata};
 pub use regression_suite::{RegressionTestSuite, KnownGoodExtraction};
 pub use pipeline::{
     ValidationPipeline, ValidationConfig, ExtractionValidationReport,
-    BatchValidationReport, ReferenceValidationResult, ByteComparisonResult as PipelineByteResult,
-    VisualComparisonResult as PipelineVisualResult, UnityImportResult as PipelineUnityResult,
+    BatchValidationReport, PipelineReferenceResult, PipelineByteResult,
+    PipelineVisualResult, PipelineUnityResult,
     RegressionTestResult,
 };
 pub use error_reporting::{

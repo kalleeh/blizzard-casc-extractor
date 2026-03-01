@@ -822,31 +822,130 @@ impl DirectSpriteExtractor {
     fn try_detect_and_convert_formats(&self, raw_data: &[u8], file_info: &crate::casc::FileInfo) -> Result<Option<Vec<u8>>, SpriteError> {
         self.try_detect_and_convert_formats_with_depth(raw_data, file_info, 0)
     }
-    
+
+    // --- per-format detection helpers ---
+
+    fn try_detect_dds(&self, data: &[u8], file_info: &crate::casc::FileInfo) -> Result<Option<Vec<u8>>, SpriteError> {
+        if data.len() >= 4 && &data[0..4] == b"DDS " {
+            log::info!("✅ DETECTED DDS texture format in {}", file_info.name);
+            return Ok(Some(self.convert_dds_to_png(data, file_info)?));
+        }
+        Ok(None)
+    }
+
+    fn try_detect_anim(&self, data: &[u8], file_info: &crate::casc::FileInfo) -> Result<Option<Vec<u8>>, SpriteError> {
+        if data.len() >= 16 {
+            let magic = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+            if magic == 0x4D494E41 {
+                log::info!("✅ DETECTED ANIM format in {}", file_info.name);
+                return Ok(Some(self.convert_anim_to_png(data, file_info)?));
+            }
+            let magic_be = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
+            if magic_be == 0x4D494E41 {
+                log::info!("✅ DETECTED ANIM format (big-endian) in {}", file_info.name);
+                return Ok(Some(self.convert_anim_to_png(data, file_info)?));
+            }
+        }
+        Ok(None)
+    }
+
+    fn try_detect_scr_texture(&self, data: &[u8], file_info: &crate::casc::FileInfo) -> Result<Option<Vec<u8>>, SpriteError> {
+        if data.len() >= 128 && self.looks_like_scr_texture(data) {
+            log::info!("✅ DETECTED StarCraft: Remastered texture format in {}", file_info.name);
+            return Ok(Some(self.convert_scr_texture_to_png(data, file_info)?));
+        }
+        Ok(None)
+    }
+
+    fn try_detect_grp(&self, data: &[u8], file_info: &crate::casc::FileInfo) -> Result<Option<Vec<u8>>, SpriteError> {
+        if data.len() >= 6 {
+            let frame_count = u16::from_le_bytes([data[0], data[1]]);
+            let width = u16::from_le_bytes([data[2], data[3]]);
+            let height = u16::from_le_bytes([data[4], data[5]]);
+            log::debug!("Checking GRP format: frames={}, {}x{}", frame_count, width, height);
+            if frame_count > 0 && frame_count <= 2000
+                && width > 0 && width <= 4096
+                && height > 0 && height <= 4096
+            {
+                let offset_table_size = frame_count as usize * 4;
+                if data.len() >= 6 + offset_table_size {
+                    log::info!("✅ DETECTED GRP format: {}x{} pixels, {} frames in {}", width, height, frame_count, file_info.name);
+                    return Ok(Some(self.convert_grp_to_png(data, width, height, frame_count)?));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    fn try_detect_bmp(&self, data: &[u8], file_info: &crate::casc::FileInfo) -> Result<Option<Vec<u8>>, SpriteError> {
+        if data.len() >= 2 && &data[0..2] == b"BM" {
+            log::info!("✅ DETECTED BMP format in {}", file_info.name);
+            return Ok(Some(self.convert_bmp_to_png(data, file_info)?));
+        }
+        Ok(None)
+    }
+
+    fn try_detect_palette(&self, data: &[u8], file_info: &crate::casc::FileInfo) -> Result<Option<Vec<u8>>, SpriteError> {
+        if data.len() == 768 {
+            log::info!("✅ DETECTED palette data (768 bytes) in {}", file_info.name);
+            return Ok(Some(self.convert_palette_to_png(data, file_info)?));
+        }
+        Ok(None)
+    }
+
+    fn try_detect_raw_image(&self, data: &[u8], file_info: &crate::casc::FileInfo) -> Result<Option<Vec<u8>>, SpriteError> {
+        if data.len() >= 64 {
+            if let Some(result) = self.try_interpret_as_raw_image_data(data, file_info)? {
+                log::info!("✅ INTERPRETED as raw image data in {}", file_info.name);
+                return Ok(Some(result));
+            }
+        }
+        Ok(None)
+    }
+
+    fn try_detect_encrypted(&self, data: &[u8], file_info: &crate::casc::FileInfo, entropy_ratio: f64, depth: u32) -> Result<Option<Vec<u8>>, SpriteError> {
+        if data.len() >= 64 && entropy_ratio > 0.90 {
+            log::info!("🔍 DETECTED high entropy data ({:.3}) - attempting decryption for StarCraft: Remastered", entropy_ratio);
+            if let Ok(result) = self.try_decompress_and_convert_with_depth(data, file_info, depth) {
+                log::info!("✅ Successfully decrypted and processed data in {}", file_info.name);
+                return Ok(Some(result));
+            } else {
+                log::warn!("❌ Decryption failed for high entropy data in {}", file_info.name);
+            }
+        }
+        Ok(None)
+    }
+
+    fn try_detect_blte(&self, data: &[u8], file_info: &crate::casc::FileInfo, depth: u32) -> Result<Option<Vec<u8>>, SpriteError> {
+        if data.len() >= 4 && &data[0..4] == b"BLTE" {
+            log::info!("✅ DETECTED actual BLTE signature in {}", file_info.name);
+            return Ok(Some(self.try_decompress_and_convert_with_depth(data, file_info, depth)?));
+        }
+        Ok(None)
+    }
+
     /// Try to detect and convert various StarCraft formats with recursion depth tracking
     fn try_detect_and_convert_formats_with_depth(&self, raw_data: &[u8], file_info: &crate::casc::FileInfo, depth: u32) -> Result<Option<Vec<u8>>, SpriteError> {
         if raw_data.is_empty() {
             return Ok(None);
         }
-        
+
         // CRITICAL FIX: Prevent infinite recursion by limiting depth
         const MAX_RECURSION_DEPTH: u32 = 3;
         if depth >= MAX_RECURSION_DEPTH {
-            log::warn!("❌ Maximum recursion depth ({}) reached for {}, stopping to prevent stack overflow", 
+            log::warn!("❌ Maximum recursion depth ({}) reached for {}, stopping to prevent stack overflow",
                       MAX_RECURSION_DEPTH, file_info.name);
             return Ok(None);
         }
-        
+
         log::info!("🔍 ANALYZING REAL STARCRAFT DATA: {} bytes in {}", raw_data.len(), file_info.name);
-        
-        // Log first 64 bytes for debugging real StarCraft data
+
         if raw_data.len() >= 64 {
             log::info!("First 64 bytes: {:02x?}", &raw_data[0..64]);
         } else if raw_data.len() >= 32 {
             log::info!("First {} bytes: {:02x?}", raw_data.len(), &raw_data[0..raw_data.len()]);
         }
-        
-        // Log file entropy and characteristics
+
         let mut byte_counts = [0u32; 256];
         let sample_size = raw_data.len().min(1024);
         for &byte in &raw_data[0..sample_size] {
@@ -854,109 +953,27 @@ impl DirectSpriteExtractor {
         }
         let unique_bytes = byte_counts.iter().filter(|&&count| count > 0).count();
         let entropy_ratio = unique_bytes as f64 / 256.0;
-        log::info!("Data characteristics: {} unique bytes out of {} sampled, entropy: {:.3}", 
+        log::info!("Data characteristics: {} unique bytes out of {} sampled, entropy: {:.3}",
                   unique_bytes, sample_size, entropy_ratio);
-        
-        // 1. Check for DDS format (common in StarCraft: Remastered)
-        if raw_data.len() >= 4 && &raw_data[0..4] == b"DDS " {
-            log::info!("✅ DETECTED DDS texture format in {}", file_info.name);
-            return Ok(Some(self.convert_dds_to_png(raw_data, file_info)?));
-        }
-        
-        // 2. Check for ANIM format (StarCraft: Remastered sprite format) - HIGHEST PRIORITY
-        if raw_data.len() >= 16 {
-            let magic = u32::from_le_bytes([raw_data[0], raw_data[1], raw_data[2], raw_data[3]]);
-            if magic == 0x4D494E41 { // "ANIM" magic number
-                log::info!("✅ DETECTED ANIM format in {}", file_info.name);
-                return Ok(Some(self.convert_anim_to_png(raw_data, file_info)?));
-            }
-            
-            // Also check for ANIM in big-endian
-            let magic_be = u32::from_be_bytes([raw_data[0], raw_data[1], raw_data[2], raw_data[3]]);
-            if magic_be == 0x4D494E41 {
-                log::info!("✅ DETECTED ANIM format (big-endian) in {}", file_info.name);
-                return Ok(Some(self.convert_anim_to_png(raw_data, file_info)?));
-            }
-        }
-        
-        // 3. Check for StarCraft: Remastered texture formats (common patterns)
-        if raw_data.len() >= 128 {
-            // Check for texture header patterns common in SC:R
-            if self.looks_like_scr_texture(raw_data) {
-                log::info!("✅ DETECTED StarCraft: Remastered texture format in {}", file_info.name);
-                return Ok(Some(self.convert_scr_texture_to_png(raw_data, file_info)?));
-            }
-        }
-        
-        // 4. Check for GRP format (original StarCraft sprite format) - FIXED FOR REAL DATA
-        if raw_data.len() >= 6 {
-            let frame_count = u16::from_le_bytes([raw_data[0], raw_data[1]]);
-            let width = u16::from_le_bytes([raw_data[2], raw_data[3]]);
-            let height = u16::from_le_bytes([raw_data[4], raw_data[5]]);
-            
-            log::debug!("Checking GRP format: frames={}, {}x{}", frame_count, width, height);
-            
-            // Very lenient bounds check - StarCraft sprites can be large
-            if frame_count > 0 && frame_count <= 2000 && 
-               width > 0 && width <= 4096 && 
-               height > 0 && height <= 4096 {
-                // Additional validation: check if we have enough data for the offset table
-                let offset_table_size = frame_count as usize * 4;
-                if raw_data.len() >= 6 + offset_table_size {
-                    log::info!("✅ DETECTED GRP format: {}x{} pixels, {} frames in {}", width, height, frame_count, file_info.name);
-                    return Ok(Some(self.convert_grp_to_png(raw_data, width, height, frame_count)?));
-                }
-            }
-        }
-        
-        // 5. Check for BMP format
-        if raw_data.len() >= 2 && &raw_data[0..2] == b"BM" {
-            log::info!("✅ DETECTED BMP format in {}", file_info.name);
-            return Ok(Some(self.convert_bmp_to_png(raw_data, file_info)?));
-        }
-        
-        // 6. Check for palette data (256 colors * 3 bytes RGB = 768 bytes)
-        if raw_data.len() == 768 {
-            log::info!("✅ DETECTED palette data (768 bytes) in {}", file_info.name);
-            return Ok(Some(self.convert_palette_to_png(raw_data, file_info)?));
-        }
-        
-        // 7. Check for raw image data patterns (common in StarCraft: Remastered)
-        if raw_data.len() >= 64 {
-            if let Some(result) = self.try_interpret_as_raw_image_data(raw_data, file_info)? {
-                log::info!("✅ INTERPRETED as raw image data in {}", file_info.name);
-                return Ok(Some(result));
-            }
-        }
-        
-        // 8. Check for encrypted/compressed data (StarCraft: Remastered uses encryption)
-        // High entropy indicates encryption - try BLTE decompression
-        if raw_data.len() >= 64 && entropy_ratio > 0.90 {
-            log::info!("🔍 DETECTED high entropy data ({:.3}) - attempting decryption for StarCraft: Remastered", entropy_ratio);
-            if let Ok(result) = self.try_decompress_and_convert_with_depth(raw_data, file_info, depth) {
-                log::info!("✅ Successfully decrypted and processed data in {}", file_info.name);
-                return Ok(Some(result));
-            } else {
-                log::warn!("❌ Decryption failed for high entropy data in {}", file_info.name);
-            }
-        }
-        
-        // 9. Check for actual BLTE signature
-        if raw_data.len() >= 4 && &raw_data[0..4] == b"BLTE" {
-            log::info!("✅ DETECTED actual BLTE signature in {}", file_info.name);
-            return Ok(Some(self.try_decompress_and_convert_with_depth(raw_data, file_info, depth)?));
-        }
-        
-        // CRITICAL FIX: If entropy is very high but no compression signatures, 
-        // it's likely encrypted or a format we don't recognize yet
+
+        if let Some(result) = self.try_detect_dds(raw_data, file_info)? { return Ok(Some(result)); }
+        if let Some(result) = self.try_detect_anim(raw_data, file_info)? { return Ok(Some(result)); }
+        if let Some(result) = self.try_detect_scr_texture(raw_data, file_info)? { return Ok(Some(result)); }
+        if let Some(result) = self.try_detect_grp(raw_data, file_info)? { return Ok(Some(result)); }
+        if let Some(result) = self.try_detect_bmp(raw_data, file_info)? { return Ok(Some(result)); }
+        if let Some(result) = self.try_detect_palette(raw_data, file_info)? { return Ok(Some(result)); }
+        if let Some(result) = self.try_detect_raw_image(raw_data, file_info)? { return Ok(Some(result)); }
+        if let Some(result) = self.try_detect_encrypted(raw_data, file_info, entropy_ratio, depth)? { return Ok(Some(result)); }
+        if let Some(result) = self.try_detect_blte(raw_data, file_info, depth)? { return Ok(Some(result)); }
+
         if entropy_ratio > 0.95 {
-            log::warn!("❌ HIGH ENTROPY DATA ({:.3}) with no recognized format in {} - likely encrypted or unknown format", 
+            log::warn!("❌ HIGH ENTROPY DATA ({:.3}) with no recognized format in {} - likely encrypted or unknown format",
                       entropy_ratio, file_info.name);
         } else {
-            log::warn!("❌ NO FORMAT DETECTED for {} ({} bytes, entropy: {:.3}) - format not supported", 
+            log::warn!("❌ NO FORMAT DETECTED for {} ({} bytes, entropy: {:.3}) - format not supported",
                       file_info.name, raw_data.len(), entropy_ratio);
         }
-        
+
         Ok(None)
     }
     
@@ -977,181 +994,135 @@ impl DirectSpriteExtractor {
         self.create_png_from_pixels(&pixel_data, width, height, false)
     }
     
+    /// Attempt ZLIB decompression; returns Some(data) on success, None on failure.
+    /// Tries unconditionally first, then checks for an explicit ZLIB header as a fallback.
+    fn try_zlib_decompress(&self, data: &[u8]) -> Option<Vec<u8>> {
+        use std::io::Read;
+        use flate2::read::ZlibDecoder;
+
+        let mut decoder = ZlibDecoder::new(data);
+        let mut decompressed = Vec::new();
+        if decoder.read_to_end(&mut decompressed).is_ok() && !decompressed.is_empty() {
+            return Some(decompressed);
+        }
+
+        // Also try when an explicit ZLIB header is present
+        if data.len() >= 2
+            && data[0] == 0x78
+            && (data[1] == 0x01 || data[1] == 0x9C || data[1] == 0xDA)
+        {
+            let mut decoder2 = ZlibDecoder::new(data);
+            let mut decompressed2 = Vec::new();
+            if decoder2.read_to_end(&mut decompressed2).is_ok() && !decompressed2.is_empty() {
+                return Some(decompressed2);
+            }
+        }
+
+        None
+    }
+
+    /// Attempt BLTE decompression; returns Some(data) on success, None on failure.
+    fn try_blte_decompress(&self, data: &[u8]) -> Option<Vec<u8>> {
+        if !Self::looks_like_blte_data(data) {
+            return None;
+        }
+        match Self::decompress_blte_data(data) {
+            Ok(decompressed) => Some(decompressed),
+            Err(_) => None,
+        }
+    }
+
+    /// Attempt LZ4 decompression; returns Some(data) on success, None on failure.
+    fn try_lz4_decompress(&self, data: &[u8]) -> Option<Vec<u8>> {
+        if data.len() < 4 {
+            return None;
+        }
+        self.try_lz4_decompression(data).ok()
+    }
+
     /// Try to decompress and convert compressed data with recursion depth tracking
     fn try_decompress_and_convert_with_depth(&self, compressed_data: &[u8], file_info: &FileInfo, depth: u32) -> Result<Vec<u8>, SpriteError> {
         log::info!("🔧 ATTEMPTING DECOMPRESSION for {} ({} bytes) at depth {}", file_info.name, compressed_data.len(), depth);
-        
+
         // CRITICAL FIX: Prevent infinite recursion by limiting depth
         const MAX_RECURSION_DEPTH: u32 = 3;
         if depth >= MAX_RECURSION_DEPTH {
-            log::warn!("❌ Maximum recursion depth ({}) reached for decompression of {}, stopping to prevent stack overflow", 
+            log::warn!("❌ Maximum recursion depth ({}) reached for decompression of {}, stopping to prevent stack overflow",
                       MAX_RECURSION_DEPTH, file_info.name);
             return Err(SpriteError::DecodeError(format!("Maximum recursion depth reached for {}", file_info.name)));
         }
-        
+
+        if compressed_data.len() < 32 {
+            log::warn!("Compressed data too short ({} bytes) for {}, skipping decompression", compressed_data.len(), file_info.name);
+            return Err(SpriteError::DecodeError(format!("Compressed data too short: {} bytes", compressed_data.len())));
+        }
+
         // Log first 32 bytes to understand the compression format
-        if compressed_data.len() >= 32 {
-            log::info!("Compressed data header: {:02x?}", &compressed_data[0..32]);
+        log::info!("Compressed data header: {:02x?}", &compressed_data[0..32]);
+
+        // 1. Try ZLIB decompression (primary method)
+        log::info!("🔧 Attempting ZLIB decompression (primary method)");
+        if let Some(decompressed) = self.try_zlib_decompress(compressed_data) {
+            let decompressed_analysis = crate::casc::FileAnalysis::analyze(&decompressed);
+            log::info!("✅ ZLIB: {} -> {} bytes, entropy: {:.3}", compressed_data.len(), decompressed.len(), decompressed_analysis.entropy);
+            return match self.try_detect_and_convert_formats_with_depth(&decompressed, file_info, depth + 1)? {
+                Some(result) => Ok(result),
+                None => {
+                    log::warn!("Decompressed ZLIB data but couldn't identify format in {}", file_info.name);
+                    self.create_decompressed_data_visualization(&decompressed, file_info)
+                }
+            };
+        } else {
+            log::debug!("ZLIB decompression failed for {}, trying other methods", file_info.name);
         }
-        
-        // ENHANCED: Try ZLIB decompression FIRST on all decrypted data
-        // This is the missing step that was causing format recognition failures
-        log::info!("🔧 Attempting ZLIB decompression on decrypted data (primary method)");
-        match self.try_zlib_decompression(compressed_data) {
-            Ok(decompressed_data) => {
-                let decompressed_len = decompressed_data.len();
-                log::info!("✅ Successfully decompressed with ZLIB: {} -> {} bytes", 
-                          compressed_data.len(), decompressed_len);
-                
-                // Log first 32 bytes of decompressed data
-                if decompressed_data.len() >= 32 {
-                    log::info!("Decompressed data header: {:02x?}", &decompressed_data[0..32]);
+
+        // 2. Try BLTE decompression
+        if let Some(decompressed) = self.try_blte_decompress(compressed_data) {
+            log::info!("✅ BLTE: {} -> {} bytes", compressed_data.len(), decompressed.len());
+            return match self.try_detect_and_convert_formats_with_depth(&decompressed, file_info, depth + 1)? {
+                Some(result) => Ok(result),
+                None => {
+                    log::warn!("Decompressed BLTE data but couldn't identify format in {}", file_info.name);
+                    self.create_decompressed_data_visualization(&decompressed, file_info)
                 }
-                
-                // Calculate entropy of decompressed data
-                let decompressed_analysis = crate::casc::FileAnalysis::analyze(&decompressed_data);
-                log::info!("Decompressed data entropy: {:.3}", decompressed_analysis.entropy);
-                
-                // Now try to detect the format of the decompressed data
-                return match self.try_detect_and_convert_formats_with_depth(&decompressed_data, file_info, depth + 1)? {
-                    Some(result) => Ok(result),
-                    None => {
-                        log::warn!("Decompressed ZLIB data but couldn't identify format in {}", file_info.name);
-                        // Create a visualization of the decompressed data
-                        self.create_decompressed_data_visualization(&decompressed_data, file_info)
-                    }
-                };
-            }
-            Err(e) => {
-                log::debug!("ZLIB decompression failed for {}: {}, trying other methods", file_info.name, e);
-            }
+            };
+        } else {
+            log::debug!("BLTE decompression failed for {}", file_info.name);
         }
-        
-        // First, try BLTE decompression if it looks like BLTE data
-        if Self::looks_like_blte_data(compressed_data) {
-            log::info!("🔍 Detected BLTE compressed data in {}", file_info.name);
-            
-            match Self::decompress_blte_data(compressed_data) {
-                Ok(decompressed_data) => {
-                    let decompressed_len = decompressed_data.len();
-                    log::info!("✅ Successfully decompressed BLTE data: {} -> {} bytes", 
-                              compressed_data.len(), decompressed_len);
-                    
-                    // Log first 32 bytes of decompressed data
-                    if decompressed_data.len() >= 32 {
-                        log::info!("Decompressed data header: {:02x?}", &decompressed_data[0..32]);
-                    }
-                    
-                    // Now try to detect the format of the decompressed data
-                    return match self.try_detect_and_convert_formats_with_depth(&decompressed_data, file_info, depth + 1)? {
-                        Some(result) => Ok(result),
-                        None => {
-                            log::warn!("Decompressed BLTE data but couldn't identify format in {}", file_info.name);
-                            // Create a visualization of the decompressed data
-                            self.create_decompressed_data_visualization(&decompressed_data, file_info)
-                        }
-                    };
+
+        // 3. Try LZ4 decompression
+        if let Some(decompressed) = self.try_lz4_decompress(compressed_data) {
+            log::info!("✅ LZ4: {} -> {} bytes", compressed_data.len(), decompressed.len());
+            return match self.try_detect_and_convert_formats_with_depth(&decompressed, file_info, depth + 1)? {
+                Some(result) => Ok(result),
+                None => {
+                    log::warn!("Decompressed LZ4 data but couldn't identify format in {}", file_info.name);
+                    self.create_decompressed_data_visualization(&decompressed, file_info)
                 }
-                Err(e) => {
-                    log::warn!("BLTE decompression failed for {}: {}", file_info.name, e);
-                    // Fall through to other decompression methods
-                }
-            }
+            };
+        } else {
+            log::debug!("LZ4 decompression failed for {}", file_info.name);
         }
-        
-        // Try raw ZLIB decompression (StarCraft: Remastered might use raw ZLIB)
-        if compressed_data.len() >= 2 {
-            // Check for ZLIB header patterns
-            if compressed_data[0] == 0x78 && (compressed_data[1] == 0x01 || compressed_data[1] == 0x9C || compressed_data[1] == 0xDA) {
-                log::info!("🔍 Detected raw ZLIB header in {}", file_info.name);
-                
-                match self.try_zlib_decompression(compressed_data) {
-                    Ok(decompressed_data) => {
-                        log::info!("✅ Successfully decompressed raw ZLIB data: {} -> {} bytes", 
-                                  compressed_data.len(), decompressed_data.len());
-                        
-                        // Log first 32 bytes of decompressed data
-                        if decompressed_data.len() >= 32 {
-                            log::info!("Decompressed ZLIB header: {:02x?}", &decompressed_data[0..32]);
-                        }
-                        
-                        // Try to detect format of decompressed data
-                        return match self.try_detect_and_convert_formats_with_depth(&decompressed_data, file_info, depth + 1)? {
-                            Some(result) => Ok(result),
-                            None => {
-                                log::warn!("Decompressed ZLIB data but couldn't identify format in {}", file_info.name);
-                                self.create_decompressed_data_visualization(&decompressed_data, file_info)
-                            }
-                        };
-                    }
-                    Err(e) => {
-                        log::warn!("Raw ZLIB decompression failed for {}: {}", file_info.name, e);
-                    }
-                }
-            }
-        }
-        
-        // Try LZ4 decompression (another common format in game archives)
-        if compressed_data.len() >= 4 {
-            match self.try_lz4_decompression(compressed_data) {
-                Ok(decompressed_data) => {
-                    let decompressed_len = decompressed_data.len();
-                    log::info!("✅ Successfully decompressed LZ4 data: {} -> {} bytes", 
-                              compressed_data.len(), decompressed_len);
-                    
-                    // Log first 32 bytes of decompressed data
-                    if decompressed_data.len() >= 32 {
-                        log::info!("Decompressed LZ4 header: {:02x?}", &decompressed_data[0..32]);
-                    }
-                    
-                    // Try to detect format of decompressed data
-                    return match self.try_detect_and_convert_formats_with_depth(&decompressed_data, file_info, depth + 1)? {
-                        Some(result) => Ok(result),
-                        None => {
-                            log::warn!("Decompressed LZ4 data but couldn't identify format in {}", file_info.name);
-                            self.create_decompressed_data_visualization(&decompressed_data, file_info)
-                        }
-                    };
-                }
-                Err(e) => {
-                    log::debug!("LZ4 decompression failed for {}: {}", file_info.name, e);
-                }
-            }
-        }
-        
-        // Try treating the data as encrypted and attempt simple XOR decryption
-        // CRITICAL FIX: Try decryption FIRST for high entropy data
+
+        // 4. Try XOR decryption
         if compressed_data.len() >= 16 {
             if let Some(decrypted_data) = self.try_simple_decryption(compressed_data, file_info) {
-                let decrypted_len = decrypted_data.len();
-                log::info!("✅ Successfully decrypted data: {} bytes", decrypted_len);
-                
-                // Log first 32 bytes of decrypted data
-                if decrypted_data.len() >= 32 {
-                    log::info!("Decrypted data header: {:02x?}", &decrypted_data[0..32]);
-                }
-                
-                // CRITICAL: After decryption, try decompression if the data still looks compressed
+                log::info!("✅ Successfully decrypted data: {} bytes", decrypted_data.len());
+
                 if Self::looks_like_compressed_starcraft_data(&decrypted_data) {
-                    log::info!("🔧 Decrypted data still looks compressed, attempting decompression");
-                    
-                    // Try ZLIB decompression on decrypted data
-                    if let Ok(decompressed_data) = self.try_zlib_decompression(&decrypted_data) {
-                        log::info!("✅ Successfully decompressed decrypted data: {} -> {} bytes", 
-                                  decrypted_data.len(), decompressed_data.len());
-                        
-                        // Try to detect format of decompressed data
-                        return match self.try_detect_and_convert_formats_with_depth(&decompressed_data, file_info, depth + 1)? {
+                    log::info!("🔧 Decrypted data still looks compressed, attempting ZLIB decompression");
+                    if let Some(decompressed) = self.try_zlib_decompress(&decrypted_data) {
+                        log::info!("✅ ZLIB on decrypted: {} -> {} bytes", decrypted_data.len(), decompressed.len());
+                        return match self.try_detect_and_convert_formats_with_depth(&decompressed, file_info, depth + 1)? {
                             Some(result) => Ok(result),
                             None => {
                                 log::warn!("Decompressed decrypted data but couldn't identify format in {}", file_info.name);
-                                self.create_decompressed_data_visualization(&decompressed_data, file_info)
+                                self.create_decompressed_data_visualization(&decompressed, file_info)
                             }
                         };
                     }
                 }
-                
-                // Try to detect format of decrypted data (even if not compressed)
+
                 return match self.try_detect_and_convert_formats_with_depth(&decrypted_data, file_info, depth + 1)? {
                     Some(result) => Ok(result),
                     None => {
@@ -1161,26 +1132,12 @@ impl DirectSpriteExtractor {
                 };
             }
         }
-        
-        // If all decompression/decryption attempts failed, create a diagnostic visualization
+
+        // All decompression/decryption attempts failed
         log::warn!("❌ All decompression attempts failed for {}, creating diagnostic visualization", file_info.name);
         Ok(self.create_compressed_data_visualization(compressed_data, file_info)?)
     }
-    
-    /// Try ZLIB decompression directly
-    fn try_zlib_decompression(&self, data: &[u8]) -> Result<Vec<u8>, SpriteError> {
-        use std::io::Read;
-        use flate2::read::ZlibDecoder;
-        
-        let mut decoder = ZlibDecoder::new(data);
-        let mut decompressed = Vec::new();
-        
-        decoder.read_to_end(&mut decompressed)
-            .map_err(|e| SpriteError::DecodeError(format!("ZLIB decompression failed: {}", e)))?;
-        
-        Ok(decompressed)
-    }
-    
+
     /// Create a visualization of decompressed data that couldn't be identified
     fn create_decompressed_data_visualization(&self, decompressed_data: &[u8], file_info: &FileInfo) -> Result<Vec<u8>, SpriteError> {
         log::debug!("Creating visualization for {} bytes of decompressed data from {}", 

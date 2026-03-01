@@ -952,7 +952,6 @@ impl AnimFile {
             match Self::parse_sprite(&mut cursor, data) {
                 Ok(sprite) => sprites.push(sprite),
                 Err(e) => {
-                    println!("Failed to parse sprite {}: {}", sprite_idx, e);
                     log::warn!("Failed to parse sprite {}: {}", sprite_idx, e);
                     // Continue processing other sprites rather than failing completely
                     continue;
@@ -1223,31 +1222,35 @@ impl AnimFile {
         entropy_ratio > 0.8
     }
     
+    /// Classify a parsed DDS file into a (TextureFormat, PixelFormat) pair.
+    /// Checks DXGI format first, then falls back to legacy D3D FourCC codes.
+    fn classify_dds_format(dds: &Dds) -> (TextureFormat, PixelFormat) {
+        match dds.get_dxgi_format() {
+            Some(DxgiFormat::BC1_UNorm) | Some(DxgiFormat::BC1_UNorm_sRGB) => {
+                (TextureFormat::DXT1, PixelFormat::RGBA32)
+            }
+            Some(DxgiFormat::BC3_UNorm) | Some(DxgiFormat::BC3_UNorm_sRGB) => {
+                (TextureFormat::DXT5, PixelFormat::RGBA32)
+            }
+            _ => {
+                // Check legacy fourcc codes
+                if let Some(fourcc) = dds.get_d3d_format() {
+                    match fourcc {
+                        ddsfile::D3DFormat::DXT1 => (TextureFormat::DXT1, PixelFormat::RGBA32),
+                        ddsfile::D3DFormat::DXT5 => (TextureFormat::DXT5, PixelFormat::RGBA32),
+                        _ => (TextureFormat::RGBA, PixelFormat::RGBA32),
+                    }
+                } else {
+                    (TextureFormat::RGBA, PixelFormat::RGBA32)
+                }
+            }
+        }
+    }
+
     /// Detect DDS format and return corresponding texture format and pixel format
     fn detect_dds_format(data: &[u8]) -> Result<(TextureFormat, PixelFormat), AnimError> {
         match Dds::read(&mut Cursor::new(data)) {
-            Ok(dds) => {
-                match dds.get_dxgi_format() {
-                    Some(DxgiFormat::BC1_UNorm) | Some(DxgiFormat::BC1_UNorm_sRGB) => {
-                        Ok((TextureFormat::DXT1, PixelFormat::RGBA32))
-                    }
-                    Some(DxgiFormat::BC3_UNorm) | Some(DxgiFormat::BC3_UNorm_sRGB) => {
-                        Ok((TextureFormat::DXT5, PixelFormat::RGBA32))
-                    }
-                    _ => {
-                        // Check legacy fourcc codes
-                        if let Some(fourcc) = dds.get_d3d_format() {
-                            match fourcc {
-                                ddsfile::D3DFormat::DXT1 => Ok((TextureFormat::DXT1, PixelFormat::RGBA32)),
-                                ddsfile::D3DFormat::DXT5 => Ok((TextureFormat::DXT5, PixelFormat::RGBA32)),
-                                _ => Ok((TextureFormat::RGBA, PixelFormat::RGBA32)),
-                            }
-                        } else {
-                            Ok((TextureFormat::RGBA, PixelFormat::RGBA32))
-                        }
-                    }
-                }
-            },
+            Ok(dds) => Ok(Self::classify_dds_format(&dds)),
             Err(_) => Ok((TextureFormat::RGBA, PixelFormat::RGBA32)),
         }
     }
@@ -1287,24 +1290,7 @@ impl AnimFile {
         if data.len() >= 4 && &data[0..4] == b"DDS " {
             // Parse DDS header to determine exact format
             match Dds::read(&mut Cursor::new(data)) {
-                Ok(dds) => {
-                    match dds.get_dxgi_format() {
-                        Some(DxgiFormat::BC1_UNorm) | Some(DxgiFormat::BC1_UNorm_sRGB) => Ok(TextureFormat::DXT1),
-                        Some(DxgiFormat::BC3_UNorm) | Some(DxgiFormat::BC3_UNorm_sRGB) => Ok(TextureFormat::DXT5),
-                        _ => {
-                            // Check legacy fourcc codes
-                            if let Some(fourcc) = dds.get_d3d_format() {
-                                match fourcc {
-                                    ddsfile::D3DFormat::DXT1 => Ok(TextureFormat::DXT1),
-                                    ddsfile::D3DFormat::DXT5 => Ok(TextureFormat::DXT5),
-                                    _ => Ok(TextureFormat::RGBA), // Default to RGBA for unknown formats
-                                }
-                            } else {
-                                Ok(TextureFormat::RGBA)
-                            }
-                        }
-                    }
-                },
+                Ok(dds) => Ok(Self::classify_dds_format(&dds).0),
                 Err(_) => Ok(TextureFormat::RGBA), // If DDS parsing fails, assume RGBA
             }
         } else {

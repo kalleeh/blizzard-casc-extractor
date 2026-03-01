@@ -71,22 +71,19 @@ fn generate_zlib_compressed_texture(width: u16, height: u16) -> Vec<u8> {
     encoder.finish().unwrap()
 }
 
-// Import ANIM types (we'll need to make these public or use a test module)
-// For now, we'll test through the public API
-
 /// **Property 1: ANIM parsing never panics**
-/// 
+///
 /// For any valid ANIM data with reasonable parameters, parsing should either
 /// succeed or fail gracefully with an error - it must never panic.
-/// 
+///
 /// **Validates: Requirements 17.6, 1.1**
 #[cfg(test)]
 mod anim_parsing_never_panics {
     use super::*;
-    
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
-        
+
         #[test]
         fn anim_parsing_never_panics_on_valid_input(
             sprite_count in 1u32..10,
@@ -104,19 +101,10 @@ mod anim_parsing_never_panics {
                 height,
                 compression_type,
             );
-            
-            // Parsing should never panic - either succeed or return error
-            // We can't directly test the AnimFile::parse since it's not public,
-            // but we can test through the format detection and conversion pipeline
-            
-            // For now, just verify the data is well-formed
-            assert!(anim_data.len() >= 32, "ANIM data should have at least header");
-            
-            // Check magic number
-            assert_eq!(&anim_data[0..4], &[0x41, 0x4E, 0x49, 0x4D], "Should have ANIM magic");
-            
-            // The actual parsing test will be done through integration tests
-            // since AnimFile::parse is not public
+
+            // AnimFile::parse is public. Call it and verify it never panics:
+            // it must return either Ok or Err, not panic.
+            let _ = casc_extractor::AnimFile::parse(&anim_data);
         }
     }
 }

@@ -35,8 +35,6 @@ pub enum BlteError {
 
 /// Enhanced BLTE decompressor with fallback chains and secure key management
 pub struct BlteDecompressor {
-    #[allow(dead_code)]
-    fallback_keys: Vec<Vec<u8>>,
     key_manager: KeyManager,
 }
 
@@ -181,19 +179,10 @@ impl BlteDecompressor {
     /// Create a new BLTE decompressor with fallback capabilities and secure key management
     pub fn new() -> Self {
         Self {
-            fallback_keys: Self::load_legacy_fallback_keys(),
             key_manager: KeyManager::new(),
         }
     }
-    
-    /// Load legacy fallback keys for backward compatibility
-    fn load_legacy_fallback_keys() -> Vec<Vec<u8>> {
-        vec![
-            // Legacy single-byte keys for compatibility
-            vec![0xFF], vec![0xAA], vec![0x55], vec![0xCC], vec![0x33],
-        ]
-    }
-    
+
     /// Main decompression method with comprehensive fallback chain and enhanced key management
     pub fn decompress(&mut self, data: &[u8]) -> Result<Vec<u8>, BlteError> {
         if data.is_empty() {
@@ -523,7 +512,6 @@ mod tests {
     #[test]
     fn test_blte_decompressor_creation() {
         let decompressor = BlteDecompressor::new();
-        assert!(!decompressor.fallback_keys.is_empty());
         assert!(!decompressor.key_manager.get_all_keys().is_empty());
     }
     

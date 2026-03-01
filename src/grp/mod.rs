@@ -149,7 +149,7 @@ impl GrpFile {
     fn parse_frame(frame_data: &[u8], width: u16, height: u16, frame_index: usize) -> Result<GrpFrame, GrpError> {
         let pixel_count = (width as usize) * (height as usize);
         let mut pixel_data = vec![0u8; pixel_count];
-        
+
         // GRP frames start with a line offset table
         // The first offset tells us where the line data starts
         // Number of lines = first_offset / 2
@@ -159,17 +159,17 @@ impl GrpFile {
                 actual: frame_data.len(),
             });
         }
-        
+
         let first_offset = u16::from_le_bytes([frame_data[0], frame_data[1]]) as usize;
         let line_count = first_offset / 2;
-        
+
         if line_count > height as usize {
-            log::warn!("Frame {}: Line count {} exceeds height {}, using height", 
+            log::warn!("Frame {}: Line count {} exceeds height {}, using height",
                       frame_index, line_count, height);
         }
-        
+
         let actual_line_count = line_count.min(height as usize);
-        
+
         // Parse line offset table
         let mut line_offsets = Vec::with_capacity(actual_line_count);
         for i in 0..actual_line_count {
@@ -180,17 +180,17 @@ impl GrpFile {
             let offset = u16::from_le_bytes([frame_data[offset_pos], frame_data[offset_pos + 1]]) as usize;
             line_offsets.push(offset);
         }
-        
+
         log::debug!("Frame {}: {} lines, first offset: {}", frame_index, line_offsets.len(), first_offset);
-        
-        // Decode each line (from bottom to top, right to left)
+
+        // Decode each line
         for (line_idx, &line_offset) in line_offsets.iter().enumerate() {
             if line_offset >= frame_data.len() {
-                log::warn!("Frame {}: Line {} offset {} exceeds frame data size {}", 
+                log::warn!("Frame {}: Line {} offset {} exceeds frame data size {}",
                           frame_index, line_idx, line_offset, frame_data.len());
                 continue;
             }
-            
+
             // Calculate line end (next line's offset or end of frame)
             let line_end = if line_idx + 1 < line_offsets.len() {
                 let next_offset = line_offsets[line_idx + 1];
@@ -202,78 +202,76 @@ impl GrpFile {
             } else {
                 frame_data.len()
             };
-            
+
             if line_end <= line_offset {
-                log::warn!("Frame {}: Line {} has invalid range {}..{}", 
+                log::warn!("Frame {}: Line {} has invalid range {}..{}",
                           frame_index, line_idx, line_offset, line_end);
                 continue;
             }
-            
+
             let line_data = &frame_data[line_offset..line_end];
-            
-            // Decode line from right to left
-            let line_y = line_idx; // Top to bottom (fixed from bottom-to-top)
-            let mut x = width as usize - 1; // Start from right
-            let mut data_pos = 0;
-            
-            while data_pos < line_data.len() && x > 0 {
-                let byte = line_data[data_pos];
-                data_pos += 1;
-                
-                if byte >= 0x80 {
-                    // Skip pixels (transparent)
-                    let skip = (byte - 0x80) as usize;
-                    if skip > x {
-                        break;
-                    }
-                    x -= skip;
-                } else if byte > 0x40 {
-                    // RLE: repeat next byte
-                    let count = (byte - 0x40) as usize;
-                    if data_pos >= line_data.len() {
-                        break;
-                    }
-                    let pixel_value = line_data[data_pos];
-                    data_pos += 1;
-                    
-                    for _ in 0..count {
-                        if x < width as usize {
-                            pixel_data[line_y * width as usize + x] = pixel_value;
-                        }
-                        if x == 0 {
-                            break;
-                        }
-                        x -= 1;
-                    }
-                } else {
-                    // Copy literal pixels
-                    let count = byte as usize;
-                    for _ in 0..count {
-                        if data_pos >= line_data.len() {
-                            break;
-                        }
-                        let pixel_value = line_data[data_pos];
-                        data_pos += 1;
-                        
-                        if x < width as usize {
-                            pixel_data[line_y * width as usize + x] = pixel_value;
-                        }
-                        if x == 0 {
-                            break;
-                        }
-                        x -= 1;
-                    }
-                }
-            }
+            let decoded = Self::decode_rle_line(line_data, width)?;
+            let row_start = line_idx * width as usize;
+            pixel_data[row_start..row_start + width as usize].copy_from_slice(&decoded);
         }
-        
+
         log::debug!("Successfully parsed frame {}", frame_index);
-        
+
         Ok(GrpFrame {
             pixel_data,
             width,
             height,
         })
+    }
+
+    /// Decode a single RLE-encoded line into a flat pixel buffer of `width` bytes.
+    ///
+    /// RLE codes:
+    ///   byte >= 0x80  — skip (byte - 0x80) transparent pixels
+    ///   byte >  0x40  — repeat the next byte (byte - 0x40) times
+    ///   otherwise     — copy the next `byte` literal bytes
+    fn decode_rle_line(line_data: &[u8], width: u16) -> Result<Vec<u8>, GrpError> {
+        let w = width as usize;
+        let mut pixels = vec![0u8; w];
+        let mut col = 0usize;
+        let mut pos = 0usize;
+
+        while pos < line_data.len() && col < w {
+            let byte = line_data[pos];
+            pos += 1;
+
+            if byte >= 0x80 {
+                // Skip (transparent) pixels — advance col, leave zeros in place
+                let skip = (byte - 0x80) as usize;
+                col = col.saturating_add(skip).min(w);
+            } else if byte > 0x40 {
+                // RLE repeat: fill `count` pixels with the next byte value
+                let count = (byte - 0x40) as usize;
+                if pos >= line_data.len() {
+                    break;
+                }
+                let pixel = line_data[pos];
+                pos += 1;
+                let end = col.saturating_add(count).min(w);
+                for p in pixels[col..end].iter_mut() {
+                    *p = pixel;
+                }
+                col = end;
+            } else {
+                // Literal copy: read `count` pixel values directly
+                let count = byte as usize;
+                for _ in 0..count {
+                    if pos >= line_data.len() || col >= w {
+                        break;
+                    }
+                    pixels[col] = line_data[pos];
+                    pos += 1;
+                    col += 1;
+                }
+            }
+        }
+
+        Ok(pixels)
     }
     
     /// Get a specific frame by index
@@ -377,101 +375,63 @@ impl GrpFile {
 }
 
 impl GrpFrame {
-    /// Convert indexed pixel data to RGBA using StarCraft palette
-    pub fn to_rgba_with_palette(&self, palette: &AnimPalette) -> Result<Vec<u8>, GrpError> {
-        // Validate palette
-        palette.validate().map_err(|e| GrpError::RleDecodingFailed(format!("Palette validation failed: {}", e)))?;
-        
+    /// Shared pixel-to-RGBA conversion logic used by all public to_rgba variants.
+    ///
+    /// `palette`           — palette to look up colors from; when `None`, uses
+    ///                       `crate::palette::starcraft_palette()`.
+    /// `transparent_index` — palette index that should always be rendered fully
+    ///                       transparent (alpha 0); `None` means no forced
+    ///                       transparency.
+    fn to_rgba_internal(&self, palette: Option<&AnimPalette>, transparent_index: Option<u8>) -> Result<Vec<u8>, GrpError> {
         let pixel_count = (self.width as usize) * (self.height as usize);
         let mut rgba_pixels = Vec::with_capacity(pixel_count * 4);
-        
-        for &index in &self.pixel_data {
-            let color = palette.get_color(index);
-            rgba_pixels.extend_from_slice(&color);
+
+        match palette {
+            Some(pal) => {
+                pal.validate().map_err(|e| GrpError::RleDecodingFailed(format!("Palette validation failed: {}", e)))?;
+                for &index in &self.pixel_data {
+                    let mut color = pal.get_color(index);
+                    if transparent_index == Some(index) {
+                        color[3] = 0;
+                    }
+                    rgba_pixels.extend_from_slice(&color);
+                }
+            }
+            None => {
+                let static_pal = crate::palette::starcraft_palette();
+                for &index in &self.pixel_data {
+                    let mut color = static_pal[index as usize];
+                    if transparent_index == Some(index) {
+                        color[3] = 0;
+                    }
+                    rgba_pixels.extend_from_slice(&color);
+                }
+            }
         }
-        
+
         Ok(rgba_pixels)
     }
-    
+
+    /// Convert indexed pixel data to RGBA using StarCraft palette
+    pub fn to_rgba_with_palette(&self, palette: &AnimPalette) -> Result<Vec<u8>, GrpError> {
+        self.to_rgba_internal(Some(palette), None)
+    }
+
     /// Convert indexed pixel data to RGBA using default StarCraft unit palette
     pub fn to_rgba(&self) -> Result<Vec<u8>, GrpError> {
-        let palette = crate::palette::starcraft_palette();
-        let mut rgba = Vec::with_capacity(self.pixel_data.len() * 4);
-        
-        for &index in &self.pixel_data {
-            let color = palette[index as usize];
-            rgba.extend_from_slice(&color);
-        }
-        
-        Ok(rgba)
+        self.to_rgba_internal(None, None)
     }
-    
+
     /// Convert indexed pixel data to RGBA with transparency preservation
     /// Index 0 is always treated as transparent
     pub fn to_rgba_with_transparency(&self, palette: &AnimPalette) -> Result<Vec<u8>, GrpError> {
-        // Validate palette
-        palette.validate().map_err(|e| GrpError::RleDecodingFailed(format!("Palette validation failed: {}", e)))?;
-        
-        let pixel_count = (self.width as usize) * (self.height as usize);
-        let mut rgba_pixels = Vec::with_capacity(pixel_count * 4);
-        
-        for &index in &self.pixel_data {
-            let mut color = palette.get_color(index);
-            
-            // Ensure index 0 is always transparent (StarCraft convention)
-            if index == 0 {
-                color[3] = 0; // Set alpha to 0 for transparency
-            }
-            
-            rgba_pixels.extend_from_slice(&color);
-        }
-        
-        Ok(rgba_pixels)
+        self.to_rgba_internal(Some(palette), Some(0))
     }
-    
+
     /// High-performance batch conversion for large sprites
     /// Optimized for sprites larger than 64x64 pixels
     pub fn to_rgba_optimized(&self, palette: &AnimPalette) -> Result<Vec<u8>, GrpError> {
-        // Validate palette
-        palette.validate().map_err(|e| GrpError::RleDecodingFailed(format!("Palette validation failed: {}", e)))?;
-        
-        let pixel_count = (self.width as usize) * (self.height as usize);
-        let mut rgba_pixels = Vec::with_capacity(pixel_count * 4);
-        
-        // For large sprites, use unsafe operations for better performance
-        if pixel_count > 4096 { // 64x64 threshold
-            unsafe {
-                rgba_pixels.set_len(pixel_count * 4);
-                
-                for (i, &index) in self.pixel_data.iter().enumerate() {
-                    let mut color = palette.get_color(index);
-                    
-                    // Ensure index 0 is always transparent
-                    if index == 0 {
-                        color[3] = 0;
-                    }
-                    
-                    let rgba_offset = i * 4;
-                    *rgba_pixels.get_unchecked_mut(rgba_offset) = color[0];
-                    *rgba_pixels.get_unchecked_mut(rgba_offset + 1) = color[1];
-                    *rgba_pixels.get_unchecked_mut(rgba_offset + 2) = color[2];
-                    *rgba_pixels.get_unchecked_mut(rgba_offset + 3) = color[3];
-                }
-            }
-        } else {
-            // Use safe operations for smaller sprites
-            for &index in &self.pixel_data {
-                let mut color = palette.get_color(index);
-                
-                if index == 0 {
-                    color[3] = 0;
-                }
-                
-                rgba_pixels.extend_from_slice(&color);
-            }
-        }
-        
-        Ok(rgba_pixels)
+        self.to_rgba_internal(Some(palette), Some(0))
     }
 }
 

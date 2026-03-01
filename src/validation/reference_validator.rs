@@ -6,7 +6,7 @@
 // - libgrp: For GRP format validation
 // - GrpEditor: For visual validation
 
-use super::{ValidationError, ValidationResult};
+use super::{ValidationError, ValidationResult, ByteComparison};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use log::{debug, info, warn};
@@ -90,10 +90,10 @@ impl ReferenceValidator {
         };
 
         // Step 2: Byte-level comparison
-        match self.compare_bytes(our_output, &reference_output) {
-            Ok(byte_match) => {
-                result.byte_match = byte_match;
-                if !byte_match {
+        match ByteComparison::compare_files(our_output, &reference_output, false) {
+            Ok(cmp) => {
+                result.byte_match = cmp.matches;
+                if !cmp.matches {
                     result.overall_pass = false;
                     result.add_diagnostic("Byte-level mismatch detected".to_string());
                 }
@@ -152,15 +152,11 @@ impl ReferenceValidator {
             }
         }
 
-        // Try format-specific tools
-        match format.to_uppercase().as_str() {
-            "GRP" => self.extract_with_libgrp(source_file),
-            "ANIM" => self.extract_with_casc_explorer(source_file),
-            _ => Err(ValidationError::ReferenceToolNotFound {
-                tool: format.to_string(),
-                path: PathBuf::new(),
-            }),
-        }
+        // Format-specific tools not yet integrated
+        Err(ValidationError::ReferenceToolNotFound {
+            tool: format.to_string(),
+            path: PathBuf::new(),
+        })
     }
 
     /// Extract using stormex (our C++ reference implementation)
@@ -210,75 +206,6 @@ impl ReferenceValidator {
                 reason: "Extracted file not found".to_string(),
             })
         }
-    }
-
-    /// Extract using libgrp
-    fn extract_with_libgrp(&self, source_file: &Path) -> Result<PathBuf, ValidationError> {
-        if let Some(libgrp_path) = &self.config.libgrp_path {
-            if !libgrp_path.exists() {
-                return Err(ValidationError::ReferenceToolNotFound {
-                    tool: "libgrp".to_string(),
-                    path: libgrp_path.clone(),
-                });
-            }
-
-            debug!("Extracting with libgrp: {:?}", source_file);
-            
-            // Implementation would call libgrp tool here
-            // For now, return error indicating tool integration needed
-            Err(ValidationError::ReferenceExtractionFailed {
-                tool: "libgrp".to_string(),
-                reason: "libgrp integration not yet implemented".to_string(),
-            })
-        } else {
-            Err(ValidationError::ReferenceToolNotFound {
-                tool: "libgrp".to_string(),
-                path: PathBuf::new(),
-            })
-        }
-    }
-
-    /// Extract using CASC Explorer
-    fn extract_with_casc_explorer(&self, source_file: &Path) -> Result<PathBuf, ValidationError> {
-        if let Some(casc_explorer_path) = &self.config.casc_explorer_path {
-            if !casc_explorer_path.exists() {
-                return Err(ValidationError::ReferenceToolNotFound {
-                    tool: "CASC Explorer".to_string(),
-                    path: casc_explorer_path.clone(),
-                });
-            }
-
-            debug!("Extracting with CASC Explorer: {:?}", source_file);
-            
-            // Implementation would call CASC Explorer here
-            // For now, return error indicating tool integration needed
-            Err(ValidationError::ReferenceExtractionFailed {
-                tool: "CASC Explorer".to_string(),
-                reason: "CASC Explorer integration not yet implemented".to_string(),
-            })
-        } else {
-            Err(ValidationError::ReferenceToolNotFound {
-                tool: "CASC Explorer".to_string(),
-                path: PathBuf::new(),
-            })
-        }
-    }
-
-    /// Compare two files byte-by-byte
-    fn compare_bytes(&self, file1: &Path, file2: &Path) -> Result<bool, ValidationError> {
-        use std::fs::File;
-        use std::io::Read;
-
-        let mut f1 = File::open(file1)?;
-        let mut f2 = File::open(file2)?;
-
-        let mut buf1 = Vec::new();
-        let mut buf2 = Vec::new();
-
-        f1.read_to_end(&mut buf1)?;
-        f2.read_to_end(&mut buf2)?;
-
-        Ok(buf1 == buf2)
     }
 
     /// Compare two images visually
@@ -333,8 +260,8 @@ mod tests {
         File::create(&file1).unwrap().write_all(data).unwrap();
         File::create(&file2).unwrap().write_all(data).unwrap();
 
-        let validator = ReferenceValidator::with_defaults();
-        assert!(validator.compare_bytes(&file1, &file2).unwrap());
+        let result = super::ByteComparison::compare_files(&file1, &file2, false).unwrap();
+        assert!(result.matches);
     }
 
     #[test]
@@ -346,7 +273,7 @@ mod tests {
         File::create(&file1).unwrap().write_all(b"data1").unwrap();
         File::create(&file2).unwrap().write_all(b"data2").unwrap();
 
-        let validator = ReferenceValidator::with_defaults();
-        assert!(!validator.compare_bytes(&file1, &file2).unwrap());
+        let result = super::ByteComparison::compare_files(&file1, &file2, false).unwrap();
+        assert!(!result.matches);
     }
 }

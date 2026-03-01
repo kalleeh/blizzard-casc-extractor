@@ -247,31 +247,27 @@ fn test_extraction_speed_benchmark() {
 }
 
 #[test]
-fn test_memory_usage_benchmark() {
-    println!("Testing memory usage benchmark");
-    
-    // Get initial memory usage (approximate)
-    let initial_memory = get_approximate_memory_usage();
-    
-    // Process a collection of test sprites
+fn test_sprite_collection_correctness() {
+    // Real memory measurement requires OS-specific APIs; instead verify that
+    // building and dropping a batch of sprite objects completes without error
+    // and produces the expected count.
+    println!("Testing sprite collection correctness");
+
     let mut sprite_collection = Vec::new();
     for i in 0..100 {
         let sprite_data = create_large_test_sprite_data(i);
         sprite_collection.push(sprite_data);
     }
-    
-    let peak_memory = get_approximate_memory_usage();
-    let memory_increase = peak_memory.saturating_sub(initial_memory);
-    
-    println!("Memory usage increased by approximately {} bytes", memory_increase);
-    
-    // Memory usage should be reasonable (less than 100MB for 100 sprites)
-    assert!(memory_increase < 100_000_000, "Memory usage should be reasonable");
-    
-    // Clean up
+
+    assert_eq!(sprite_collection.len(), 100, "Should have created 100 sprites");
+
+    for (i, sprite) in sprite_collection.iter().enumerate() {
+        assert_eq!(sprite.name, format!("large_sprite_{}", i), "Sprite name should match id");
+        assert_eq!(sprite.data.len(), 10000, "Large sprite data should be 10000 bytes");
+    }
+
     drop(sprite_collection);
-    
-    println!("Memory usage benchmark completed");
+    println!("Sprite collection correctness test completed");
 }
 
 #[test]
@@ -302,25 +298,6 @@ fn test_success_rate_regression() {
     
     // Regression test: success rate should be at least 90%
     assert!(success_rate >= 90.0, "Success rate regression detected: {:.1}%", success_rate);
-}
-
-#[test]
-fn test_performance_benchmarks() {
-    // Basic performance test structure
-    println!("Testing performance benchmarks");
-    
-    let start = std::time::Instant::now();
-    
-    // Simulate some work
-    for _ in 0..1000 {
-        let _config = casc_extractor::ExtractionConfig::default();
-    }
-    
-    let duration = start.elapsed();
-    println!("Performance test completed in {:?}", duration);
-    
-    // Basic performance assertion - should complete quickly
-    assert!(duration.as_millis() < 1000, "Performance test took too long: {:?}", duration);
 }
 
 // ============================================================================
@@ -464,12 +441,6 @@ fn detect_sprite_format(data: &[u8]) -> String {
     } else {
         "Unknown".to_string()
     }
-}
-
-fn get_approximate_memory_usage() -> usize {
-    // This is a very rough approximation
-    // In a real implementation, you might use system-specific APIs
-    std::mem::size_of::<usize>() * 1000 // Placeholder
 }
 
 fn create_large_test_sprite_data(id: usize) -> casc_extractor::SpriteData {

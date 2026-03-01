@@ -4,7 +4,7 @@
 // that changes don't break previously working sprite extractions.
 
 use super::{ValidationError, byte_comparison::ByteComparison};
-use super::visual_validation::create_pixel_diff_image;
+use super::visual_validation::{create_pixel_diff_image, VisualComparison};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
@@ -261,20 +261,8 @@ impl RegressionTestSuite {
             });
         }
 
-        // Compare pixels
-        let mut different_pixels = 0;
-        let total_pixels = (exp_width * exp_height) as usize;
-
-        for y in 0..exp_height {
-            for x in 0..exp_width {
-                let exp_pixel = expected_img.get_pixel(x, y);
-                let act_pixel = actual_img.get_pixel(x, y);
-
-                if exp_pixel != act_pixel {
-                    different_pixels += 1;
-                }
-            }
-        }
+        let (different_pixels, total_pixels) =
+            VisualComparison::count_pixel_differences(&expected_img, &actual_img);
 
         let difference_percentage = (different_pixels as f64 / total_pixels as f64) * 100.0;
 

@@ -307,14 +307,30 @@ impl IndexFile {
                     // Read 5 bytes as u40 (5-byte integer)
                     let mut bytes = [0u8; 8];
                     reader.read_exact(&mut bytes[..5])?;
-                    Ok(u64::from_le_bytes(bytes) as u32) // Truncate to u32 for now
+                    let val_u64 = u64::from_le_bytes(bytes);
+                    if val_u64 > u32::MAX as u64 {
+                        return Err(CascError::CorruptedIndex(format!("Value {} exceeds u32 maximum", val_u64)));
+                    }
+                    Ok(val_u64 as u32)
                 },
                 6 => {
                     let mut bytes = [0u8; 8];
                     reader.read_exact(&mut bytes[..6])?;
-                    Ok(u64::from_le_bytes(bytes) as u32) // Truncate to u32 for now
+                    let val_u64 = u64::from_le_bytes(bytes);
+                    if val_u64 > u32::MAX as u64 {
+                        return Err(CascError::CorruptedIndex(format!("Value {} exceeds u32 maximum", val_u64)));
+                    }
+                    Ok(val_u64 as u32)
                 },
-                8 => reader.read_u64::<LittleEndian>().map(|v| v as u32), // Truncate to u32
+                8 => {
+                    let mut bytes = [0u8; 8];
+                    reader.read_exact(&mut bytes)?;
+                    let val_u64 = u64::from_le_bytes(bytes);
+                    if val_u64 > u32::MAX as u64 {
+                        return Err(CascError::CorruptedIndex(format!("Value {} exceeds u32 maximum", val_u64)));
+                    }
+                    Ok(val_u64 as u32)
+                },
                 _ => return Err(CascError::CorruptedIndex(format!("Unsupported entry_offset_bytes: {} in {:?}", entry_offset_bytes, path))),
             }.map_err(|_| CascError::CorruptedIndex(format!("Failed to read data_file_offset from {:?}", path)))?;
             

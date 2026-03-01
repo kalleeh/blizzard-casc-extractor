@@ -81,19 +81,22 @@ impl CascNavigator {
                 PathBuf::from("C:\\Program Files\\StarCraft"),
                 PathBuf::from("C:\\Program Files (x86)\\StarCraft II"),
                 PathBuf::from("C:\\Program Files\\StarCraft II"),
-                
+
                 // Battle.net locations
                 PathBuf::from("C:\\Program Files (x86)\\Battle.net\\Games\\StarCraft"),
                 PathBuf::from("C:\\Program Files\\Battle.net\\Games\\StarCraft"),
-                
+
                 // Steam locations
                 PathBuf::from("C:\\Program Files (x86)\\Steam\\steamapps\\common\\StarCraft"),
                 PathBuf::from("C:\\Program Files\\Steam\\steamapps\\common\\StarCraft"),
-                
-                // User-specific locations
-                dirs::home_dir().map(|p: PathBuf| p.join("Games\\StarCraft")).unwrap_or_default(),
-                dirs::document_dir().map(|p: PathBuf| p.join("Games\\StarCraft")).unwrap_or_default(),
             ]);
+            // User-specific locations — only add if home/documents directories are available
+            if let Some(home) = dirs::home_dir() {
+                paths.push(home.join("Games\\StarCraft"));
+            }
+            if let Some(docs) = dirs::document_dir() {
+                paths.push(docs.join("Games\\StarCraft"));
+            }
         }
         
         #[cfg(target_os = "macos")]
@@ -103,16 +106,13 @@ impl CascNavigator {
                 // Applications
                 PathBuf::from("/Applications/StarCraft"),
                 PathBuf::from("/Applications/StarCraft II"),
-                
-                // User Applications
-                dirs::home_dir().map(|p: PathBuf| p.join("Applications/StarCraft")).unwrap_or_default(),
-                
-                // Steam locations
-                dirs::home_dir().map(|p: PathBuf| p.join("Library/Application Support/Steam/steamapps/common/StarCraft")).unwrap_or_default(),
-                
-                // Battle.net locations
-                dirs::home_dir().map(|p: PathBuf| p.join("Applications/Battle.net/Games/StarCraft")).unwrap_or_default(),
             ]);
+            // Home-relative locations — only add if home directory is available
+            if let Some(home) = dirs::home_dir() {
+                paths.push(home.join("Applications/StarCraft"));
+                paths.push(home.join("Library/Application Support/Steam/steamapps/common/StarCraft"));
+                paths.push(home.join("Applications/Battle.net/Games/StarCraft"));
+            }
         }
         
         #[cfg(target_os = "linux")]
@@ -122,19 +122,16 @@ impl CascNavigator {
                 // System-wide installations
                 PathBuf::from("/opt/starcraft"),
                 PathBuf::from("/usr/local/games/starcraft"),
-                
-                // User installations
-                dirs::home_dir().map(|p: PathBuf| p.join("Games/StarCraft")).unwrap_or_default(),
-                dirs::home_dir().map(|p: PathBuf| p.join(".local/share/games/starcraft")).unwrap_or_default(),
-                
-                // Steam locations (Linux)
-                dirs::home_dir().map(|p: PathBuf| p.join(".steam/steam/steamapps/common/StarCraft")).unwrap_or_default(),
-                dirs::home_dir().map(|p: PathBuf| p.join(".local/share/Steam/steamapps/common/StarCraft")).unwrap_or_default(),
-                
-                // Wine/Lutris locations
-                dirs::home_dir().map(|p: PathBuf| p.join(".wine/drive_c/Program Files (x86)/StarCraft")).unwrap_or_default(),
-                dirs::home_dir().map(|p: PathBuf| p.join("Games/starcraft")).unwrap_or_default(),
             ]);
+            // Home-relative locations — only add if home directory is available
+            if let Some(home) = dirs::home_dir() {
+                paths.push(home.join("Games/StarCraft"));
+                paths.push(home.join(".local/share/games/starcraft"));
+                paths.push(home.join(".steam/steam/steamapps/common/StarCraft"));
+                paths.push(home.join(".local/share/Steam/steamapps/common/StarCraft"));
+                paths.push(home.join(".wine/drive_c/Program Files (x86)/StarCraft"));
+                paths.push(home.join("Games/starcraft"));
+            }
         }
         
         // Filter out empty paths and ensure they exist
@@ -245,61 +242,45 @@ impl CascNavigator {
         }
     }
     
+    /// Scan `dir` for any entry whose file name satisfies `predicate`.
+    fn has_files_matching(dir: &Path, predicate: impl Fn(&str) -> bool) -> bool {
+        fs::read_dir(dir)
+            .map(|entries| {
+                entries
+                    .filter_map(|entry| entry.ok())
+                    .any(|entry| {
+                        let name = entry.file_name();
+                        predicate(&name.to_string_lossy())
+                    })
+            })
+            .unwrap_or(false)
+    }
+
     /// Check for CASC files in the data directory
     fn has_casc_files(&self, casc_data_dir: &Path) -> bool {
         if !casc_data_dir.is_dir() {
             return false;
         }
-        
+
         // Look for CASC index files (*.idx)
-        let has_index_files = fs::read_dir(casc_data_dir)
-            .map(|entries| {
-                entries
-                    .filter_map(|entry| entry.ok())
-                    .any(|entry| {
-                        entry.path()
-                            .extension()
-                            .map(|ext| ext == "idx")
-                            .unwrap_or(false)
-                    })
-            })
-            .unwrap_or(false);
-        
+        let has_index_files = Self::has_files_matching(casc_data_dir, |name| name.ends_with(".idx"));
+
         // Look for CASC data files (data.*)
-        let has_data_files = fs::read_dir(casc_data_dir)
-            .map(|entries| {
-                entries
-                    .filter_map(|entry| entry.ok())
-                    .any(|entry| {
-                        entry.file_name()
-                            .to_string_lossy()
-                            .starts_with("data.")
-                    })
-            })
-            .unwrap_or(false);
-        
+        let has_data_files = Self::has_files_matching(casc_data_dir, |name| name.starts_with("data."));
+
         has_index_files && has_data_files
     }
-    
+
     /// Check for MPQ files in the data directory
     fn has_mpq_files(&self, data_dir: &Path) -> bool {
         if !data_dir.is_dir() {
             return false;
         }
-        
+
         // Look for MPQ files (*.mpq)
-        fs::read_dir(data_dir)
-            .map(|entries| {
-                entries
-                    .filter_map(|entry| entry.ok())
-                    .any(|entry| {
-                        entry.path()
-                            .extension()
-                            .map(|ext| ext.to_string_lossy().to_lowercase() == "mpq")
-                            .unwrap_or(false)
-                    })
-            })
-            .unwrap_or(false)
+        Self::has_files_matching(data_dir, |name| {
+            name.to_lowercase().ends_with(".mpq")
+        })
     }
     
     /// Detect the game version based on directory structure and files

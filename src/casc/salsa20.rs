@@ -102,6 +102,7 @@ impl Salsa20State {
 
             // Convert to bytes and XOR with input
             let block_size = remaining.min(0x40);
+            // SAFETY: xor_value is [u32; 16] = 64 bytes on all platforms. Interpreting as &[u8; 64] is valid.
             let xor_bytes: &[u8] = unsafe {
                 std::slice::from_raw_parts(xor_value.as_ptr() as *const u8, 64)
             };

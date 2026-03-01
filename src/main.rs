@@ -426,6 +426,104 @@ fn cmd_extract_effect(
     Ok(())
 }
 
+/// Build a spritesheet PNG from GRP frames and write it to `output_path`.
+fn build_spritesheet(grp: &GrpFile, output_path: &Path) -> Result<()> {
+    let frames_per_row = 17usize;
+    let rows = (grp.frame_count as usize + frames_per_row - 1) / frames_per_row;
+    let sheet_width = grp.width as u32 * frames_per_row as u32;
+    let sheet_height = grp.height as u32 * rows as u32;
+
+    let mut sheet_data = vec![0u8; (sheet_width * sheet_height * 4) as usize];
+
+    for (idx, frame) in grp.frames.iter().enumerate() {
+        if let Ok(rgba) = frame.to_rgba() {
+            let row = idx / frames_per_row;
+            let col = idx % frames_per_row;
+            let x_offset = col * grp.width as usize;
+            let y_offset = row * grp.height as usize;
+
+            for y in 0..frame.height as usize {
+                for x in 0..frame.width as usize {
+                    let src_idx = (y * frame.width as usize + x) * 4;
+                    let dst_x = x_offset + x;
+                    let dst_y = y_offset + y;
+                    let dst_idx = (dst_y * sheet_width as usize + dst_x) * 4;
+                    sheet_data[dst_idx..dst_idx + 4]
+                        .copy_from_slice(&rgba[src_idx..src_idx + 4]);
+                }
+            }
+        }
+    }
+
+    let file = File::create(output_path)?;
+    let w = BufWriter::new(file);
+    let mut encoder = png::Encoder::new(w, sheet_width, sheet_height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header()?;
+    writer.write_image_data(&sheet_data)?;
+    Ok(())
+}
+
+/// Write .txt metadata for a GRP spritesheet.
+fn write_text_metadata(grp: &GrpFile, path: &Path) -> Result<()> {
+    let frames_per_row = 17usize;
+    let rows = (grp.frame_count as usize + frames_per_row - 1) / frames_per_row;
+    let sheet_width = grp.width as u32 * frames_per_row as u32;
+    let sheet_height = grp.height as u32 * rows as u32;
+
+    let meta_txt = format!(
+        "frames: {}\nframe_size: {}x{}\nsheet_size: {}x{}\nlayout: {}x{}\n",
+        grp.frame_count, grp.width, grp.height, sheet_width, sheet_height, frames_per_row, rows
+    );
+    fs::write(path, meta_txt)?;
+    Ok(())
+}
+
+/// Write .json (Unity) metadata for a GRP spritesheet.
+fn write_json_metadata(grp: &GrpFile, path: &Path) -> Result<()> {
+    let frames_per_row = 17usize;
+    let rows = (grp.frame_count as usize + frames_per_row - 1) / frames_per_row;
+    let sheet_width = grp.width as u32 * frames_per_row as u32;
+    let sheet_height = grp.height as u32 * rows as u32;
+
+    let unity_meta = format!(
+        r#"{{
+  "frameCount": {},
+  "frameWidth": {},
+  "frameHeight": {},
+  "framesPerRow": {},
+  "rows": {},
+  "sheetWidth": {},
+  "sheetHeight": {},
+  "frames": [{}
+  ]
+}}"#,
+        grp.frame_count,
+        grp.width,
+        grp.height,
+        frames_per_row,
+        rows,
+        sheet_width,
+        sheet_height,
+        (0..grp.frame_count)
+            .map(|i| {
+                let col = i as usize % frames_per_row;
+                let row_i = i as usize / frames_per_row;
+                let x = col * grp.width as usize;
+                let y = row_i * grp.height as usize;
+                format!(
+                    "\n    {{\"index\": {}, \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {}}}",
+                    i, x, y, grp.width, grp.height
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    fs::write(path, unity_meta)?;
+    Ok(())
+}
+
 fn cmd_extract_organized(
     archive: &CascArchive,
     output: &Path,
@@ -452,92 +550,9 @@ fn cmd_extract_organized(
         match archive.extract_file(file_path) {
             Ok(data) => match GrpFile::parse(&data) {
                 Ok(grp) => {
-                    let frames_per_row = 17usize;
-                    let rows =
-                        (grp.frame_count as usize + frames_per_row - 1) / frames_per_row;
-                    let sheet_width = grp.width as u32 * frames_per_row as u32;
-                    let sheet_height = grp.height as u32 * rows as u32;
-
-                    let mut sheet_data =
-                        vec![0u8; (sheet_width * sheet_height * 4) as usize];
-
-                    for (idx, frame) in grp.frames.iter().enumerate() {
-                        if let Ok(rgba) = frame.to_rgba() {
-                            let row = idx / frames_per_row;
-                            let col = idx % frames_per_row;
-                            let x_offset = col * grp.width as usize;
-                            let y_offset = row * grp.height as usize;
-
-                            for y in 0..frame.height as usize {
-                                for x in 0..frame.width as usize {
-                                    let src_idx = (y * frame.width as usize + x) * 4;
-                                    let dst_x = x_offset + x;
-                                    let dst_y = y_offset + y;
-                                    let dst_idx =
-                                        (dst_y * sheet_width as usize + dst_x) * 4;
-                                    sheet_data[dst_idx..dst_idx + 4]
-                                        .copy_from_slice(&rgba[src_idx..src_idx + 4]);
-                                }
-                            }
-                        }
-                    }
-
-                    let png_path = output_path.with_extension("png");
-                    let file = File::create(&png_path)?;
-                    let w = BufWriter::new(file);
-                    let mut encoder = png::Encoder::new(w, sheet_width, sheet_height);
-                    encoder.set_color(png::ColorType::Rgba);
-                    encoder.set_depth(png::BitDepth::Eight);
-                    let mut writer = encoder.write_header()?;
-                    writer.write_image_data(&sheet_data)?;
-
-                    let meta_txt = format!(
-                        "frames: {}\nframe_size: {}x{}\nsheet_size: {}x{}\nlayout: {}x{}\n",
-                        grp.frame_count,
-                        grp.width,
-                        grp.height,
-                        sheet_width,
-                        sheet_height,
-                        frames_per_row,
-                        rows
-                    );
-                    fs::write(output_path.with_extension("txt"), meta_txt)?;
-
-                    let unity_meta = format!(
-                        r#"{{
-  "frameCount": {},
-  "frameWidth": {},
-  "frameHeight": {},
-  "framesPerRow": {},
-  "rows": {},
-  "sheetWidth": {},
-  "sheetHeight": {},
-  "frames": [{}
-  ]
-}}"#,
-                        grp.frame_count,
-                        grp.width,
-                        grp.height,
-                        frames_per_row,
-                        rows,
-                        sheet_width,
-                        sheet_height,
-                        (0..grp.frame_count)
-                            .map(|i| {
-                                let col = i as usize % frames_per_row;
-                                let row_i = i as usize / frames_per_row;
-                                let x = col * grp.width as usize;
-                                let y = row_i * grp.height as usize;
-                                format!(
-                                    "\n    {{\"index\": {}, \"x\": {}, \"y\": {}, \
-                                     \"width\": {}, \"height\": {}}}",
-                                    i, x, y, grp.width, grp.height
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                            .join(",")
-                    );
-                    fs::write(output_path.with_extension("json"), unity_meta)?;
+                    build_spritesheet(&grp, &output_path.with_extension("png"))?;
+                    write_text_metadata(&grp, &output_path.with_extension("txt"))?;
+                    write_json_metadata(&grp, &output_path.with_extension("json"))?;
 
                     println!("  {}", category_path);
                     let category = category_path

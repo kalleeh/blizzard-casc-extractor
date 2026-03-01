@@ -9,10 +9,6 @@ use anyhow::{Result, Context};
 use crate::cli::ResolutionTier;
 use crate::resolution::ResolutionHandler;
 
-/// Alias for FilterSystem to maintain compatibility with main.rs
-#[allow(dead_code)]
-pub type FilterSystem = FileFilter;
-
 /// Enhanced file filter that applies inclusion and exclusion patterns,
 /// resolution-based filtering, and format signature filtering
 #[allow(dead_code)]
@@ -75,8 +71,7 @@ pub struct FileInfo {
 }
 
 impl FileFilter {
-    #[cfg(test)]
-    /// Create a new file filter from pattern strings (test-only method)
+    /// Create a new file filter from pattern strings
     pub fn new(include_patterns: &[String], exclude_patterns: &[String]) -> Result<Self> {
         let include_regexes = Self::compile_patterns(include_patterns)
             .context("Failed to compile inclusion patterns")?;
@@ -115,15 +110,13 @@ impl FileFilter {
         })
     }
     
-    #[cfg(test)]
-    /// Set resolution-based filtering (test-only method)
+    /// Set resolution-based filtering
     pub fn with_resolution_filter(mut self, resolution: ResolutionTier) -> Self {
         self.resolution_filter = Some(resolution);
         self
     }
     
-    #[cfg(test)]
-    /// Set format-based filtering (test-only method)
+    /// Set format-based filtering
     pub fn with_format_filter(mut self, format: FormatFilter) -> Self {
         self.format_filter = Some(format);
         self
@@ -138,8 +131,7 @@ impl FileFilter {
             .context("Failed to compile regex patterns")
     }
     
-    #[cfg(test)]
-    /// Apply the filter to a file path and update statistics (test-only method)
+    /// Apply the filter to a file path and update statistics
     pub fn apply(&mut self, file_path: &str) -> FilterResult {
         let file_info = FileInfo {
             path: file_path.to_string(),
@@ -149,8 +141,7 @@ impl FileFilter {
         self.apply_to_file_info(&file_info)
     }
     
-    #[cfg(test)]
-    /// Apply the filter to file information and update statistics (test-only method)
+    /// Apply the filter to file information and update statistics
     pub fn apply_to_file_info(&mut self, file_info: &FileInfo) -> FilterResult {
         self.stats.total_files += 1;
         
@@ -189,8 +180,7 @@ impl FileFilter {
         result
     }
     
-    #[cfg(test)]
-    /// Check if a file should be included, excluded, or skipped (without updating stats) (test-only method)
+    /// Check if a file should be included, excluded, or skipped (without updating stats)
     pub fn check_file(&self, file_path: &str) -> FilterResult {
         let file_info = FileInfo {
             path: file_path.to_string(),
@@ -292,20 +282,17 @@ impl FileFilter {
         data.len() >= 2 && data[0..2] == [0xFF, 0xD8]
     }
     
-    #[cfg(test)]
-    /// Get current filter statistics (test-only method)
+    /// Get current filter statistics
     pub fn stats(&self) -> &FilterStats {
         &self.stats
     }
     
-    #[cfg(test)]
-    /// Reset filter statistics (test-only method)
+    /// Reset filter statistics
     pub fn reset_stats(&mut self) {
         self.stats = FilterStats::default();
     }
     
-    #[cfg(test)]
-    /// Filter a collection of file paths and return the included ones (test-only method)
+    /// Filter a collection of file paths and return the included ones
     pub fn filter_files<'a>(&mut self, file_paths: &'a [String]) -> Vec<&'a String> {
         file_paths
             .iter()

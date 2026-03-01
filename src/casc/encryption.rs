@@ -348,6 +348,16 @@ impl EncryptionHandler {
             .ok_or_else(|| EncryptionError::KeyNotFound(format!("No key found for method: {:?}", method)))
     }
     
+    /// XOR each byte of `ciphertext` with the repeating bytes of `key_data`.
+    fn xor_with_key(ciphertext: &[u8], key_data: &[u8]) -> Vec<u8> {
+        let mut decrypted = Vec::with_capacity(ciphertext.len());
+        for (i, &byte) in ciphertext.iter().enumerate() {
+            let key_byte = key_data[i % key_data.len()];
+            decrypted.push(byte ^ key_byte);
+        }
+        decrypted
+    }
+
     /// Decrypt data using Salsa20
     fn decrypt_salsa20(&self, encrypted_data: &[u8], key: &DecryptionKey) -> Result<Vec<u8>, EncryptionError> {
         // Skip encryption header if present
@@ -356,26 +366,17 @@ impl EncryptionHandler {
         } else {
             0
         };
-        
+
         if data_start >= encrypted_data.len() {
             return Err(EncryptionError::DecryptionFailed("Invalid encrypted data format".to_string()));
         }
-        
+
         let ciphertext = &encrypted_data[data_start..];
-        
-        // Simplified Salsa20 decryption (in real implementation, would use proper crypto library)
-        // For now, just XOR with key bytes (not secure, but demonstrates the interface)
-        let mut decrypted = Vec::with_capacity(ciphertext.len());
-        
-        for (i, &byte) in ciphertext.iter().enumerate() {
-            let key_byte = key.key_data[i % key.key_data.len()];
-            decrypted.push(byte ^ key_byte);
-        }
-        
+        let decrypted = Self::xor_with_key(ciphertext, &key.key_data);
         debug!("Decrypted {} bytes using Salsa20", decrypted.len());
         Ok(decrypted)
     }
-    
+
     /// Decrypt data using AES
     fn decrypt_aes(&self, encrypted_data: &[u8], key: &DecryptionKey) -> Result<Vec<u8>, EncryptionError> {
         // Skip encryption header if present
@@ -384,22 +385,13 @@ impl EncryptionHandler {
         } else {
             0
         };
-        
+
         if data_start >= encrypted_data.len() {
             return Err(EncryptionError::DecryptionFailed("Invalid encrypted data format".to_string()));
         }
-        
+
         let ciphertext = &encrypted_data[data_start..];
-        
-        // Simplified AES decryption (in real implementation, would use proper crypto library)
-        // For now, just XOR with key bytes (not secure, but demonstrates the interface)
-        let mut decrypted = Vec::with_capacity(ciphertext.len());
-        
-        for (i, &byte) in ciphertext.iter().enumerate() {
-            let key_byte = key.key_data[i % key.key_data.len()];
-            decrypted.push(byte ^ key_byte);
-        }
-        
+        let decrypted = Self::xor_with_key(ciphertext, &key.key_data);
         debug!("Decrypted {} bytes using AES", decrypted.len());
         Ok(decrypted)
     }

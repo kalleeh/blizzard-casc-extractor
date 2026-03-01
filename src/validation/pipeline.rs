@@ -12,15 +12,10 @@ use std::path::{Path, PathBuf};
 
 /// Comprehensive validation pipeline that integrates all validation systems
 pub struct ValidationPipeline {
-    #[allow(dead_code)]
     reference_validator: ReferenceValidator,
-    #[allow(dead_code)]
     byte_comparison: ByteComparison,
-    #[allow(dead_code)]
     visual_comparison: VisualComparison,
-    #[allow(dead_code)]
     unity_validator: UnityImportValidator,
-    #[allow(dead_code)]
     regression_suite: RegressionTestSuite,
     error_reporter: ErrorReporter,
     report_dir: PathBuf,
@@ -74,17 +69,17 @@ impl Default for ValidationConfig {
 pub struct ExtractionValidationReport {
     pub file_name: String,
     pub format: String,
-    pub reference_validation: Option<ReferenceValidationResult>,
-    pub byte_comparison: Option<ByteComparisonResult>,
-    pub visual_comparison: Option<VisualComparisonResult>,
-    pub unity_import: Option<UnityImportResult>,
+    pub reference_validation: Option<PipelineReferenceResult>,
+    pub byte_comparison: Option<PipelineByteResult>,
+    pub visual_comparison: Option<PipelineVisualResult>,
+    pub unity_import: Option<PipelineUnityResult>,
     pub overall_pass: bool,
     pub diagnostics: Vec<String>,
 }
 
 /// Result of reference tool validation
 #[derive(Debug, Clone)]
-pub struct ReferenceValidationResult {
+pub struct PipelineReferenceResult {
     pub tool_name: String,
     pub passed: bool,
     pub details: String,
@@ -92,7 +87,7 @@ pub struct ReferenceValidationResult {
 
 /// Result of byte-level comparison
 #[derive(Debug, Clone)]
-pub struct ByteComparisonResult {
+pub struct PipelineByteResult {
     pub passed: bool,
     pub sha256_match: bool,
     pub byte_differences: usize,
@@ -101,7 +96,7 @@ pub struct ByteComparisonResult {
 
 /// Result of visual comparison
 #[derive(Debug, Clone)]
-pub struct VisualComparisonResult {
+pub struct PipelineVisualResult {
     pub passed: bool,
     pub pixel_perfect_match: bool,
     pub perceptual_hash_match: bool,
@@ -110,7 +105,7 @@ pub struct VisualComparisonResult {
 
 /// Result of Unity import validation
 #[derive(Debug, Clone)]
-pub struct UnityImportResult {
+pub struct PipelineUnityResult {
     pub passed: bool,
     pub import_successful: bool,
     pub metadata_correct: bool,
@@ -379,93 +374,38 @@ impl ValidationPipeline {
     fn validate_against_reference_tools(
         &self,
         _extracted_file: &Path,
-        format: &str,
-    ) -> Result<ReferenceValidationResult, ValidationError> {
-        // Use the reference validator to compare against appropriate tool
-        let tool_name = match format.to_lowercase().as_str() {
-            "anim" => "CASC Explorer",
-            "grp" => "libgrp",
-            _ => "Unknown",
-        };
-
-        // Placeholder for actual validation logic
-        // In real implementation, this would call reference_validator methods
-        Ok(ReferenceValidationResult {
-            tool_name: tool_name.to_string(),
-            passed: true,
-            details: format!("Validated against {}", tool_name),
-        })
+        _format: &str,
+    ) -> Result<PipelineReferenceResult, ValidationError> {
+        todo!("Not yet implemented: validate_against_reference_tools")
     }
 
     /// Perform byte-level comparison
     fn perform_byte_comparison(
         &self,
-        extracted_file: &Path,
+        _extracted_file: &Path,
         _format: &str,
-        config: &ValidationConfig,
-    ) -> Result<ByteComparisonResult, ValidationError> {
-        // Use byte_comparison to validate
-        let sha256_match = true; // Placeholder
-        let byte_differences = 0;
-        
-        let hex_dump_path = if config.generate_diagnostics && byte_differences > 0 {
-            Some(self.report_dir.join(format!(
-                "{}_hex_dump.txt",
-                extracted_file.file_stem().unwrap().to_str().unwrap()
-            )))
-        } else {
-            None
-        };
-
-        Ok(ByteComparisonResult {
-            passed: byte_differences == 0,
-            sha256_match,
-            byte_differences,
-            hex_dump_path,
-        })
+        _config: &ValidationConfig,
+    ) -> Result<PipelineByteResult, ValidationError> {
+        todo!("Not yet implemented: perform_byte_comparison")
     }
 
     /// Perform visual validation
     fn perform_visual_validation(
         &self,
-        extracted_file: &Path,
+        _extracted_file: &Path,
         _format: &str,
-        config: &ValidationConfig,
-    ) -> Result<VisualComparisonResult, ValidationError> {
-        // Use visual_comparison to validate
-        let pixel_perfect_match = true; // Placeholder
-        let perceptual_hash_match = true;
-        
-        let diff_image_path = if config.generate_diagnostics && !pixel_perfect_match {
-            Some(self.report_dir.join(format!(
-                "{}_diff.png",
-                extracted_file.file_stem().unwrap().to_str().unwrap()
-            )))
-        } else {
-            None
-        };
-
-        Ok(VisualComparisonResult {
-            passed: pixel_perfect_match && perceptual_hash_match,
-            pixel_perfect_match,
-            perceptual_hash_match,
-            diff_image_path,
-        })
+        _config: &ValidationConfig,
+    ) -> Result<PipelineVisualResult, ValidationError> {
+        todo!("Not yet implemented: perform_visual_validation")
     }
 
     /// Validate Unity import
     fn validate_unity_import(
         &self,
-        extracted_file: &Path,
+        _extracted_file: &Path,
         _config: &ValidationConfig,
-    ) -> Result<UnityImportResult, ValidationError> {
-        // Use unity_validator to validate
-        Ok(UnityImportResult {
-            passed: true,
-            import_successful: true,
-            metadata_correct: true,
-            details: format!("Unity import successful for {:?}", extracted_file),
-        })
+    ) -> Result<PipelineUnityResult, ValidationError> {
+        todo!("Not yet implemented: validate_unity_import")
     }
 
     /// Run regression tests

@@ -164,7 +164,7 @@ impl VisualComparison {
         let hash2 = Self::calculate_perceptual_hash(&img2);
 
         // Pixel-by-pixel comparison
-        let (different_pixels, total_pixels) = Self::count_different_pixels(&img1, &img2);
+        let (different_pixels, total_pixels) = Self::count_pixel_differences(&img1, &img2);
 
         // If images match perfectly
         if different_pixels == 0 {
@@ -232,7 +232,7 @@ impl VisualComparison {
     }
 
     /// Count the number of pixels that differ between two images
-    fn count_different_pixels(img1: &DynamicImage, img2: &DynamicImage) -> (usize, usize) {
+    pub fn count_pixel_differences(img1: &DynamicImage, img2: &DynamicImage) -> (usize, usize) {
         let (width, height) = img1.dimensions();
         let total_pixels = (width * height) as usize;
         let mut different_pixels = 0;

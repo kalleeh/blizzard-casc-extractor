@@ -47,18 +47,15 @@ pub struct ExtractionConfig {
 /// Format-specific configuration settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FormatSettings {
-    /// Enabled formats for extraction (ANIM, GRP, PCX, etc.)
+    /// Enabled formats for extraction (ANIM, GRP, etc.)
     pub enabled_formats: Vec<FormatType>,
-    
+
     /// Priority order for format detection (higher priority = checked first)
     pub format_priorities: HashMap<FormatType, u32>,
-    
+
     /// Selective format extraction mode
     pub extraction_mode: ExtractionMode,
-    
-    /// Format conflict resolution strategy
-    pub conflict_resolution: ConflictResolution,
-    
+
     /// Format-specific quality settings
     pub format_quality: HashMap<FormatType, FormatQuality>,
 }
@@ -115,19 +112,13 @@ pub struct PerformanceSettings {
 pub struct OutputSettings {
     /// Base output directory
     pub output_directory: PathBuf,
-    
+
     /// Unity-specific export settings
     pub unity_settings: UnityExportSettings,
-    
-    /// File naming convention
-    pub naming_convention: NamingConvention,
-    
-    /// Directory organization strategy
-    pub directory_structure: DirectoryStructure,
-    
+
     /// Metadata generation options
     pub metadata_options: MetadataOptions,
-    
+
     /// File overwrite behavior
     pub overwrite_behavior: OverwriteBehavior,
 }
@@ -187,10 +178,8 @@ pub struct UnityExportSettings {
 pub enum FormatType {
     ANIM,
     GRP,
-    PCX,
     PNG,
     JPEG,
-    Unknown,
 }
 
 /// Format extraction modes
@@ -198,31 +187,10 @@ pub enum FormatType {
 pub enum ExtractionMode {
     /// Extract all enabled formats
     All,
-    /// Extract only ANIM format
-    AnimOnly,
-    /// Extract only GRP format
-    GrpOnly,
-    /// Extract only PCX format
-    PcxOnly,
     /// Extract only image formats (PNG, JPEG)
     ImagesOnly,
     /// Custom format selection
     Custom,
-}
-
-/// Format conflict resolution strategies
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ConflictResolution {
-    /// Use highest priority format
-    HighestPriority,
-    /// Use highest confidence score
-    HighestConfidence,
-    /// Extract all conflicting formats
-    ExtractAll,
-    /// Skip conflicting files
-    Skip,
-    /// Use first successful parser
-    FirstSuccess,
 }
 
 /// Format-specific quality settings
@@ -252,38 +220,6 @@ pub enum ColorDepth {
     Bit32,
     /// Preserve original depth
     Original,
-}
-
-/// File naming conventions
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum NamingConvention {
-    /// Original CASC file names
-    Original,
-    /// Unity-compatible names
-    Unity,
-    /// Hierarchical names (Race_Unit_Animation_Direction)
-    Hierarchical,
-    /// Sequential numbering
-    Sequential,
-    /// Custom naming pattern
-    Custom,
-}
-
-/// Directory organization strategies
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum DirectoryStructure {
-    /// Flat structure (all files in output directory)
-    Flat,
-    /// Organized by format (ANIM/, GRP/, PCX/)
-    ByFormat,
-    /// Organized by resolution (HD/, HD2/, SD/)
-    ByResolution,
-    /// Organized by race (Terran/, Protoss/, Zerg/)
-    ByRace,
-    /// Hierarchical organization (Race/Unit/Animation/)
-    Hierarchical,
-    /// Custom structure
-    Custom,
 }
 
 /// Metadata generation options
@@ -407,20 +343,18 @@ impl Default for FormatSettings {
         let mut format_priorities = HashMap::new();
         format_priorities.insert(FormatType::ANIM, 100);
         format_priorities.insert(FormatType::GRP, 90);
-        format_priorities.insert(FormatType::PCX, 80);
         format_priorities.insert(FormatType::PNG, 70);
         format_priorities.insert(FormatType::JPEG, 60);
-        
+
         let mut format_quality = HashMap::new();
-        for format in &[FormatType::ANIM, FormatType::GRP, FormatType::PCX, FormatType::PNG, FormatType::JPEG] {
+        for format in &[FormatType::ANIM, FormatType::GRP, FormatType::PNG, FormatType::JPEG] {
             format_quality.insert(*format, FormatQuality::default());
         }
-        
+
         Self {
-            enabled_formats: vec![FormatType::ANIM, FormatType::GRP, FormatType::PCX, FormatType::PNG, FormatType::JPEG],
+            enabled_formats: vec![FormatType::ANIM, FormatType::GRP, FormatType::PNG, FormatType::JPEG],
             format_priorities,
             extraction_mode: ExtractionMode::All,
-            conflict_resolution: ConflictResolution::HighestPriority,
             format_quality,
         }
     }
@@ -458,8 +392,6 @@ impl Default for OutputSettings {
         Self {
             output_directory: PathBuf::from("extracted"),
             unity_settings: UnityExportSettings::default(),
-            naming_convention: NamingConvention::Hierarchical,
-            directory_structure: DirectoryStructure::Hierarchical,
             metadata_options: MetadataOptions::default(),
             overwrite_behavior: OverwriteBehavior::IfNewer,
         }

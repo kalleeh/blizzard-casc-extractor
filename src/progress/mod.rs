@@ -1,11 +1,5 @@
-use indicatif::ProgressBar;
-use std::time::Instant;
-
-#[cfg(test)]
-use indicatif::{ProgressStyle, ProgressState};
-#[cfg(test)]
-use std::time::Duration;
-#[cfg(test)]
+use indicatif::{ProgressBar, ProgressStyle, ProgressState};
+use std::time::{Instant, Duration};
 use std::fmt::Write;
 
 /// Progress reporter for file extraction operations
@@ -20,9 +14,8 @@ pub struct ProgressReporter {
 }
 
 impl ProgressReporter {
-    #[cfg(test)]
-    /// Create a new progress reporter (test-only method)
-    /// 
+    /// Create a new progress reporter
+    ///
     /// # Arguments
     /// * `total_files` - Total number of files to process
     /// * `verbose` - Whether to show detailed output
@@ -54,9 +47,8 @@ impl ProgressReporter {
         }
     }
     
-    #[cfg(test)]
-    /// Update progress for a file being processed (test-only method)
-    /// 
+    /// Update progress for a file being processed
+    ///
     /// # Arguments
     /// * `file_name` - Name of the current file being processed
     pub fn update_current_file(&mut self, file_name: &str) {
@@ -77,15 +69,13 @@ impl ProgressReporter {
         }
     }
     
-    #[cfg(test)]
-    /// Increment progress by one file (test-only method)
+    /// Increment progress by one file
     pub fn increment(&mut self) {
         self.progress_bar.inc(1);
     }
     
-    #[cfg(test)]
-    /// Update progress with current file and increment (test-only method)
-    /// 
+    /// Update progress with current file and increment
+    ///
     /// # Arguments
     /// * `file_name` - Name of the file that was just processed
     pub fn update_and_increment(&mut self, file_name: &str) {
@@ -93,9 +83,8 @@ impl ProgressReporter {
         self.increment();
     }
     
-    #[cfg(test)]
-    /// Finish progress reporting and show completion summary (test-only method)
-    /// 
+    /// Finish progress reporting and show completion summary
+    ///
     /// # Arguments
     /// * `extracted_count` - Number of files successfully extracted
     /// * `error_count` - Number of files that failed to extract
@@ -118,26 +107,22 @@ impl ProgressReporter {
         }
     }
     
-    #[cfg(test)]
-    /// Get the current file being processed (test-only method)
+    /// Get the current file being processed
     pub fn current_file(&self) -> Option<&str> {
         self.current_file.as_deref()
     }
     
-    #[cfg(test)]
-    /// Get elapsed time since progress started (test-only method)
+    /// Get elapsed time since progress started
     pub fn elapsed(&self) -> Duration {
         self.start_time.elapsed()
     }
     
-    #[cfg(test)]
-    /// Set a custom message on the progress bar (test-only method)
+    /// Set a custom message on the progress bar
     pub fn set_message(&self, message: String) {
         self.progress_bar.set_message(message);
     }
     
-    #[cfg(test)]
-    /// Abandon the progress bar (for error cases) (test-only method)
+    /// Abandon the progress bar (for error cases)
     pub fn abandon(&self, message: &str) {
         self.progress_bar.abandon_with_message(message.to_string());
     }

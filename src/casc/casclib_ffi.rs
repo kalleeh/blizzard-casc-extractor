@@ -71,6 +71,12 @@ impl CascArchive {
                 return Ok(Vec::new());
             }
 
+            const MAX_FILE_SIZE: u64 = 512 * 1024 * 1024; // 512 MB
+            if file_size > MAX_FILE_SIZE {
+                CascCloseFile(file_handle);
+                return Err(format!("File size {} exceeds maximum allowed {}", file_size, MAX_FILE_SIZE));
+            }
+
             let mut buffer = vec![0u8; file_size as usize];
             let mut bytes_read: DWORD = 0;
 
