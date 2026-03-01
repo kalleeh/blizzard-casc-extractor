@@ -68,7 +68,7 @@ StarCraft: Remastered provides **three quality levels** of assets:
 - Rust 1.70+
 - A Blizzard game using CASC (StarCraft: Remastered, WC3: Reforged, etc.)
 - macOS (ARM64) or Linux (x86_64)
-- CascLib (included)
+- CascLib native library (must be built from source — see `lib/README.md`)
 
 ## Quick Start
 

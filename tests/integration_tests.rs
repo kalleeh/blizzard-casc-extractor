@@ -17,7 +17,7 @@ fn run_extraction_workflow_test(
     let output_dir = temp_dir.path().join("output");
     let install_dir = temp_dir.path().join("starcraft_install");
     create_mock_casc_structure(&install_dir);
-    let binary_path = build_extractor_binary();
+    let binary_path = PathBuf::from(env!("CARGO_BIN_EXE_casc-extractor"));
 
     // Validation pass
     let output = Command::new(&binary_path)
@@ -163,29 +163,6 @@ fn create_mock_data_file(path: &std::path::Path) {
     }
 }
 
-/// Build the extractor binary for testing
-fn build_extractor_binary() -> PathBuf {
-    // Use cargo to build the binary
-    let output = Command::new("cargo")
-        .args(&["build", "--release"])
-        .output()
-        .expect("Failed to build extractor binary");
-    
-    if !output.status.success() {
-        panic!("Failed to build binary: {}", String::from_utf8_lossy(&output.stderr));
-    }
-    
-    // Return path to the built binary
-    let mut binary_path = PathBuf::from("target/release/casc-extractor");
-    
-    // Add .exe extension on Windows
-    if cfg!(target_os = "windows") {
-        binary_path.set_extension("exe");
-    }
-    
-    binary_path
-}
-
 /// Verify macOS-specific file system behavior
 #[cfg(target_os = "macos")]
 fn verify_macos_file_system_behavior(output_dir: &std::path::Path) {
@@ -319,8 +296,7 @@ fn test_cross_platform_path_handling() {
 /// Test binary execution across platforms
 #[test]
 fn test_binary_execution_cross_platform() {
-    // Build the binary
-    let binary_path = build_extractor_binary();
+    let binary_path = PathBuf::from(env!("CARGO_BIN_EXE_casc-extractor"));
     
     // Test that the binary exists and is executable
     assert!(binary_path.exists(), "Binary should exist after build: {:?}", binary_path);
