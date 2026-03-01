@@ -153,7 +153,7 @@ fn test_hex_dump_generation() {
         file_name: "test_data.bin".to_string(),
         format: "TEST".to_string(),
         reference_validation: None,
-        byte_comparison: Some(casc_extractor::validation::pipeline::ByteComparisonResult {
+        byte_comparison: Some(casc_extractor::validation::pipeline::PipelineByteResult {
             passed: false,
             sha256_match: false,
             byte_differences: 10,

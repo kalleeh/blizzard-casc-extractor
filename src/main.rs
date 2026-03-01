@@ -14,6 +14,7 @@ use anyhow::Result;
 use casc_extractor::anim::HdAnimFile;
 use casc_extractor::casc::casclib_ffi::CascArchive;
 use casc_extractor::casc::discovery::locate_starcraft;
+use casc_extractor::config::ExtractionConfig;
 use casc_extractor::grp::GrpFile;
 use casc_extractor::mapping::SpriteMapping;
 use casc_extractor::{export_anim, CascStorage, ExportConfig};
@@ -155,9 +156,17 @@ struct Cli {
     #[arg(long, global = true)]
     install_path: Option<PathBuf>,
 
-    /// Output directory
-    #[arg(long, global = true, default_value = "output")]
-    output: PathBuf,
+    /// Output directory (overrides config file)
+    #[arg(long, global = true)]
+    output: Option<PathBuf>,
+
+    /// Path to a JSON config file (see ExtractionConfig)
+    #[arg(long, short = 'c', global = true)]
+    config: Option<PathBuf>,
+
+    /// Enable verbose/debug logging (overrides config file)
+    #[arg(long, short = 'v', global = true)]
+    verbose: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -266,6 +275,24 @@ enum InspectCommands {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Load ExtractionConfig from a JSON file, falling back to defaults on any error.
+fn load_config(path: Option<&Path>) -> ExtractionConfig {
+    let path = match path {
+        Some(p) => p,
+        None => return ExtractionConfig::default(),
+    };
+    match fs::read_to_string(path) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_else(|e| {
+            eprintln!("Warning: could not parse config {:?}: {}", path, e);
+            ExtractionConfig::default()
+        }),
+        Err(e) => {
+            eprintln!("Warning: could not read config {:?}: {}", path, e);
+            ExtractionConfig::default()
+        }
+    }
+}
 
 /// Resolve the StarCraft install directory to a UTF-8 string.
 fn resolve_install_str(install_path: Option<&Path>) -> Result<String> {
@@ -804,6 +831,24 @@ fn cmd_inspect_archive(install_path: Option<&Path>) -> Result<()> {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Load config file (if provided), then apply CLI overrides on top.
+    let config = load_config(cli.config.as_deref());
+
+    // Logging: verbose flag or config beats default warn-only.
+    let log_level = if cli.verbose || config.feedback_settings.verbose_logging {
+        "debug"
+    } else {
+        "warn"
+    };
+    if std::env::var("RUST_LOG").is_err() {
+        std::env::set_var("RUST_LOG", log_level);
+    }
+    env_logger::init();
+
+    // Resolve output directory: CLI flag > config file > hard-coded default.
+    let output = cli.output
+        .unwrap_or_else(|| config.output_settings.output_directory.clone());
+
     match cli.command {
         // ------------------------------------------------------------------
         Commands::Extract { target } => {
@@ -817,7 +862,7 @@ fn main() -> Result<()> {
                 } => {
                     cmd_extract_anim(
                         &archive,
-                        &cli.output,
+                        &output,
                         quality,
                         ids,
                         convert_to_png,
@@ -828,16 +873,16 @@ fn main() -> Result<()> {
                     quality,
                     convert_to_png,
                 } => {
-                    cmd_extract_tileset(&archive, &cli.output, quality, convert_to_png)?;
+                    cmd_extract_tileset(&archive, &output, quality, convert_to_png)?;
                 }
                 ExtractCommands::Effect {
                     quality,
                     convert_to_png,
                 } => {
-                    cmd_extract_effect(&archive, &cli.output, quality, convert_to_png)?;
+                    cmd_extract_effect(&archive, &output, quality, convert_to_png)?;
                 }
                 ExtractCommands::Organized { mapping } => {
-                    cmd_extract_organized(&archive, &cli.output, &mapping)?;
+                    cmd_extract_organized(&archive, &output, &mapping)?;
                 }
             }
         }
@@ -845,7 +890,7 @@ fn main() -> Result<()> {
         // ------------------------------------------------------------------
         Commands::Sounds { action } => match action {
             SoundsCommands::Extract { sounds_output } => {
-                let out = sounds_output.unwrap_or_else(|| cli.output.clone());
+                let out = sounds_output.unwrap_or(output);
                 let archive = open_casc_archive(cli.install_path.as_deref())?;
                 cmd_sounds_extract(&archive, &out)?;
             }
