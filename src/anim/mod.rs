@@ -1055,9 +1055,9 @@ impl AnimFile {
         let texture_data = full_data[start..end].to_vec();
         
         // Determine texture format and compression from data analysis
-        let (format, compression_type, pixel_format, uncompressed_size) = 
+        let (format, compression_type, pixel_format, uncompressed_size) =
             Self::analyze_texture_format(&texture_data, width, height)?;
-        
+
         Ok(Texture {
             format,
             width,
@@ -1322,7 +1322,7 @@ impl AnimFile {
 impl AnimFile {
     #[cfg(test)]
     /// Convert to PNG files (test-only method)
-    pub fn to_png(&self, output_dir: &Path, base_name: &str) -> Result<ConversionResult, AnimError> {
+    pub fn to_png(&self, output_dir: &std::path::Path, base_name: &str) -> Result<ConversionResult, AnimError> {
         use image::{ImageBuffer, RgbaImage};
         use std::fs;
         
@@ -2806,7 +2806,7 @@ mod tests {
         let compressed_data = lz4_flex::compress_prepend_size(&original_data);
         
         // Test automatic detection of LZ4 compression
-        let (format, compression_type, pixel_format, uncompressed_size) = 
+        let (format, compression_type, _pixel_format, uncompressed_size) =
             AnimFile::analyze_texture_format(&compressed_data, 2, 1).unwrap();
         
         // Should detect as LZ4 compressed

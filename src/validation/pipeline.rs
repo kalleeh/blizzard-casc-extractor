@@ -12,10 +12,15 @@ use std::path::{Path, PathBuf};
 
 /// Comprehensive validation pipeline that integrates all validation systems
 pub struct ValidationPipeline {
+    #[allow(dead_code)]
     reference_validator: ReferenceValidator,
+    #[allow(dead_code)]
     byte_comparison: ByteComparison,
+    #[allow(dead_code)]
     visual_comparison: VisualComparison,
+    #[allow(dead_code)]
     unity_validator: UnityImportValidator,
+    #[allow(dead_code)]
     regression_suite: RegressionTestSuite,
     error_reporter: ErrorReporter,
     report_dir: PathBuf,

@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 use serde::{Deserialize, Serialize};
-use std::io::Read;
 
 use crate::blte_enhanced::{BlteDecompressor, BlteError};
 
@@ -967,7 +966,7 @@ impl DirectSpriteExtractor {
         Ok(None)
     }
     
-    /// Check if data looks like compressed data - ENHANCED FOR STARCRAFT REMASTERED - FIXED FALSE POSITIVES
+    #[allow(dead_code)]
     fn looks_like_compressed_data(&self, data: &[u8]) -> bool {
         if data.len() < 8 {
             return false;
@@ -1057,7 +1056,7 @@ impl DirectSpriteExtractor {
         repeated_sequences > 3
     }
     
-    /// Convert raw sprite data to PNG
+    #[allow(dead_code)]
     fn convert_raw_sprite_to_png(&self, raw_data: &[u8], offset: usize, width: u16, height: u16) -> Result<Vec<u8>, SpriteError> {
         log::info!("Converting raw sprite data: {}x{} at offset {} in {} bytes", width, height, offset, raw_data.len());
         
@@ -1108,7 +1107,7 @@ impl DirectSpriteExtractor {
         self.create_png_from_pixels(&pixel_data, width, height, false)
     }
     
-    /// Try to decompress and convert compressed data - ENHANCED FOR STARCRAFT REMASTERED - FIXED INFINITE RECURSION
+    #[allow(dead_code)]
     fn try_decompress_and_convert(&self, compressed_data: &[u8], file_info: &FileInfo) -> Result<Vec<u8>, SpriteError> {
         self.try_decompress_and_convert_with_depth(compressed_data, file_info, 0)
     }

@@ -379,7 +379,7 @@ mod tests {
 
     #[test]
     fn test_validator_creation() {
-        let validator = UnityImportValidator::with_defaults();
+        let _validator = UnityImportValidator::with_defaults();
         // Should not panic even if Unity is not installed
     }
 

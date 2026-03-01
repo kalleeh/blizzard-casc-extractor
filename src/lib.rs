@@ -19,11 +19,7 @@ pub mod blte;
 pub mod blte_enhanced;
 pub mod format_converter;
 pub mod format_analyzer;
-pub mod pipeline;
-pub mod integration_tests;
 pub mod validation;
-
-pub mod generators;
 
 pub use casc::{CascArchive, CascError, IndexFile, IndexEntry, FileEntry, ValidationReport, SizeValidation, FileAnalysis, CascNavigator, Installation, GameVersion, FileSystemType, NavigatorError, EncryptionHandler, FileAccessLayer, EncryptionError, EncryptionMethod, DecryptionKey};
 pub use casc::discovery::{locate_starcraft, open_archive};
@@ -36,10 +32,9 @@ pub use config::{ExtractionConfig, FormatSettings, QualitySettings, PerformanceS
 pub use filter::{FileFilter, FilterStats, FilterResult, FormatFilter, FileInfo};
 pub use progress::ProgressReporter;
 pub use research::{ResearchDataCollector, ResearchData, CascStats, FormatAnalysis, ExtractionStats};
+pub use casc::casclib_ffi::CascStorage;
 pub use blte::{BlteFile, BlteError, is_blte_data, looks_like_blte_data};
 pub use format_converter::{FormatConverter, ConversionResult};
 pub use format_analyzer::{FormatAnalyzer, SpritePatternAnalysis};
-pub use pipeline::{UnifiedPipeline, PipelineResult, PipelineMetrics, ProcessedFile, FailedFile};
-pub use validation::{ReferenceValidator, ByteComparison, ByteComparisonResult, VisualComparison, VisualComparisonResult, UnityImportValidator, UnityImportResult, RegressionTestSuite, KnownGoodExtraction, ValidationError, ValidationResult};pub mod dds_converter;
-pub mod casclib_ffi;
-pub use casclib_ffi::CascStorage;
+pub use validation::{ReferenceValidator, ByteComparison, ByteComparisonResult, VisualComparison, VisualComparisonResult, UnityImportValidator, UnityImportResult, RegressionTestSuite, KnownGoodExtraction, ValidationError, ValidationResult};
+pub mod dds_converter;

@@ -6,11 +6,10 @@
 use casc_extractor::validation::{UnityImportValidator, SpriteMetadata};
 use std::path::Path;
 use tempfile::TempDir;
-use std::fs;
 
 #[test]
 fn test_unity_validator_creation() {
-    let validator = UnityImportValidator::with_defaults();
+    let _validator = UnityImportValidator::with_defaults();
     // Should not panic even if Unity is not installed
 }
 

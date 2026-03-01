@@ -3,6 +3,8 @@
 // These tests demonstrate how to use the validation framework to ensure
 // 100% byte-level accuracy and visual correctness of extracted sprites.
 
+mod common;
+
 use casc_extractor::validation::{
     ReferenceValidator, ByteComparison, VisualComparison, RegressionTestSuite,
 };
@@ -170,8 +172,6 @@ fn test_regression_suite_creation() {
 
 #[test]
 fn test_regression_suite_add_known_good() {
-    use casc_extractor::validation::regression_suite::SpriteMetadata;
-
     let temp_dir = TempDir::new().unwrap();
     let db_path = temp_dir.path().join("regression_db.json");
     let output_file = temp_dir.path().join("test_sprite.png");
@@ -181,18 +181,11 @@ fn test_regression_suite_add_known_good() {
 
     let mut suite = RegressionTestSuite::new(db_path).unwrap();
 
-    let metadata = SpriteMetadata {
-        width: 64,
-        height: 64,
-        frame_count: 1,
-        format: "PNG".to_string(),
-    };
-
     suite.add_known_good(
         "test_sprite".to_string(),
         PathBuf::from("source.casc"),
         output_file,
-        metadata,
+        common::sprite_metadata_64(),
     ).unwrap();
 
     assert_eq!(suite.count(), 1, "Suite should have 1 known-good extraction");
@@ -201,8 +194,6 @@ fn test_regression_suite_add_known_good() {
 
 #[test]
 fn test_regression_suite_validation() {
-    use casc_extractor::validation::regression_suite::SpriteMetadata;
-
     let temp_dir = TempDir::new().unwrap();
     let db_path = temp_dir.path().join("regression_db.json");
     let output_file = temp_dir.path().join("test_sprite.png");
@@ -213,18 +204,12 @@ fn test_regression_suite_validation() {
 
     // Add to regression suite
     let mut suite = RegressionTestSuite::new(db_path).unwrap();
-    let metadata = SpriteMetadata {
-        width: 64,
-        height: 64,
-        frame_count: 1,
-        format: "PNG".to_string(),
-    };
 
     suite.add_known_good(
         "test_sprite".to_string(),
         PathBuf::from("source.casc"),
         output_file.clone(),
-        metadata,
+        common::sprite_metadata_64(),
     ).unwrap();
 
     // Validate against the same file (should pass)
@@ -235,8 +220,6 @@ fn test_regression_suite_validation() {
 
 #[test]
 fn test_regression_suite_detects_changes() {
-    use casc_extractor::validation::regression_suite::SpriteMetadata;
-
     let temp_dir = TempDir::new().unwrap();
     let db_path = temp_dir.path().join("regression_db.json");
     let original_file = temp_dir.path().join("original.png");
@@ -247,18 +230,12 @@ fn test_regression_suite_detects_changes() {
 
     // Add to regression suite
     let mut suite = RegressionTestSuite::new(db_path).unwrap();
-    let metadata = SpriteMetadata {
-        width: 64,
-        height: 64,
-        frame_count: 1,
-        format: "PNG".to_string(),
-    };
 
     suite.add_known_good(
         "test_sprite".to_string(),
         PathBuf::from("source.casc"),
         original_file,
-        metadata,
+        common::sprite_metadata_64(),
     ).unwrap();
 
     // Create modified file
@@ -275,7 +252,7 @@ fn test_reference_validator_creation() {
     use casc_extractor::validation::reference_validator::ReferenceToolConfig;
 
     let config = ReferenceToolConfig::default();
-    let validator = ReferenceValidator::new(config);
+    let _validator = ReferenceValidator::new(config);
 
     // Validator should be created successfully
     // Actual validation requires reference tools to be installed

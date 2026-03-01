@@ -119,13 +119,16 @@ impl FormatConverter {
         })
     }
     
+    fn ensure_parent_dir(path: &Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).context("Failed to create output directory")?;
+        }
+        Ok(())
+    }
+
     /// Write sprite data as PNG file
     fn write_png_file(&self, output_path: &Path, sprite_data: &SpriteData) -> Result<()> {
-        // Create parent directory if it doesn't exist
-        if let Some(parent) = output_path.parent() {
-            std::fs::create_dir_all(parent)
-                .context("Failed to create output directory")?;
-        }
+        Self::ensure_parent_dir(output_path)?;
         
         // Write PNG data to file
         std::fs::write(output_path, &sprite_data.data)
@@ -177,11 +180,7 @@ impl FormatConverter {
     
     /// Write Unity metadata to file
     fn write_unity_metadata(&self, output_path: &Path, metadata: &UnityMetadata) -> Result<()> {
-        // Create parent directory if it doesn't exist
-        if let Some(parent) = output_path.parent() {
-            std::fs::create_dir_all(parent)
-                .context("Failed to create output directory")?;
-        }
+        Self::ensure_parent_dir(output_path)?;
         
         // Generate Unity metadata content
         let metadata_content = self.generate_unity_metadata_content(metadata)?;

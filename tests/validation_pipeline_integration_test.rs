@@ -80,8 +80,8 @@ fn test_validation_pipeline_with_real_data() {
     // Verify report files were created
     assert!(report_dir.exists(), "Report directory should exist");
     
-    let json_report = report_dir.join("validation_report.json");
-    let text_report = report_dir.join("batch_validation_report.txt");
+    let _json_report = report_dir.join("validation_report.json");
+    let _text_report = report_dir.join("batch_validation_report.txt");
     
     // Note: Reports are only generated if there are failures or if configured
     // For this test, we just verify the pipeline runs without errors

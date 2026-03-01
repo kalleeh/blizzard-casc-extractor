@@ -7,7 +7,7 @@ use tempfile::TempDir;
 
 // Import the modules we need to test
 use casc_extractor::sprite::{DirectSpriteExtractor, UnityConverter, SpriteFormat};
-use casc_extractor::casc::{CascArchive, FileEntry, FileAnalysis};
+use casc_extractor::casc::CascArchive;
 use casc_extractor::cli::ResolutionTier;
 use casc_extractor::research::{ResearchDataCollector, analyze_file_data, calculate_entropy};
 
@@ -35,10 +35,6 @@ fn test_enhanced_sprite_extraction_with_research_validation() {
     match CascArchive::open(&test_casc_dir) {
         Ok(casc_archive) => {
             println!("✅ Successfully opened mock CASC archive");
-            
-            // Validate installation against research findings
-            let validation_result = validate_installation_against_research(&test_casc_dir);
-            println!("✅ Installation validation: {:?}", validation_result);
             
             // Create DirectSpriteExtractor with Unity support
             let sprite_extractor = DirectSpriteExtractor::new(casc_archive);
@@ -73,8 +69,8 @@ fn test_enhanced_sprite_extraction_with_research_validation() {
                     // Test research data collection
                     test_research_data_collection(&mut research_collector, &result);
                     
-                    // The extraction should succeed even with mock data
-                    assert!(result.sprites_extracted >= 0, "Should extract some sprites or handle empty gracefully");
+                    // The extraction should succeed even with mock data (0 sprites expected for mock)
+                    assert_eq!(result.sprites_extracted, 0, "Mock CASC data should produce zero extracted sprites");
                     assert!(result.unity_metadata_files.len() >= result.sprites_extracted, 
                            "Should generate Unity metadata for each extracted sprite");
                 }
@@ -193,20 +189,12 @@ fn validate_pipeline_output_structure(output_dir: &Path, result: &casc_extractor
     // Check that output directory exists
     assert!(output_dir.exists(), "Output directory should exist after pipeline execution");
     
-    // Validate resolution tier directories are created as needed
-    let hd_dir = output_dir.join("HD");
-    let hd2_dir = output_dir.join("HD2");
-    let sd_dir = output_dir.join("SD");
-    
-    // At least one resolution directory should exist if sprites were extracted
+    // Output directory should contain at least one entry if sprites were extracted
     if result.sprites_extracted > 0 {
-        assert!(
-            hd_dir.exists() || hd2_dir.exists() || sd_dir.exists() || 
-            output_dir.read_dir().unwrap().any(|entry| {
-                entry.unwrap().file_type().unwrap().is_file()
-            }),
-            "At least one resolution directory or output file should exist"
-        );
+        let has_output = output_dir.read_dir()
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(false);
+        assert!(has_output, "Output directory should contain entries when sprites were extracted");
     }
     
     // Validate that metadata files match sprite files
@@ -463,48 +451,6 @@ fn create_enhanced_data_content(data_file_index: usize) -> Vec<u8> {
     content
 }
 
-fn validate_installation_against_research(casc_dir: &Path) -> ValidationResult {
-    let data_dir = casc_dir.join("Data").join("data");
-    
-    // Validate against research findings
-    let mut index_count = 0;
-    let mut data_count = 0;
-    let mut total_size = 0u64;
-    
-    // Count index files (expected: 16)
-    for i in 0..16 {
-        let index_path = data_dir.join(format!("data.{:03}.idx", i));
-        if index_path.exists() {
-            index_count += 1;
-        }
-    }
-    
-    // Count data files (expected: 6)
-    for i in 0..6 {
-        let data_path = data_dir.join(format!("data.{:03}", i));
-        if data_path.exists() {
-            data_count += 1;
-            if let Ok(metadata) = std::fs::metadata(&data_path) {
-                total_size += metadata.len();
-            }
-        }
-    }
-    
-    ValidationResult {
-        index_files_found: index_count,
-        data_files_found: data_count,
-        total_size_bytes: total_size,
-        meets_research_expectations: index_count == 16 && data_count == 6,
-    }
-}
-
-#[derive(Debug)]
-struct ValidationResult {
-    index_files_found: usize,
-    data_files_found: usize,
-    total_size_bytes: u64,
-    meets_research_expectations: bool,
-}
 
 fn validate_extraction_against_research(result: &casc_extractor::sprite::ExtractionResult) {
     println!("🔍 Validating extraction results against research findings...");
@@ -783,134 +729,4 @@ fn test_enhanced_error_handling() {
     }
     
     println!("   ✅ Enhanced error handling validated");
-}
-
-fn create_mock_casc_files(casc_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let data_dir = casc_dir.join("Data").join("data");
-    std::fs::create_dir_all(&data_dir)?;
-    
-    // Create a minimal index file
-    let index_path = data_dir.join("data.000.idx");
-    let index_data = create_minimal_index_data();
-    std::fs::write(&index_path, &index_data)?;
-    
-    // Create a minimal data file
-    let data_path = data_dir.join("data.000");
-    let data_content = vec![0u8; 1024]; // 1KB of mock data
-    std::fs::write(&data_path, &data_content)?;
-    
-    Ok(())
-}
-
-fn create_minimal_index_data() -> Vec<u8> {
-    let mut data = vec![0u8; 24]; // Minimum header size
-    
-    // Header
-    data[0..4].copy_from_slice(&16u32.to_le_bytes()); // header_hash_size
-    data[4..8].copy_from_slice(&0x12345678u32.to_le_bytes()); // header_hash
-    data[8..10].copy_from_slice(&7u16.to_le_bytes()); // unk0 = 7
-    data[10] = 1; // bucket_index
-    data[11] = 0; // unk1
-    data[12] = 4; // entry_size_bytes
-    data[13] = 4; // entry_offset_bytes
-    data[14] = 9; // entry_key_bytes
-    data[15] = 24; // archive_file_header_size
-    
-    // Add 8 bytes for archive_total_size_maximum
-    data[16..24].copy_from_slice(&1024u64.to_le_bytes());
-    
-    data
-}
-
-fn test_sprite_format_detection() {
-    println!("🧪 Testing sprite format detection...");
-    
-    // Test PNG detection
-    let png_data = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00];
-    let png_analysis = FileAnalysis::analyze(&png_data);
-    assert!(png_analysis.has_png_signature, "Should detect PNG signature");
-    
-    // Test JPEG detection
-    let jpeg_data = vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
-    let jpeg_analysis = FileAnalysis::analyze(&jpeg_data);
-    assert!(jpeg_analysis.has_jpeg_signature, "Should detect JPEG signature");
-    
-    println!("✅ Sprite format detection works correctly");
-}
-
-fn test_filename_sanitization() {
-    println!("🧪 Testing filename sanitization...");
-    
-    let test_cases = vec![
-        ("file/with\\slashes", "file_with_slashes"),
-        ("file:with*special?chars", "file_with_special_chars"),
-        ("file\"with<quotes>", "file_with_quotes_"),
-        ("normal_filename.png", "normal_filename.png"),
-    ];
-    
-    for (input, expected) in test_cases {
-        let sanitized = sanitize_filename_test(input);
-        assert_eq!(sanitized, expected, "Filename sanitization failed for: {}", input);
-    }
-    
-    println!("✅ Filename sanitization works correctly");
-}
-
-fn sanitize_filename_test(name: &str) -> String {
-    // This is the same logic as in DirectSpriteExtractor::sanitize_filename
-    name.chars()
-        .map(|c| match c {
-            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
-            c if c.is_control() => '_',
-            c => c,
-        })
-        .collect::<String>()
-        .trim_matches('.')
-        .to_string()
-}
-
-fn test_resolution_filtering() {
-    println!("🧪 Testing resolution filtering...");
-    
-    // Create mock file entries with different resolution tiers
-    let files = vec![
-        FileEntry {
-            key: [1, 2, 3, 4, 5, 6, 7, 8, 9],
-            path: "hd_sprite.png".to_string(),
-            size: 1024,
-            resolution_tier: Some(ResolutionTier::HD),
-        },
-        FileEntry {
-            key: [2, 3, 4, 5, 6, 7, 8, 9, 10],
-            path: "hd2_sprite.png".to_string(),
-            size: 2048,
-            resolution_tier: Some(ResolutionTier::HD2),
-        },
-        FileEntry {
-            key: [3, 4, 5, 6, 7, 8, 9, 10, 11],
-            path: "sd_sprite.png".to_string(),
-            size: 512,
-            resolution_tier: Some(ResolutionTier::SD),
-        },
-    ];
-    
-    // Test filtering by HD
-    let hd_files: Vec<_> = files.iter()
-        .filter(|file| file.resolution_tier == Some(ResolutionTier::HD))
-        .collect();
-    assert_eq!(hd_files.len(), 1, "Should find 1 HD file");
-    assert_eq!(hd_files[0].path, "hd_sprite.png");
-    
-    // Test filtering by HD2
-    let hd2_files: Vec<_> = files.iter()
-        .filter(|file| file.resolution_tier == Some(ResolutionTier::HD2))
-        .collect();
-    assert_eq!(hd2_files.len(), 1, "Should find 1 HD2 file");
-    assert_eq!(hd2_files[0].path, "hd2_sprite.png");
-    
-    // Test filtering by All (should return all files)
-    let all_files: Vec<_> = files.iter().collect();
-    assert_eq!(all_files.len(), 3, "Should find all 3 files");
-    
-    println!("✅ Resolution filtering works correctly");
 }

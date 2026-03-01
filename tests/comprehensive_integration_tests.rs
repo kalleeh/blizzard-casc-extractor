@@ -1,5 +1,3 @@
-use std::path::{Path, PathBuf};
-use std::fs;
 use tempfile::TempDir;
 
 // Integration tests for CASC sprite format improvements
@@ -492,7 +490,7 @@ fn create_regression_test_cases() -> Vec<(String, Vec<u8>, bool)> {
     ]
 }
 
-fn process_test_sprite(filename: &str, data: &[u8]) -> Result<String, String> {
+fn process_test_sprite(_filename: &str, data: &[u8]) -> Result<String, String> {
     if data.is_empty() {
         return Err("Empty file".to_string());
     }

@@ -11,8 +11,11 @@ use std::fmt::Write;
 /// Progress reporter for file extraction operations
 pub struct ProgressReporter {
     progress_bar: ProgressBar,
+    #[allow(dead_code)]
     start_time: Instant,
+    #[allow(dead_code)]
     verbose: bool,
+    #[allow(dead_code)]
     current_file: Option<String>,
 }
 

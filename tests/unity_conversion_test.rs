@@ -3,7 +3,6 @@
 //! This test validates that the Unity conversion pipeline works correctly,
 //! generating Unity-compatible output with proper metadata.
 
-use std::path::PathBuf;
 use tempfile::TempDir;
 use casc_extractor::sprite::{DirectSpriteExtractor, UnityConverter, SpriteData, SpriteFormat, SpriteMetadata};
 use casc_extractor::casc::CascArchive;
@@ -14,12 +13,12 @@ use casc_extractor::cli::ResolutionTier;
 fn test_unity_conversion_pipeline() {
     // **Feature: casc-sprite-extractor, Integration Test: Unity Conversion Pipeline**
     // **Validates: Requirements 2.4, 2.5, 4.1, 4.2, 4.3, 4.4, 4.5, 11.2, 11.3, 11.5**
-    
+
     println!("🔧 Testing Unity conversion pipeline...");
-    
+
     // Create temporary directories for test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
-    let output_dir = temp_dir.path().join("unity_output");
+    let _output_dir = temp_dir.path().join("unity_output");
     
     // Create a mock CASC installation structure
     let install_dir = temp_dir.path().join("starcraft_install");
@@ -244,7 +243,6 @@ fn create_mock_casc_structure(install_dir: &std::path::Path) {
 /// Create a mock index file for testing
 fn create_mock_index_file(path: &std::path::Path) {
     use std::fs::File;
-    use std::io::Write;
     use byteorder::{LittleEndian, WriteBytesExt};
     
     let mut file = File::create(path).expect("Failed to create mock index file");

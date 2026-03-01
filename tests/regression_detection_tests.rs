@@ -3,7 +3,9 @@
 // These tests validate that the regression detection system correctly identifies
 // when previously working extractions break, and generates appropriate reports.
 
-use casc_extractor::validation::{RegressionTestSuite, regression_suite::SpriteMetadata};
+mod common;
+
+use casc_extractor::validation::RegressionTestSuite;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
@@ -24,19 +26,12 @@ fn test_regression_detection_with_no_changes() {
     File::create(&sprite_file).unwrap().write_all(b"test sprite data").unwrap();
 
     let mut suite = RegressionTestSuite::new(db_path).unwrap();
-    
-    let metadata = SpriteMetadata {
-        width: 64,
-        height: 64,
-        frame_count: 1,
-        format: "PNG".to_string(),
-    };
 
     suite.add_known_good(
         "test_sprite".to_string(),
         PathBuf::from("source.casc"),
         sprite_file.clone(),
-        metadata,
+        common::sprite_metadata_64(),
     ).unwrap();
 
     // Run regression detection (should pass since file hasn't changed)
@@ -68,19 +63,12 @@ fn test_regression_detection_with_changes() {
     original_img.save(&original_file).unwrap();
 
     let mut suite = RegressionTestSuite::new(db_path).unwrap();
-    
-    let metadata = SpriteMetadata {
-        width: 32,
-        height: 32,
-        frame_count: 1,
-        format: "PNG".to_string(),
-    };
 
     suite.add_known_good(
         "test_sprite".to_string(),
         PathBuf::from("source.casc"),
         original_file,
-        metadata,
+        common::sprite_metadata_32(),
     ).unwrap();
 
     // Create modified file in output directory
@@ -112,13 +100,6 @@ fn test_regression_report_generation() {
 
     // Create multiple known-good extractions
     let mut suite = RegressionTestSuite::new(db_path).unwrap();
-    
-    let metadata = SpriteMetadata {
-        width: 64,
-        height: 64,
-        frame_count: 1,
-        format: "PNG".to_string(),
-    };
 
     for i in 0..5 {
         let sprite_file = output_dir.join(format!("sprite_{}.png", i));
@@ -130,7 +111,7 @@ fn test_regression_report_generation() {
             format!("sprite_{}", i),
             PathBuf::from("source.casc"),
             sprite_file,
-            metadata.clone(),
+            common::sprite_metadata_64(),
         ).unwrap();
     }
 
@@ -163,19 +144,12 @@ fn test_hash_mismatch_detection() {
     original_img.save(&original_file).unwrap();
 
     let mut suite = RegressionTestSuite::new(db_path).unwrap();
-    
-    let metadata = SpriteMetadata {
-        width: 32,
-        height: 32,
-        frame_count: 1,
-        format: "PNG".to_string(),
-    };
 
     suite.add_known_good(
         "test_sprite".to_string(),
         PathBuf::from("source.casc"),
         original_file,
-        metadata,
+        common::sprite_metadata_32(),
     ).unwrap();
 
     // Create file with different content
@@ -210,19 +184,12 @@ fn test_comparison_image_generation() {
     original_img.save(&original_file).unwrap();
 
     let mut suite = RegressionTestSuite::new(db_path).unwrap();
-    
-    let metadata = SpriteMetadata {
-        width: 64,
-        height: 64,
-        frame_count: 1,
-        format: "PNG".to_string(),
-    };
 
     suite.add_known_good(
         "test_sprite".to_string(),
         PathBuf::from("source.casc"),
         original_file,
-        metadata,
+        common::sprite_metadata_64(),
     ).unwrap();
 
     // Create modified image
@@ -254,13 +221,6 @@ fn test_multiple_regressions_in_report() {
     std::fs::create_dir_all(&output_dir).unwrap();
 
     let mut suite = RegressionTestSuite::new(db_path).unwrap();
-    
-    let metadata = SpriteMetadata {
-        width: 32,
-        height: 32,
-        frame_count: 1,
-        format: "PNG".to_string(),
-    };
 
     // Create 3 sprites: 2 will pass, 1 will fail
     for i in 0..3 {
@@ -272,7 +232,7 @@ fn test_multiple_regressions_in_report() {
             format!("sprite_{}", i),
             PathBuf::from("source.casc"),
             sprite_file,
-            metadata.clone(),
+            common::sprite_metadata_32(),
         ).unwrap();
     }
 
@@ -332,19 +292,12 @@ fn test_regression_suite_persistence() {
     // Create suite and add known-good
     {
         let mut suite = RegressionTestSuite::new(db_path.clone()).unwrap();
-        
-        let metadata = SpriteMetadata {
-            width: 64,
-            height: 64,
-            frame_count: 1,
-            format: "PNG".to_string(),
-        };
 
         suite.add_known_good(
             "test_sprite".to_string(),
             PathBuf::from("source.casc"),
             sprite_file.clone(),
-            metadata,
+            common::sprite_metadata_64(),
         ).unwrap();
 
         assert_eq!(suite.count(), 1);

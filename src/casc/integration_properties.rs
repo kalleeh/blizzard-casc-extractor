@@ -10,7 +10,7 @@ mod tests {
     use proptest::prelude::*;
     use tempfile::TempDir;
     use std::fs;
-    use std::path::PathBuf;
+
 
     /// Generate a strategy for creating mock StarCraft installations
     fn mock_installation_strategy() -> impl Strategy<Value = (TempDir, Installation)> {

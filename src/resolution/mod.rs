@@ -1,10 +1,58 @@
 use crate::cli::ResolutionTier;
-use crate::casc::CascArchive;
+use crate::casc::FileEntry;
 use std::path::{Path, PathBuf};
+
+/// Detect resolution tier from a file path string.
+///
+/// - HD2/anim/ -> HD2
+/// - anim/ -> HD
+/// - SD/ -> SD
+/// - Other paths -> None
+pub fn detect_resolution_tier(path: &str) -> Option<ResolutionTier> {
+    let path_lower = path.to_lowercase();
+
+    if path_lower.contains("hd2/anim/") || path_lower.contains("hd2\\anim\\") {
+        return Some(ResolutionTier::HD2);
+    }
+
+    if path_lower.contains("anim/") || path_lower.contains("anim\\") {
+        return Some(ResolutionTier::HD);
+    }
+
+    if path_lower.contains("sd/") || path_lower.contains("sd\\") {
+        return Some(ResolutionTier::SD);
+    }
+
+    None
+}
+
+/// Filter a slice of `FileEntry` values by resolution tier.
+pub fn filter_by_resolution<'a>(files: &'a [FileEntry], tier: ResolutionTier) -> Vec<&'a FileEntry> {
+    let tier_name = format!("{}", tier);
+    match tier {
+        ResolutionTier::All => files.iter().collect(),
+        _ => files
+            .iter()
+            .filter(|file| file.resolution_tier.as_deref() == Some(tier_name.as_str()))
+            .collect(),
+    }
+}
+
+/// Return the output directory for a given resolution tier.
+pub fn get_output_path_for_tier(base_output_dir: &Path, tier: Option<ResolutionTier>) -> PathBuf {
+    match tier {
+        Some(ResolutionTier::HD) => base_output_dir.join("HD"),
+        Some(ResolutionTier::HD2) => base_output_dir.join("HD2"),
+        Some(ResolutionTier::SD) => base_output_dir.join("SD"),
+        Some(ResolutionTier::All) | None => base_output_dir.to_path_buf(),
+    }
+}
 
 /// Resolution tier handler for organizing sprite extraction by resolution
 pub struct ResolutionHandler {
+    #[allow(dead_code)]
     tier: ResolutionTier,
+    #[allow(dead_code)]
     output_base: PathBuf,
 }
 
@@ -17,16 +65,16 @@ impl ResolutionHandler {
         }
     }
 
-    /// Detect resolution tier from file path (delegates to CASC implementation)
-    /// 
+    /// Detect resolution tier from file path
+    ///
     /// Analyzes the file path to determine which resolution tier it belongs to:
     /// - HD2/anim/ -> HD2
-    /// - anim/ -> HD  
+    /// - anim/ -> HD
     /// - SD/ -> SD
     /// - Other paths -> None
     pub fn detect_tier_from_path<P: AsRef<Path>>(path: P) -> Option<ResolutionTier> {
         let path_str = path.as_ref().to_string_lossy();
-        CascArchive::detect_resolution_tier(&path_str)
+        detect_resolution_tier(&path_str)
     }
 
     #[cfg(test)]

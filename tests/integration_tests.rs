@@ -6,235 +6,80 @@
 use std::path::PathBuf;
 use std::process::Command;
 use tempfile::TempDir;
-use assert_fs::prelude::*;
-use assert_fs::TempDir as AssertTempDir;
+
+/// Shared extraction workflow test — runs validation and extraction against a mock CASC
+/// structure, then delegates to the platform-specific filesystem verification function.
+fn run_extraction_workflow_test(
+    platform: &str,
+    verify_fs: fn(&std::path::Path),
+) {
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let output_dir = temp_dir.path().join("output");
+    let install_dir = temp_dir.path().join("starcraft_install");
+    create_mock_casc_structure(&install_dir);
+    let binary_path = build_extractor_binary();
+
+    // Validation pass
+    let output = Command::new(&binary_path)
+        .args(["--install-path", install_dir.to_str().unwrap(),
+               "--output-dir",   output_dir.to_str().unwrap(),
+               "--validate-only", "--verbose"])
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to execute extractor on {}: {}", platform, e));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stderr.contains("Installation path:")
+            || stderr.contains("CASC Sprite Extractor")
+            || stderr.contains("Argument validation failed"),
+        "Should show installation processing info on {}. stderr: {}, stdout: {}",
+        platform, stderr, stdout
+    );
+
+    // Extraction pass
+    let output = Command::new(&binary_path)
+        .args(["--install-path", install_dir.to_str().unwrap(),
+               "--output-dir",   output_dir.to_str().unwrap(),
+               "--include", "test.*\\.anim", "--verbose"])
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to execute extraction on {}: {}", platform, e));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Opening CASC archive")
+            || stderr.contains("Starting extraction workflow")
+            || stderr.contains("Failed to open CASC archive"),
+        "Should attempt extraction workflow on {}. stderr: {}", platform, stderr
+    );
+
+    assert!(output_dir.exists(), "Output directory should exist on {}", platform);
+    verify_fs(&output_dir);
+    println!("✅ {} integration test passed", platform);
+}
 
 /// Test complete extraction workflow on macOS
 #[cfg(target_os = "macos")]
 #[test]
 fn test_macos_extraction_workflow() {
-    // **Feature: casc-sprite-extractor, Integration Test: macOS Platform**
     // **Validates: Requirements 7.1**
-    
-    // Create temporary directories for test
-    let temp_dir = TempDir::new().expect("Failed to create temp directory");
-    let output_dir = temp_dir.path().join("output");
-    
-    // Create a mock CASC installation structure for macOS
-    let install_dir = temp_dir.path().join("starcraft_install");
-    create_mock_casc_structure(&install_dir);
-    
-    // Build the extractor binary
-    let binary_path = build_extractor_binary();
-    
-    // Test basic validation on macOS
-    let output = Command::new(&binary_path)
-        .arg("--install-path")
-        .arg(&install_dir)
-        .arg("--output-dir")
-        .arg(&output_dir)
-        .arg("--validate-only")
-        .arg("--verbose")
-        .output()
-        .expect("Failed to execute extractor on macOS");
-    
-    // Verify the command executed (validation may fail for mock structure, which is expected)
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    
-    // Check that the binary ran and logged the installation path (in stderr due to logging)
-    // or that it at least attempted to process the path
-    let has_installation_info = stderr.contains("Installation path:") || 
-                               stderr.contains("CASC Sprite Extractor") ||
-                               stderr.contains("Argument validation failed");
-    
-    assert!(has_installation_info, 
-        "Should show installation processing info on macOS. stderr: {}, stdout: {}", 
-        stderr, stdout);
-    
-    // Test actual extraction with a small subset
-    let output = Command::new(&binary_path)
-        .arg("--install-path")
-        .arg(&install_dir)
-        .arg("--output-dir")
-        .arg(&output_dir)
-        .arg("--include")
-        .arg("test.*\\.anim")
-        .arg("--verbose")
-        .output()
-        .expect("Failed to execute extraction on macOS");
-    
-    // Verify extraction completed (may fail due to mock data, which is expected)
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    
-    // The extraction should attempt to process but may fail on mock data
-    // Check that it at least tried to open the CASC archive
-    let attempted_extraction = stderr.contains("Opening CASC archive") || 
-                              stderr.contains("Starting extraction workflow") ||
-                              stderr.contains("Failed to open CASC archive");
-    
-    assert!(attempted_extraction, 
-        "Should attempt extraction workflow on macOS. stderr: {}", stderr);
-    
-    // Verify output directory was created with macOS-compatible paths
-    assert!(output_dir.exists(), "Output directory should exist on macOS");
-    
-    // Verify macOS-specific file system behavior
-    verify_macos_file_system_behavior(&output_dir);
-    
-    println!("✅ macOS integration test passed");
+    run_extraction_workflow_test("macOS", verify_macos_file_system_behavior);
 }
 
 /// Test complete extraction workflow on Linux
 #[cfg(target_os = "linux")]
 #[test]
 fn test_linux_extraction_workflow() {
-    // **Feature: casc-sprite-extractor, Integration Test: Linux Platform**
     // **Validates: Requirements 7.2**
-    
-    // Create temporary directories for test
-    let temp_dir = TempDir::new().expect("Failed to create temp directory");
-    let output_dir = temp_dir.path().join("output");
-    
-    // Create a mock CASC installation structure for Linux
-    let install_dir = temp_dir.path().join("starcraft_install");
-    create_mock_casc_structure(&install_dir);
-    
-    // Build the extractor binary
-    let binary_path = build_extractor_binary();
-    
-    // Test basic validation on Linux
-    let output = Command::new(&binary_path)
-        .arg("--install-path")
-        .arg(&install_dir)
-        .arg("--output-dir")
-        .arg(&output_dir)
-        .arg("--validate-only")
-        .arg("--verbose")
-        .output()
-        .expect("Failed to execute extractor on Linux");
-    
-    // Verify the command executed (validation may fail for mock structure, which is expected)
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    
-    // Check that the binary ran and logged the installation path (in stderr due to logging)
-    // or that it at least attempted to process the path
-    let has_installation_info = stderr.contains("Installation path:") || 
-                               stderr.contains("CASC Sprite Extractor") ||
-                               stderr.contains("Argument validation failed");
-    
-    assert!(has_installation_info, 
-        "Should show installation processing info on Linux. stderr: {}, stdout: {}", 
-        stderr, stdout);
-    
-    // Test actual extraction with a small subset
-    let output = Command::new(&binary_path)
-        .arg("--install-path")
-        .arg(&install_dir)
-        .arg("--output-dir")
-        .arg(&output_dir)
-        .arg("--include")
-        .arg("test.*\\.anim")
-        .arg("--verbose")
-        .output()
-        .expect("Failed to execute extraction on Linux");
-    
-    // Verify extraction completed (may fail due to mock data, which is expected)
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    
-    // The extraction should attempt to process but may fail on mock data
-    // Check that it at least tried to open the CASC archive
-    let attempted_extraction = stderr.contains("Opening CASC archive") || 
-                              stderr.contains("Starting extraction workflow") ||
-                              stderr.contains("Failed to open CASC archive");
-    
-    assert!(attempted_extraction, 
-        "Should attempt extraction workflow on Linux. stderr: {}", stderr);
-    
-    // Verify output directory was created with Linux-compatible paths
-    assert!(output_dir.exists(), "Output directory should exist on Linux");
-    
-    // Verify Linux-specific file system behavior
-    verify_linux_file_system_behavior(&output_dir);
-    
-    println!("✅ Linux integration test passed");
+    run_extraction_workflow_test("Linux", verify_linux_file_system_behavior);
 }
 
 /// Test complete extraction workflow on Windows
 #[cfg(target_os = "windows")]
 #[test]
 fn test_windows_extraction_workflow() {
-    // **Feature: casc-sprite-extractor, Integration Test: Windows Platform**
     // **Validates: Requirements 7.3**
-    
-    // Create temporary directories for test
-    let temp_dir = TempDir::new().expect("Failed to create temp directory");
-    let output_dir = temp_dir.path().join("output");
-    
-    // Create a mock CASC installation structure for Windows
-    let install_dir = temp_dir.path().join("starcraft_install");
-    create_mock_casc_structure(&install_dir);
-    
-    // Build the extractor binary
-    let binary_path = build_extractor_binary();
-    
-    // Test basic validation on Windows
-    let output = Command::new(&binary_path)
-        .arg("--install-path")
-        .arg(&install_dir)
-        .arg("--output-dir")
-        .arg(&output_dir)
-        .arg("--validate-only")
-        .arg("--verbose")
-        .output()
-        .expect("Failed to execute extractor on Windows");
-    
-    // Verify the command executed (validation may fail for mock structure, which is expected)
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    
-    // Check that the binary ran and logged the installation path (in stderr due to logging)
-    // or that it at least attempted to process the path
-    let has_installation_info = stderr.contains("Installation path:") || 
-                               stderr.contains("CASC Sprite Extractor") ||
-                               stderr.contains("Argument validation failed");
-    
-    assert!(has_installation_info, 
-        "Should show installation processing info on Windows. stderr: {}, stdout: {}", 
-        stderr, stdout);
-    
-    // Test actual extraction with a small subset
-    let output = Command::new(&binary_path)
-        .arg("--install-path")
-        .arg(&install_dir)
-        .arg("--output-dir")
-        .arg(&output_dir)
-        .arg("--include")
-        .arg("test.*\\.anim")
-        .arg("--verbose")
-        .output()
-        .expect("Failed to execute extraction on Windows");
-    
-    // Verify extraction completed (may fail due to mock data, which is expected)
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    
-    // The extraction should attempt to process but may fail on mock data
-    // Check that it at least tried to open the CASC archive
-    let attempted_extraction = stderr.contains("Opening CASC archive") || 
-                              stderr.contains("Starting extraction workflow") ||
-                              stderr.contains("Failed to open CASC archive");
-    
-    assert!(attempted_extraction, 
-        "Should attempt extraction workflow on Windows. stderr: {}", stderr);
-    
-    // Verify output directory was created with Windows-compatible paths
-    assert!(output_dir.exists(), "Output directory should exist on Windows");
-    
-    // Verify Windows-specific file system behavior
-    verify_windows_file_system_behavior(&output_dir);
-    
-    println!("✅ Windows integration test passed");
+    run_extraction_workflow_test("Windows", verify_windows_file_system_behavior);
 }
 
 /// Create a mock CASC installation structure for testing

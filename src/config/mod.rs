@@ -769,7 +769,7 @@ impl ExtractionConfig {
     /// Get the effective number of parallel threads
     pub fn get_effective_thread_count(&self) -> usize {
         if self.performance_settings.parallel_threads == 0 {
-            num_cpus::get()
+            std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)
         } else {
             self.performance_settings.parallel_threads as usize
         }

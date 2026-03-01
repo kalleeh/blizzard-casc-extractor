@@ -419,18 +419,6 @@ mod tests {
         ]
     }
     
-    fn file_data_strategy() -> impl Strategy<Value = Vec<u8>> {
-        prop_oneof![
-            // PNG signature
-            Just(vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00]),
-            // JPEG signature
-            Just(vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10]),
-            // Other data
-            Just(vec![0x00, 0x01, 0x02, 0x03, 0x04, 0x05]),
-            Just(vec![0x42, 0x4D, 0x00, 0x00]), // BMP-like
-        ]
-    }
-    
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
         

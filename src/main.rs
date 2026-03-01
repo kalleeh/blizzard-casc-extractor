@@ -267,23 +267,26 @@ enum InspectCommands {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Resolve the StarCraft install directory to a UTF-8 string.
+fn resolve_install_str(install_path: Option<&Path>) -> Result<String> {
+    let install_dir = locate_starcraft(install_path)?;
+    install_dir
+        .into_os_string()
+        .into_string()
+        .map_err(|p| anyhow::anyhow!("Install path is not valid UTF-8: {:?}", p))
+}
+
 /// Open the CascLib-backed archive, resolving the install path.
 fn open_casc_archive(install_path: Option<&Path>) -> Result<CascArchive> {
-    let install_dir = locate_starcraft(install_path)?;
-    let install_str = install_dir
-        .to_str()
-        .ok_or_else(|| anyhow::anyhow!("Install path is not valid UTF-8: {:?}", install_dir))?;
-    CascArchive::open(install_str)
+    let install_str = resolve_install_str(install_path)?;
+    CascArchive::open(&install_str)
         .map_err(|e| anyhow::anyhow!("Failed to open CASC archive at {}: {}", install_str, e))
 }
 
 /// Open the index-based CascStorage (used for file enumeration).
 fn open_casc_storage(install_path: Option<&Path>) -> Result<CascStorage> {
-    let install_dir = locate_starcraft(install_path)?;
-    let install_str = install_dir
-        .to_str()
-        .ok_or_else(|| anyhow::anyhow!("Install path is not valid UTF-8: {:?}", install_dir))?;
-    CascStorage::open(install_str)
+    let install_str = resolve_install_str(install_path)?;
+    CascStorage::open(&install_str)
         .map_err(|e| anyhow::anyhow!("Failed to open CascStorage at {}: {}", install_str, e))
 }
 

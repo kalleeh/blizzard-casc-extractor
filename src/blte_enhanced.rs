@@ -37,6 +37,7 @@ pub enum BlteError {
 /// Enhanced BLTE decompressor with fallback chains and secure key management
 pub struct BlteDecompressor {
     key_service: Option<KeyService>,
+    #[allow(dead_code)]
     fallback_keys: Vec<Vec<u8>>,
     key_manager: KeyManager,
 }
@@ -152,6 +153,12 @@ impl KeyManager {
     /// Cache a successful key for a specific data hash
     pub fn cache_key_for_data(&mut self, data_hash: u64, key: Vec<u8>) {
         self.key_cache.insert(data_hash, key);
+    }
+
+    /// Record a successful key usage and cache it for the given data hash
+    pub fn record_success_and_cache(&mut self, key: &[u8], data_hash: u64) {
+        self.record_key_success(key);
+        self.cache_key_for_data(data_hash, key.to_vec());
     }
     
     /// Get cached key for specific data hash
@@ -359,33 +366,19 @@ impl BlteDecompressor {
                 // Try decompressing the decrypted data
                 if let Ok(decompressed) = self.try_raw_zlib_decompression(&decrypted) {
                     debug!("Successfully decrypted with key {:02x?} and decompressed", key);
-                    
-                    // Record successful key usage and cache it
-                    self.key_manager.record_key_success(&key);
-                    self.key_manager.cache_key_for_data(data_hash, key);
-                    
+                    self.key_manager.record_success_and_cache(&key, data_hash);
                     return Ok(decompressed);
                 }
-                
-                // Try BLTE decompression on decrypted data
+
                 if let Ok(decompressed) = self.try_standard_blte_unencrypted(&decrypted) {
                     debug!("Successfully decrypted with key {:02x?} and BLTE decompressed", key);
-                    
-                    // Record successful key usage and cache it
-                    self.key_manager.record_key_success(&key);
-                    self.key_manager.cache_key_for_data(data_hash, key);
-                    
+                    self.key_manager.record_success_and_cache(&key, data_hash);
                     return Ok(decompressed);
                 }
-                
-                // If decryption worked but decompression failed, check if decrypted data is valid
+
                 if self.looks_like_valid_data(&decrypted) {
                     debug!("Successfully decrypted with key {:02x?}, returning decrypted data", key);
-                    
-                    // Record successful key usage and cache it
-                    self.key_manager.record_key_success(&key);
-                    self.key_manager.cache_key_for_data(data_hash, key);
-                    
+                    self.key_manager.record_success_and_cache(&key, data_hash);
                     return Ok(decrypted);
                 }
             }
