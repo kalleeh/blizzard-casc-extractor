@@ -142,7 +142,7 @@ fn test_visual_comparison_with_diff_generation() {
     let img2_path = temp_dir.path().join("img2.png");
 
     // Create slightly different images
-    let mut img1 = RgbaImage::from_pixel(64, 64, image::Rgba([128, 128, 128, 255]));
+    let img1 = RgbaImage::from_pixel(64, 64, image::Rgba([128, 128, 128, 255]));
     let mut img2 = RgbaImage::from_pixel(64, 64, image::Rgba([128, 128, 128, 255]));
     
     // Make a few pixels different

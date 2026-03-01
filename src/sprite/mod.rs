@@ -1665,12 +1665,17 @@ impl DirectSpriteExtractor {
     }
     
     /// Create PNG from RGB pixel data
+    // NOTE: create_png_from_rgb_pixels and create_png_from_rgba_pixels are kept separate
+    // from create_png_from_pixels and cannot be collapsed into wrappers around it.
+    // create_png_from_pixels(_, false) uses ColorType::Grayscale (not Rgb), and
+    // create_png_from_pixels(_, true) expands 1-byte grayscale values to RGBA rather
+    // than writing pre-composed RGBA bytes directly. The data layouts are incompatible.
     fn create_png_from_rgb_pixels(&self, rgb_pixels: &[u8], width: u32, height: u32) -> Result<Vec<u8>, SpriteError> {
         use std::io::Cursor;
-        
+
         let mut png_data = Vec::new();
         let mut cursor = Cursor::new(&mut png_data);
-        
+
         // Create PNG encoder for RGB
         let mut encoder = png::Encoder::new(&mut cursor, width, height);
         encoder.set_color(png::ColorType::Rgb);

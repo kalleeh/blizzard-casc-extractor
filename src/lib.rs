@@ -21,14 +21,14 @@ pub mod format_converter;
 pub mod format_analyzer;
 pub mod validation;
 
-pub use casc::{CascArchive, CascError, IndexFile, IndexEntry, FileEntry, ValidationReport, SizeValidation, FileAnalysis, CascNavigator, Installation, GameVersion, FileSystemType, NavigatorError, EncryptionHandler, FileAccessLayer, EncryptionError, EncryptionMethod, DecryptionKey};
+pub use casc::{CascArchive, CascError, FileEntry, FileAnalysis, CascNavigator, Installation, GameVersion, FileSystemType, NavigatorError, EncryptionHandler, FileAccessLayer, EncryptionError, EncryptionMethod, DecryptionKey};
 pub use casc::discovery::{locate_starcraft, open_archive};
 pub use anim::{AnimFile, AnimError, CompressionType, PixelFormat, AnimPalette};
 pub use grp::{GrpFile, GrpFrame, GrpError};
 pub use sprite::{DirectSpriteExtractor, SpriteData, SpriteFormat, SpriteError, ExtractionResult, UnityConverter, SpriteMetadata, UnityMetadata, UnityPivot, ImageDimensions};
 pub use sprite::export::{ExportConfig, ExportResult, export_anim, generate_metadata};
-pub use cli::{CliArgs, ResolutionTier, FormatFilterOption};
-pub use config::{ExtractionConfig, FormatSettings, QualitySettings, PerformanceSettings, OutputSettings, FeedbackSettings, UnityExportSettings, FormatType, ExtractionMode, ConflictResolution, FormatQuality, ColorDepth, NamingConvention, DirectoryStructure, MetadataOptions, OverwriteBehavior, profiles::{ConfigurationProfileManager, ConfigurationProfile, ProfileMetadata}};
+pub use cli::ResolutionTier;
+pub use config::{ExtractionConfig, FormatSettings, QualitySettings, PerformanceSettings, OutputSettings, FeedbackSettings, UnityExportSettings, FormatType, ExtractionMode, ConflictResolution, FormatQuality, ColorDepth, NamingConvention, DirectoryStructure, MetadataOptions, OverwriteBehavior};
 pub use filter::{FileFilter, FilterStats, FilterResult, FormatFilter, FileInfo};
 pub use progress::ProgressReporter;
 pub use research::{ResearchDataCollector, ResearchData, CascStats, FormatAnalysis, ExtractionStats};

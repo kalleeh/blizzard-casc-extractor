@@ -8,8 +8,6 @@
 //! - Create reusable configuration profiles
 //! - Enable progress reporting and user feedback options
 
-pub mod profiles;
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -17,7 +15,7 @@ use anyhow::{Result, Context};
 use crate::cli::{ResolutionTier, FormatFilterOption, UnityFilterMode, UnityWrapMode};
 
 /// Main configuration structure for the CASC sprite extractor
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ExtractionConfig {
     /// Format-specific settings and priorities
     pub format_settings: FormatSettings,
@@ -380,7 +378,7 @@ pub struct FilterSettings {
 }
 
 /// Analysis settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AnalysisSettings {
     /// Enable pattern analysis
     pub analyze_patterns: bool,
@@ -393,7 +391,7 @@ pub struct AnalysisSettings {
 }
 
 /// Research data collection settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ResearchSettings {
     /// Enable research data collection
     pub collect_research_data: bool,
@@ -403,22 +401,6 @@ pub struct ResearchSettings {
     
     /// Enable performance metrics collection
     pub collect_performance_metrics: bool,
-}
-
-impl Default for ExtractionConfig {
-    fn default() -> Self {
-        Self {
-            format_settings: FormatSettings::default(),
-            quality_settings: QualitySettings::default(),
-            performance_settings: PerformanceSettings::default(),
-            output_settings: OutputSettings::default(),
-            feedback_settings: FeedbackSettings::default(),
-            filter_settings: FilterSettings::default(),
-            analysis_settings: AnalysisSettings::default(),
-            research_settings: ResearchSettings::default(),
-            custom_settings: HashMap::new(),
-        }
-    }
 }
 
 impl Default for FormatSettings {
@@ -561,140 +543,10 @@ impl Default for FilterSettings {
     }
 }
 
-impl Default for AnalysisSettings {
-    fn default() -> Self {
-        Self {
-            analyze_patterns: false,
-            analyze_formats: false,
-            analyze_performance: false,
-        }
-    }
-}
-
-impl Default for ResearchSettings {
-    fn default() -> Self {
-        Self {
-            collect_research_data: false,
-            collect_format_statistics: false,
-            collect_performance_metrics: false,
-        }
-    }
-}
-
 impl ExtractionConfig {
     /// Create a new configuration with default settings
     pub fn new() -> Self {
         Self::default()
-    }
-    
-    /// Create configuration from CLI arguments
-    pub fn from_cli_args(args: &crate::cli::CliArgs) -> Result<Self> {
-        let mut config = Self::default();
-        
-        // Configure output settings
-        config.output_settings.output_directory = args.output_dir.clone();
-        
-        // Configure Unity settings if enabled
-        if args.should_generate_unity_output() {
-            config.output_settings.unity_settings.enabled = true;
-            config.output_settings.unity_settings.pixels_per_unit = args.unity_pixels_per_unit;
-            config.output_settings.unity_settings.filter_mode = args.unity_filter_mode;
-            config.output_settings.unity_settings.wrap_mode = args.unity_wrap_mode;
-            config.output_settings.unity_settings.compression_quality = args.unity_compression_quality;
-            config.output_settings.unity_settings.generate_mipmaps = args.unity_generate_mipmaps;
-            config.output_settings.unity_settings.generate_meta_files = true;
-        }
-        
-        // Configure quality settings
-        config.quality_settings.resolution_tier = args.resolution;
-        config.quality_settings.format_filter = args.format_filter;
-        
-        // Configure feedback settings
-        config.feedback_settings.verbose_logging = args.verbose;
-        
-        // Configure filter settings
-        config.filter_settings.resolution_tier = args.resolution;
-        config.filter_settings.max_files = args.max_files.map(|v| v as u64);
-        
-        if !args.include_patterns.is_empty() {
-            config.filter_settings.include_patterns = Some(args.include_patterns.clone());
-        }
-        
-        if !args.exclude_patterns.is_empty() {
-            config.filter_settings.exclude_patterns = Some(args.exclude_patterns.clone());
-        }
-        
-        // Configure analysis settings
-        config.analysis_settings.analyze_formats = args.analyze_formats;
-        config.analysis_settings.analyze_patterns = args.analyze_formats; // Enable pattern analysis when format analysis is enabled
-        
-        // Configure research settings
-        config.research_settings.collect_research_data = args.analyze_formats;
-        config.research_settings.collect_format_statistics = args.analyze_formats;
-        config.research_settings.collect_performance_metrics = args.verbose;
-        
-        // Configure format settings based on CLI filters
-        if args.format_filter != crate::cli::FormatFilterOption::All {
-            // Adjust enabled formats based on filter
-            config.format_settings.enabled_formats.clear();
-            match args.format_filter {
-                crate::cli::FormatFilterOption::Png => {
-                    config.format_settings.enabled_formats.push(FormatType::PNG);
-                }
-                crate::cli::FormatFilterOption::Jpeg => {
-                    config.format_settings.enabled_formats.push(FormatType::JPEG);
-                }
-                crate::cli::FormatFilterOption::Images => {
-                    config.format_settings.enabled_formats.push(FormatType::PNG);
-                    config.format_settings.enabled_formats.push(FormatType::JPEG);
-                }
-                crate::cli::FormatFilterOption::All => {
-                    // Already set in default
-                }
-            }
-        }
-        
-        // Configure performance settings
-        if let Some(max_files) = args.max_files {
-            // Use max_files to estimate batch size
-            config.performance_settings.batch_size = ((max_files as u32) / 10).max(1).min(1000);
-        }
-        
-        // Store additional CLI settings in custom_settings for backward compatibility
-        config.custom_settings.insert(
-            "validate_only".to_string(),
-            serde_json::to_value(args.validate_only)?
-        );
-        
-        // Validate the configuration
-        config.validate()?;
-        
-        Ok(config)
-    }
-    
-    /// Load configuration from a file
-    pub fn load_from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
-        let content = std::fs::read_to_string(path.as_ref())
-            .with_context(|| format!("Failed to read configuration file: {:?}", path.as_ref()))?;
-        
-        let config: Self = serde_json::from_str(&content)
-            .with_context(|| format!("Failed to parse configuration file: {:?}", path.as_ref()))?;
-        
-        config.validate()?;
-        Ok(config)
-    }
-    
-    /// Save configuration to a file
-    pub fn save_to_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
-        self.validate()?;
-        
-        let content = serde_json::to_string_pretty(self)
-            .context("Failed to serialize configuration")?;
-        
-        std::fs::write(path.as_ref(), content)
-            .with_context(|| format!("Failed to write configuration file: {:?}", path.as_ref()))?;
-        
-        Ok(())
     }
     
     /// Validate the configuration settings
@@ -732,38 +584,6 @@ impl ExtractionConfig {
             .context("Invalid research settings")?;
         
         Ok(())
-    }
-    
-    /// Merge this configuration with another, with the other taking precedence
-    pub fn merge_with(&mut self, other: &ExtractionConfig) {
-        // Merge format settings
-        self.format_settings.merge_with(&other.format_settings);
-        
-        // Merge quality settings
-        self.quality_settings.merge_with(&other.quality_settings);
-        
-        // Merge performance settings
-        self.performance_settings.merge_with(&other.performance_settings);
-        
-        // Merge output settings
-        self.output_settings.merge_with(&other.output_settings);
-        
-        // Merge feedback settings
-        self.feedback_settings.merge_with(&other.feedback_settings);
-        
-        // Merge filter settings
-        self.filter_settings.merge_with(&other.filter_settings);
-        
-        // Merge analysis settings
-        self.analysis_settings.merge_with(&other.analysis_settings);
-        
-        // Merge research settings
-        self.research_settings.merge_with(&other.research_settings);
-        
-        // Merge custom settings
-        for (key, value) in &other.custom_settings {
-            self.custom_settings.insert(key.clone(), value.clone());
-        }
     }
     
     /// Get the effective number of parallel threads
@@ -814,29 +634,6 @@ impl FormatSettings {
         
         Ok(())
     }
-    
-    fn merge_with(&mut self, other: &FormatSettings) {
-        // Merge enabled formats (union)
-        for format in &other.enabled_formats {
-            if !self.enabled_formats.contains(format) {
-                self.enabled_formats.push(*format);
-            }
-        }
-        
-        // Merge priorities (other takes precedence)
-        for (format, priority) in &other.format_priorities {
-            self.format_priorities.insert(*format, *priority);
-        }
-        
-        // Merge quality settings (other takes precedence)
-        for (format, quality) in &other.format_quality {
-            self.format_quality.insert(*format, quality.clone());
-        }
-        
-        // Update other settings
-        self.extraction_mode = other.extraction_mode;
-        self.conflict_resolution = other.conflict_resolution;
-    }
 }
 
 impl QualitySettings {
@@ -853,15 +650,6 @@ impl QualitySettings {
         
         Ok(())
     }
-    
-    fn merge_with(&mut self, other: &QualitySettings) {
-        self.resolution_tier = other.resolution_tier;
-        self.format_filter = other.format_filter;
-        self.png_compression_level = other.png_compression_level;
-        self.jpeg_quality = other.jpeg_quality;
-        self.prefer_lossless = other.prefer_lossless;
-        self.color_depth = other.color_depth;
-    }
 }
 
 impl PerformanceSettings {
@@ -873,16 +661,6 @@ impl PerformanceSettings {
         
         Ok(())
     }
-    
-    fn merge_with(&mut self, other: &PerformanceSettings) {
-        self.max_memory_usage_mb = other.max_memory_usage_mb;
-        self.parallel_threads = other.parallel_threads;
-        self.use_streaming_processing = other.use_streaming_processing;
-        self.use_memory_mapping = other.use_memory_mapping;
-        self.use_lazy_loading = other.use_lazy_loading;
-        self.enable_object_pooling = other.enable_object_pooling;
-        self.batch_size = other.batch_size;
-    }
 }
 
 impl OutputSettings {
@@ -892,15 +670,6 @@ impl OutputSettings {
             .context("Invalid Unity settings")?;
         
         Ok(())
-    }
-    
-    fn merge_with(&mut self, other: &OutputSettings) {
-        self.output_directory = other.output_directory.clone();
-        self.unity_settings.merge_with(&other.unity_settings);
-        self.naming_convention = other.naming_convention;
-        self.directory_structure = other.directory_structure;
-        self.metadata_options.merge_with(&other.metadata_options);
-        self.overwrite_behavior = other.overwrite_behavior;
     }
 }
 
@@ -912,15 +681,6 @@ impl FeedbackSettings {
         }
         
         Ok(())
-    }
-    
-    fn merge_with(&mut self, other: &FeedbackSettings) {
-        self.enable_progress_reporting = other.enable_progress_reporting;
-        self.progress_update_interval_ms = other.progress_update_interval_ms;
-        self.verbose_logging = other.verbose_logging;
-        self.collect_performance_metrics = other.collect_performance_metrics;
-        self.collect_research_data = other.collect_research_data;
-        self.user_feedback_options.merge_with(&other.user_feedback_options);
     }
 }
 
@@ -938,40 +698,9 @@ impl UnityExportSettings {
         
         Ok(())
     }
-    
-    fn merge_with(&mut self, other: &UnityExportSettings) {
-        self.enabled = other.enabled;
-        self.pixels_per_unit = other.pixels_per_unit;
-        self.filter_mode = other.filter_mode;
-        self.wrap_mode = other.wrap_mode;
-        self.compression_quality = other.compression_quality;
-        self.generate_mipmaps = other.generate_mipmaps;
-        self.pivot_point = other.pivot_point;
-        self.generate_meta_files = other.generate_meta_files;
-    }
 }
 
-impl MetadataOptions {
-    fn merge_with(&mut self, other: &MetadataOptions) {
-        self.generate_json = other.generate_json;
-        self.generate_unity_meta = other.generate_unity_meta;
-        self.include_animation_data = other.include_animation_data;
-        self.include_database_info = other.include_database_info;
-        self.include_performance_metrics = other.include_performance_metrics;
-        self.include_research_data = other.include_research_data;
-    }
-}
 
-impl UserFeedbackOptions {
-    fn merge_with(&mut self, other: &UserFeedbackOptions) {
-        self.show_progress_bar = other.show_progress_bar;
-        self.show_file_progress = other.show_file_progress;
-        self.show_performance_stats = other.show_performance_stats;
-        self.show_memory_usage = other.show_memory_usage;
-        self.show_format_details = other.show_format_details;
-        self.show_error_details = other.show_error_details;
-    }
-}
 
 impl FilterSettings {
     fn validate(&self) -> Result<()> {
@@ -993,19 +722,6 @@ impl FilterSettings {
         
         Ok(())
     }
-    
-    fn merge_with(&mut self, other: &FilterSettings) {
-        if other.include_patterns.is_some() {
-            self.include_patterns = other.include_patterns.clone();
-        }
-        if other.exclude_patterns.is_some() {
-            self.exclude_patterns = other.exclude_patterns.clone();
-        }
-        self.resolution_tier = other.resolution_tier;
-        if other.max_files.is_some() {
-            self.max_files = other.max_files;
-        }
-    }
 }
 
 impl AnalysisSettings {
@@ -1013,24 +729,12 @@ impl AnalysisSettings {
         // No specific validation needed for analysis settings
         Ok(())
     }
-    
-    fn merge_with(&mut self, other: &AnalysisSettings) {
-        self.analyze_patterns = other.analyze_patterns;
-        self.analyze_formats = other.analyze_formats;
-        self.analyze_performance = other.analyze_performance;
-    }
 }
 
 impl ResearchSettings {
     fn validate(&self) -> Result<()> {
         // No specific validation needed for research settings
         Ok(())
-    }
-    
-    fn merge_with(&mut self, other: &ResearchSettings) {
-        self.collect_research_data = other.collect_research_data;
-        self.collect_format_statistics = other.collect_format_statistics;
-        self.collect_performance_metrics = other.collect_performance_metrics;
     }
 }
 
@@ -1096,36 +800,6 @@ mod tests {
             prop_assert_eq!(config.get_format_priority(FormatType::ANIM), anim_priority);
             prop_assert_eq!(config.get_format_priority(FormatType::GRP), grp_priority);
             prop_assert_eq!(config.get_format_priority(FormatType::PCX), pcx_priority);
-        }
-        
-        #[test]
-        fn test_configuration_merge_consistency(
-            base_threads in 0u32..=16,
-            override_threads in 0u32..=16,
-            base_memory in 512u64..=8192,
-            override_memory in 512u64..=8192
-        ) {
-            let mut base_config = ExtractionConfig::default();
-            base_config.performance_settings.parallel_threads = base_threads;
-            base_config.performance_settings.max_memory_usage_mb = base_memory;
-            
-            let mut override_config = ExtractionConfig::default();
-            override_config.performance_settings.parallel_threads = override_threads;
-            override_config.performance_settings.max_memory_usage_mb = override_memory;
-            
-            // Both configurations should be valid
-            prop_assert!(base_config.validate().is_ok());
-            prop_assert!(override_config.validate().is_ok());
-            
-            // Merge configurations
-            base_config.merge_with(&override_config);
-            
-            // Merged configuration should be valid
-            prop_assert!(base_config.validate().is_ok());
-            
-            // Override values should take precedence
-            prop_assert_eq!(base_config.performance_settings.parallel_threads, override_threads);
-            prop_assert_eq!(base_config.performance_settings.max_memory_usage_mb, override_memory);
         }
         
         #[test]
