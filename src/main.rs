@@ -14,7 +14,8 @@ use anyhow::Result;
 use casc_extractor::anim::HdAnimFile;
 use casc_extractor::casc::casclib_ffi::CascArchive;
 use casc_extractor::casc::discovery::locate_starcraft;
-use casc_extractor::config::ExtractionConfig;
+use casc_extractor::config::{ExtractionConfig, OverwriteBehavior};
+use regex::Regex;
 use casc_extractor::grp::GrpFile;
 use casc_extractor::mapping::SpriteMapping;
 use casc_extractor::{export_anim, CascStorage, ExportConfig};
@@ -276,6 +277,43 @@ enum InspectCommands {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Returns `true` when the file should be skipped based on overwrite policy.
+fn should_skip(path: &Path, behavior: OverwriteBehavior) -> bool {
+    matches!(behavior, OverwriteBehavior::Never) && path.exists()
+}
+
+/// Map a 0-9 PNG compression level to the `png` crate's compression enum.
+fn png_compression(level: u32) -> png::Compression {
+    match level {
+        0..=2 => png::Compression::Fast,
+        7..=9 => png::Compression::Best,
+        _ => png::Compression::Default,
+    }
+}
+
+/// Compile a list of regex pattern strings, silently skipping invalid ones.
+fn compile_patterns(patterns: &Option<Vec<String>>) -> Vec<Regex> {
+    patterns
+        .as_ref()
+        .map(|pats| {
+            pats.iter()
+                .filter_map(|p| Regex::new(p).map_err(|e| {
+                    eprintln!("Warning: invalid filter pattern {:?}: {}", p, e);
+                }).ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Returns `true` if the path passes the include/exclude filter.
+/// An empty include list means "allow everything".
+fn passes_filter(path: &str, include: &[Regex], exclude: &[Regex]) -> bool {
+    if !include.is_empty() && !include.iter().any(|r| r.is_match(path)) {
+        return false;
+    }
+    !exclude.iter().any(|r| r.is_match(path))
+}
+
 /// Load ExtractionConfig from a JSON file, falling back to defaults on any error.
 fn load_config(path: Option<&Path>) -> ExtractionConfig {
     let path = match path {
@@ -328,6 +366,7 @@ fn cmd_extract_anim(
     ids: Option<Vec<u16>>,
     convert_to_png: bool,
     team_color_mask: bool,
+    config: &ExtractionConfig,
 ) -> Result<()> {
     fs::create_dir_all(output)?;
     println!("Extracting Animations...");
@@ -335,28 +374,51 @@ fn cmd_extract_anim(
     println!("Output:   {:?}\n", output);
 
     let prefix = quality.path_prefix();
-    let id_list: Vec<u16> = ids.unwrap_or_else(|| (0..1000).collect());
+
+    // Build id list, then cap to max_files if set.
+    let mut id_list: Vec<u16> = ids.unwrap_or_else(|| (0..1000).collect());
+    if let Some(max) = config.filter_settings.max_files {
+        id_list.truncate(max as usize);
+    }
+
+    // Compile include/exclude regex patterns once upfront.
+    let include = compile_patterns(&config.filter_settings.include_patterns);
+    let exclude = compile_patterns(&config.filter_settings.exclude_patterns);
+
+    let overwrite = config.output_settings.overwrite_behavior;
+    let gen_meta  = config.output_settings.metadata_options.generate_json;
 
     for id in id_list {
-        let path = format!("{}anim/main_{:03}.anim", prefix, id);
-        match archive.extract_file(&path) {
+        let casc_path = format!("{}anim/main_{:03}.anim", prefix, id);
+
+        if !passes_filter(&casc_path, &include, &exclude) {
+            continue;
+        }
+
+        match archive.extract_file(&casc_path) {
             Ok(data) => {
                 let output_name = format!("main_{:03}.anim", id);
                 let output_path = output.join(&output_name);
+
+                if should_skip(&output_path, overwrite) {
+                    continue;
+                }
+
                 File::create(&output_path)?.write_all(&data)?;
 
                 if convert_to_png {
                     match HdAnimFile::parse(&data) {
                         Ok(anim) => {
-                            let config = ExportConfig {
+                            let export_cfg = ExportConfig {
                                 convert_to_png,
                                 team_color_mask,
                                 save_dds: true,
+                                generate_metadata: gen_meta,
                             };
                             match export_anim(
                                 &anim,
                                 &output_path.with_extension(""),
-                                &config,
+                                &export_cfg,
                             ) {
                                 Ok(result) => println!(
                                     "  {} ({} frames, {:.1} MB) tc={}",
@@ -378,9 +440,7 @@ fn cmd_extract_anim(
                     );
                 }
             }
-            Err(_) => {
-                // Silently skip missing anim IDs — not every ID exists.
-            }
+            Err(_) => {} // Silently skip missing anim IDs — not every ID exists.
         }
     }
 
@@ -394,6 +454,7 @@ fn cmd_extract_tileset(
     output: &Path,
     quality: QualityLevel,
     _convert_to_png: bool,
+    config: &ExtractionConfig,
 ) -> Result<()> {
     fs::create_dir_all(output)?;
     println!("Extracting Tilesets...");
@@ -401,17 +462,22 @@ fn cmd_extract_tileset(
     println!("Output:  {:?}\n", output);
 
     let prefix = quality.path_prefix();
+    let overwrite = config.output_settings.overwrite_behavior;
     let tilesets = [
         "badlands", "platform", "ashworld", "jungle",
         "desert", "ice", "twilight", "install",
     ];
 
     for tileset in &tilesets {
+        let output_name = format!("{}.dds.vr4", tileset);
+        let output_path = output.join(&output_name);
+        if should_skip(&output_path, overwrite) {
+            println!("  {} (skipped)", output_name);
+            continue;
+        }
         let path = format!("{}tileset/{}.dds.vr4", prefix, tileset);
         match archive.extract_file(&path) {
             Ok(data) => {
-                let output_name = format!("{}.dds.vr4", tileset);
-                let output_path = output.join(&output_name);
                 File::create(&output_path)?.write_all(&data)?;
                 println!("  {} ({:.1} MB)", output_name, data.len() as f64 / 1_000_000.0);
             }
@@ -428,6 +494,7 @@ fn cmd_extract_effect(
     output: &Path,
     quality: QualityLevel,
     _convert_to_png: bool,
+    config: &ExtractionConfig,
 ) -> Result<()> {
     fs::create_dir_all(output)?;
     println!("Extracting Effects...");
@@ -435,13 +502,18 @@ fn cmd_extract_effect(
     println!("Output:  {:?}\n", output);
 
     let prefix = quality.path_prefix();
+    let overwrite = config.output_settings.overwrite_behavior;
     let effects = ["water_normal_1.dds.grp", "water_normal_2.dds.grp"];
 
     for effect in &effects {
+        let output_path = output.join(effect);
+        if should_skip(&output_path, overwrite) {
+            println!("  {} (skipped)", effect);
+            continue;
+        }
         let path = format!("{}effect/{}", prefix, effect);
         match archive.extract_file(&path) {
             Ok(data) => {
-                let output_path = output.join(effect);
                 File::create(&output_path)?.write_all(&data)?;
                 println!("  {} ({:.1} MB)", effect, data.len() as f64 / 1_000_000.0);
             }
@@ -454,7 +526,7 @@ fn cmd_extract_effect(
 }
 
 /// Build a spritesheet PNG from GRP frames and write it to `output_path`.
-fn build_spritesheet(grp: &GrpFile, output_path: &Path) -> Result<()> {
+fn build_spritesheet(grp: &GrpFile, output_path: &Path, compression: png::Compression) -> Result<()> {
     let frames_per_row = 17usize;
     let rows = (grp.frame_count as usize + frames_per_row - 1) / frames_per_row;
     let sheet_width = grp.width as u32 * frames_per_row as u32;
@@ -487,6 +559,7 @@ fn build_spritesheet(grp: &GrpFile, output_path: &Path) -> Result<()> {
     let mut encoder = png::Encoder::new(w, sheet_width, sheet_height);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
+    encoder.set_compression(compression);
     let mut writer = encoder.write_header()?;
     writer.write_image_data(&sheet_data)?;
     Ok(())
@@ -555,6 +628,7 @@ fn cmd_extract_organized(
     archive: &CascArchive,
     output: &Path,
     mapping_file: &Path,
+    config: &ExtractionConfig,
 ) -> Result<()> {
     let mapping = SpriteMapping::load(mapping_file).map_err(|e| {
         anyhow::anyhow!("Failed to load mapping file '{:?}': {}", mapping_file, e)
@@ -564,22 +638,38 @@ fn cmd_extract_organized(
     println!("Using mapping: {:?}", mapping_file);
     println!("--------------------------------------------------------\n");
 
+    let overwrite   = config.output_settings.overwrite_behavior;
+    let gen_meta    = config.output_settings.metadata_options.generate_json;
+    let compression = png_compression(config.quality_settings.png_compression_level);
+    let include     = compile_patterns(&config.filter_settings.include_patterns);
+    let exclude     = compile_patterns(&config.filter_settings.exclude_patterns);
+
     let mut stats: HashMap<String, usize> = HashMap::new();
     let mut total_success = 0usize;
     let mut total_failed = 0usize;
 
     for (category_path, file_path) in &mapping.entries {
+        if !passes_filter(category_path, &include, &exclude) {
+            continue;
+        }
+
         let output_path = output.join(category_path);
         if let Some(parent) = output_path.parent() {
             fs::create_dir_all(parent)?;
         }
 
+        if should_skip(&output_path.with_extension("png"), overwrite) {
+            continue;
+        }
+
         match archive.extract_file(file_path) {
             Ok(data) => match GrpFile::parse(&data) {
                 Ok(grp) => {
-                    build_spritesheet(&grp, &output_path.with_extension("png"))?;
-                    write_text_metadata(&grp, &output_path.with_extension("txt"))?;
-                    write_json_metadata(&grp, &output_path.with_extension("json"))?;
+                    build_spritesheet(&grp, &output_path.with_extension("png"), compression)?;
+                    if gen_meta {
+                        write_text_metadata(&grp, &output_path.with_extension("txt"))?;
+                        write_json_metadata(&grp, &output_path.with_extension("json"))?;
+                    }
 
                     println!("  {}", category_path);
                     let category = category_path
@@ -867,22 +957,23 @@ fn main() -> Result<()> {
                         ids,
                         convert_to_png,
                         team_color_mask,
+                        &config,
                     )?;
                 }
                 ExtractCommands::Tileset {
                     quality,
                     convert_to_png,
                 } => {
-                    cmd_extract_tileset(&archive, &output, quality, convert_to_png)?;
+                    cmd_extract_tileset(&archive, &output, quality, convert_to_png, &config)?;
                 }
                 ExtractCommands::Effect {
                     quality,
                     convert_to_png,
                 } => {
-                    cmd_extract_effect(&archive, &output, quality, convert_to_png)?;
+                    cmd_extract_effect(&archive, &output, quality, convert_to_png, &config)?;
                 }
                 ExtractCommands::Organized { mapping } => {
-                    cmd_extract_organized(&archive, &output, &mapping)?;
+                    cmd_extract_organized(&archive, &output, &mapping, &config)?;
                 }
             }
         }

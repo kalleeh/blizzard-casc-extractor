@@ -25,6 +25,8 @@ pub struct ExportConfig {
     pub team_color_mask: bool,
     /// Write the raw diffuse DDS bytes alongside the PNG.
     pub save_dds: bool,
+    /// Write the Unity-compatible `.json` metadata file alongside the PNG.
+    pub generate_metadata: bool,
 }
 
 impl Default for ExportConfig {
@@ -33,6 +35,7 @@ impl Default for ExportConfig {
             convert_to_png: true,
             team_color_mask: false,
             save_dds: false,
+            generate_metadata: true,
         }
     }
 }
@@ -199,13 +202,15 @@ pub fn export_anim(
         }
     }
 
-    // Write Unity-compatible JSON metadata.
-    let json_path = output_base.with_extension("json");
-    let metadata = generate_metadata(anim, &name);
-    File::create(&json_path)
-        .with_context(|| format!("creating metadata file {}", json_path.display()))?
-        .write_all(metadata.as_bytes())
-        .with_context(|| format!("writing metadata file {}", json_path.display()))?;
+    // Write Unity-compatible JSON metadata (skipped when generate_metadata is false).
+    if config.generate_metadata {
+        let json_path = output_base.with_extension("json");
+        let metadata = generate_metadata(anim, &name);
+        File::create(&json_path)
+            .with_context(|| format!("creating metadata file {}", json_path.display()))?
+            .write_all(metadata.as_bytes())
+            .with_context(|| format!("writing metadata file {}", json_path.display()))?;
+    }
 
     Ok(ExportResult {
         name,
