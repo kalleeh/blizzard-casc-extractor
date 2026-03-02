@@ -22,6 +22,7 @@ use thiserror::Error;
 
 pub use navigator::{CascNavigator, Installation, GameVersion, FileSystemType, NavigatorError};
 pub use encryption::{EncryptionHandler, FileAccessLayer, EncryptionError, EncryptionMethod, DecryptionKey};
+pub use casclib_ffi::CascLibError;
 
 #[derive(Debug, Error)]
 pub enum CascError {

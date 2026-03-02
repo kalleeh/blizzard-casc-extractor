@@ -107,6 +107,8 @@ const SOUND_TARGETS: &[(&str, &[&str])] = &[
         "\\Zerg\\Zergling\\ZlWht00.wav",
         "zerg\\zergling\\zlwht00.wav",
         "zerg/zergling/zlwht00.wav",
+        "\\zerg\\zergling\\zlatt00.wav",
+        "\\zerg\\Zergling\\ZlAtt00.wav",
     ]),
     ("zergling_die.ogg", &[
         "\\zerg\\zergling\\zldth00.wav",
@@ -117,6 +119,8 @@ const SOUND_TARGETS: &[(&str, &[&str])] = &[
         "sound/Zerg/Zergling/ZlDth00.wav",
         "zerg\\zergling\\zldth00.wav",
         "zerg/zergling/zldth00.wav",
+        "\\zerg\\zergling\\zldth00.wav",
+        "\\zerg\\Zergling\\ZlDth00.wav",
     ]),
     ("button.ogg", &[
         "sound\\Misc\\button.wav",
@@ -279,7 +283,27 @@ enum InspectCommands {
 
 /// Returns `true` when the file should be skipped based on overwrite policy.
 fn should_skip(path: &Path, behavior: OverwriteBehavior) -> bool {
-    matches!(behavior, OverwriteBehavior::Never) && path.exists()
+    match behavior {
+        OverwriteBehavior::Never => path.exists(),
+        OverwriteBehavior::IfNewer => {
+            if !path.exists() {
+                return false;
+            }
+            // Skip if the file was modified within the last 60 seconds
+            // (heuristic: it was just extracted in this or a very recent run).
+            // On any metadata error, conservatively overwrite.
+            std::fs::metadata(path)
+                .and_then(|m| m.modified())
+                .map(|mtime| {
+                    std::time::SystemTime::now()
+                        .duration_since(mtime)
+                        .map(|age| age.as_secs() < 60)
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false)
+        }
+        _ => false,
+    }
 }
 
 /// Map a 0-9 PNG compression level to the `png` crate's compression enum.
@@ -373,6 +397,28 @@ fn cmd_extract_anim(
     println!("Quality:  {}", quality.description());
     println!("Output:   {:?}\n", output);
 
+    let overwrite = config.output_settings.overwrite_behavior;
+    let gen_meta  = config.output_settings.metadata_options.generate_json;
+    let pixels_per_unit = config.output_settings.unity_settings.pixels_per_unit;
+
+    // SD quality uses a single file rather than the per-ID loop.
+    if matches!(quality, QualityLevel::Sd) {
+        let casc_path = "SD/mainSD.anim";
+        let output_path = output.join("mainSD.anim");
+        if !should_skip(&output_path, overwrite) {
+            match archive.extract_file(casc_path) {
+                Ok(data) => {
+                    File::create(&output_path)?.write_all(&data)?;
+                    println!("  mainSD.anim ({:.1} MB)", data.len() as f64 / 1_000_000.0);
+                }
+                Err(e) => println!("  mainSD.anim - {}", e),
+            }
+        }
+        println!("\nExtraction complete!");
+        println!("Files saved to: {:?}", output);
+        return Ok(());
+    }
+
     let prefix = quality.path_prefix();
 
     // Build id list, then cap to max_files if set.
@@ -385,15 +431,17 @@ fn cmd_extract_anim(
     let include = compile_patterns(&config.filter_settings.include_patterns);
     let exclude = compile_patterns(&config.filter_settings.exclude_patterns);
 
-    let overwrite = config.output_settings.overwrite_behavior;
-    let gen_meta  = config.output_settings.metadata_options.generate_json;
+    let mut progress = casc_extractor::ProgressReporter::new(id_list.len() as u64, config.feedback_settings.verbose_logging);
 
     for id in id_list {
         let casc_path = format!("{}anim/main_{:03}.anim", prefix, id);
 
         if !passes_filter(&casc_path, &include, &exclude) {
+            progress.increment();
             continue;
         }
+
+        progress.update_current_file(&casc_path);
 
         match archive.extract_file(&casc_path) {
             Ok(data) => {
@@ -401,6 +449,7 @@ fn cmd_extract_anim(
                 let output_path = output.join(&output_name);
 
                 if should_skip(&output_path, overwrite) {
+                    progress.increment();
                     continue;
                 }
 
@@ -412,8 +461,9 @@ fn cmd_extract_anim(
                             let export_cfg = ExportConfig {
                                 convert_to_png,
                                 team_color_mask,
-                                save_dds: true,
+                                save_dds: false,
                                 generate_metadata: gen_meta,
+                                pixels_per_unit,
                             };
                             match export_anim(
                                 &anim,
@@ -442,8 +492,11 @@ fn cmd_extract_anim(
             }
             Err(_) => {} // Silently skip missing anim IDs — not every ID exists.
         }
+
+        progress.increment();
     }
 
+    progress.finish(0, 0);
     println!("\nExtraction complete!");
     println!("Files saved to: {:?}", output);
     Ok(())
@@ -648,8 +701,16 @@ fn cmd_extract_organized(
     let mut total_success = 0usize;
     let mut total_failed = 0usize;
 
+    let mut progress = casc_extractor::ProgressReporter::new(
+        mapping.entries.len() as u64,
+        config.feedback_settings.verbose_logging,
+    );
+
     for (category_path, file_path) in &mapping.entries {
+        progress.update_current_file(category_path);
+
         if !passes_filter(category_path, &include, &exclude) {
+            progress.increment();
             continue;
         }
 
@@ -659,6 +720,7 @@ fn cmd_extract_organized(
         }
 
         if should_skip(&output_path.with_extension("png"), overwrite) {
+            progress.increment();
             continue;
         }
 
@@ -689,7 +751,11 @@ fn cmd_extract_organized(
                 total_failed += 1;
             }
         }
+
+        progress.increment();
     }
+
+    progress.finish(total_success as u64, total_failed as u64);
 
     println!("\n--------------------------------------------------------");
     println!("Statistics:");
@@ -701,7 +767,27 @@ fn cmd_extract_organized(
     Ok(())
 }
 
-fn cmd_sounds_extract(archive: &CascArchive, output: &Path) -> Result<()> {
+/// Scan the archive file listing for an audio entry whose name contains all
+/// words in `stem_hint` (case-insensitive), and try to extract the first match.
+fn discover_sound(archive: &CascArchive, storage: &CascStorage, stem_hint: &str) -> Option<Vec<u8>> {
+    let files = storage.list_files().ok()?;
+    let hint_lower = stem_hint.to_lowercase();
+    // Split hint on '_' to get keywords (e.g. "zergling_attack" -> ["zergling", "att"])
+    let keywords: Vec<String> = hint_lower
+        .split('_')
+        .map(|w| w[..w.len().min(4)].to_string())
+        .collect();
+
+    let candidate = files.iter().find(|f| {
+        let fl = f.to_lowercase();
+        (fl.ends_with(".wav") || fl.ends_with(".ogg"))
+            && keywords.iter().all(|kw| fl.contains(kw.as_str()))
+    })?;
+
+    archive.extract_file(candidate).ok().filter(|d| !d.is_empty())
+}
+
+fn cmd_sounds_extract(archive: &CascArchive, storage: &CascStorage, output: &Path) -> Result<()> {
     println!("  StarCraft Sound Extractor");
     println!("==================================================");
     println!("  Opened CASC archive");
@@ -747,11 +833,23 @@ fn cmd_sounds_extract(archive: &CascArchive, output: &Path) -> Result<()> {
         }
 
         if !found {
-            println!(
-                "  {} -- none of {} candidates succeeded",
-                out_name,
-                candidates.len()
-            );
+            // Fall back to dynamic discovery via the file listing.
+            let stem = out_name.trim_end_matches(".ogg").trim_end_matches(".wav");
+            if let Some(data) = discover_sound(archive, storage, stem) {
+                fs::write(&dest, &data)?;
+                println!(
+                    "  {:>7} bytes  (discovered)  ->  {}",
+                    data.len(),
+                    out_name
+                );
+                extracted += 1;
+            } else {
+                println!(
+                    "  {} -- none of {} candidates succeeded (discovery also failed)",
+                    out_name,
+                    candidates.len()
+                );
+            }
         }
     }
 
@@ -855,10 +953,20 @@ fn cmd_inspect_sprites(
     max_id: u16,
 ) -> Result<()> {
     println!(
-        "Scanning anim IDs 0-{} at quality {}...\n",
-        max_id - 1,
+        "Scanning anim files at quality {}...\n",
         quality.description()
     );
+
+    // SD quality has a single combined file, not per-ID files.
+    if matches!(quality, QualityLevel::Sd) {
+        let path = "SD/mainSD.anim";
+        match archive.extract_file(path) {
+            Ok(data) => println!("  found  mainSD.anim  ({:.1} MB)", data.len() as f64 / 1_000_000.0),
+            Err(_)   => println!("  not found: {}", path),
+        }
+        return Ok(());
+    }
+
     let prefix = quality.path_prefix();
     let mut found = 0usize;
 
@@ -983,7 +1091,8 @@ fn main() -> Result<()> {
             SoundsCommands::Extract { sounds_output } => {
                 let out = sounds_output.unwrap_or(output);
                 let archive = open_casc_archive(cli.install_path.as_deref())?;
-                cmd_sounds_extract(&archive, &out)?;
+                let storage = open_casc_storage(cli.install_path.as_deref())?;
+                cmd_sounds_extract(&archive, &storage, &out)?;
             }
             SoundsCommands::List => {
                 cmd_sounds_list(cli.install_path.as_deref())?;

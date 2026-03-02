@@ -3,6 +3,28 @@
 use std::ffi::{CString, CStr, c_void, c_char};
 use std::os::raw::c_int;
 use std::ptr;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum CascLibError {
+    #[error("Failed to open CASC storage at '{path}'")]
+    OpenFailed { path: String },
+
+    #[error("File not found in archive: '{path}'")]
+    FileNotFound { path: String },
+
+    #[error("Failed to read file '{path}'")]
+    ReadFailed { path: String },
+
+    #[error("Failed to list archive files")]
+    ListFailed,
+
+    #[error("Invalid path: {reason}")]
+    InvalidPath { reason: String },
+
+    #[error("File size {size} bytes exceeds maximum allowed")]
+    FileTooLarge { size: u64 },
+}
 
 type Handle = *mut c_void;
 type DWORD = u32;
@@ -39,27 +61,27 @@ impl CascArchive {
     pub fn handle(&self) -> Handle {
         self.handle
     }
-    
-    pub fn open(path: &str) -> Result<Self, String> {
-        let c_path = CString::new(path).map_err(|e| e.to_string())?;
+
+    pub fn open(path: &str) -> Result<Self, CascLibError> {
+        let c_path = CString::new(path).map_err(|e| CascLibError::InvalidPath { reason: e.to_string() })?;
         let mut handle: Handle = ptr::null_mut();
 
         unsafe {
             if CascOpenStorage(c_path.as_ptr(), 0, &mut handle) {
                 Ok(Self { handle })
             } else {
-                Err("Failed to open CASC storage".to_string())
+                Err(CascLibError::OpenFailed { path: path.to_string() })
             }
         }
     }
 
-    pub fn extract_file(&self, filename: &str) -> Result<Vec<u8>, String> {
-        let c_filename = CString::new(filename).map_err(|e| e.to_string())?;
+    pub fn extract_file(&self, filename: &str) -> Result<Vec<u8>, CascLibError> {
+        let c_filename = CString::new(filename).map_err(|e| CascLibError::InvalidPath { reason: e.to_string() })?;
         let mut file_handle: Handle = ptr::null_mut();
 
         unsafe {
             if !CascOpenFile(self.handle, c_filename.as_ptr(), CASC_LOCALE_ALL, 0, &mut file_handle) {
-                return Err(format!("Failed to open file: {}", filename));
+                return Err(CascLibError::FileNotFound { path: filename.to_string() });
             }
 
             let mut file_size_high: DWORD = 0;
@@ -74,7 +96,7 @@ impl CascArchive {
             const MAX_FILE_SIZE: u64 = 512 * 1024 * 1024; // 512 MB
             if file_size > MAX_FILE_SIZE {
                 CascCloseFile(file_handle);
-                return Err(format!("File size {} exceeds maximum allowed {}", file_size, MAX_FILE_SIZE));
+                return Err(CascLibError::FileTooLarge { size: file_size });
             }
 
             let mut buffer = vec![0u8; file_size as usize];
@@ -82,7 +104,7 @@ impl CascArchive {
 
             if !CascReadFile(file_handle, buffer.as_mut_ptr(), file_size as DWORD, &mut bytes_read) {
                 CascCloseFile(file_handle);
-                return Err(format!("Failed to read file: {}", filename));
+                return Err(CascLibError::ReadFailed { path: filename.to_string() });
             }
 
             buffer.truncate(bytes_read as usize);
@@ -107,20 +129,20 @@ pub struct CascStorage {
 }
 
 impl CascStorage {
-    pub fn open(path: &str) -> Result<Self, String> {
-        let c_path = CString::new(path).map_err(|e| e.to_string())?;
+    pub fn open(path: &str) -> Result<Self, CascLibError> {
+        let c_path = CString::new(path).map_err(|e| CascLibError::InvalidPath { reason: e.to_string() })?;
         let mut handle: Handle = ptr::null_mut();
 
         unsafe {
             if CascOpenStorage(c_path.as_ptr(), 0, &mut handle) {
                 Ok(Self { handle })
             } else {
-                Err("Failed to open CASC storage".to_string())
+                Err(CascLibError::OpenFailed { path: path.to_string() })
             }
         }
     }
 
-    pub fn list_files(&self) -> Result<Vec<String>, String> {
+    pub fn list_files(&self) -> Result<Vec<String>, CascLibError> {
         let mask = CString::new("*").unwrap();
         let mut find_data = CascFindData {
             file_size: 0,
@@ -138,7 +160,7 @@ impl CascStorage {
                 ptr::null(),
             );
             if find_handle.is_null() {
-                return Err("Failed to enumerate files".to_string());
+                return Err(CascLibError::ListFailed);
             }
 
             let mut files = Vec::new();

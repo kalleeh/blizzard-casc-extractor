@@ -27,6 +27,8 @@ pub struct ExportConfig {
     pub save_dds: bool,
     /// Write the Unity-compatible `.json` metadata file alongside the PNG.
     pub generate_metadata: bool,
+    /// Pixels per unit for Unity sprite import.
+    pub pixels_per_unit: f32,
 }
 
 impl Default for ExportConfig {
@@ -36,6 +38,7 @@ impl Default for ExportConfig {
             team_color_mask: false,
             save_dds: false,
             generate_metadata: true,
+            pixels_per_unit: 100.0,
         }
     }
 }
@@ -205,7 +208,7 @@ pub fn export_anim(
     // Write Unity-compatible JSON metadata (skipped when generate_metadata is false).
     if config.generate_metadata {
         let json_path = output_base.with_extension("json");
-        let metadata = generate_metadata(anim, &name);
+        let metadata = generate_metadata_with_config(anim, &name, config.pixels_per_unit);
         File::create(&json_path)
             .with_context(|| format!("creating metadata file {}", json_path.display()))?
             .write_all(metadata.as_bytes())
@@ -229,6 +232,11 @@ pub fn export_anim(
 /// `src/bin/extract_hd.rs` lines 11–42, lifted here so it can be reused
 /// by other callers without depending on the binary.
 pub fn generate_metadata(anim: &HdAnimFile, name: &str) -> String {
+    generate_metadata_with_config(anim, name, 100.0)
+}
+
+/// Generate Unity-compatible JSON metadata, including `pixelsPerUnit`.
+pub fn generate_metadata_with_config(anim: &HdAnimFile, name: &str, pixels_per_unit: f32) -> String {
     // Get PNG dimensions from first image entry.
     let (width, height) = if let Some(img) = anim.entry.images.first() {
         (img.tex_width as u32, img.tex_height as u32)
@@ -244,6 +252,7 @@ pub fn generate_metadata(anim: &HdAnimFile, name: &str) -> String {
   "grpHeight": {},
   "textureWidth": {},
   "textureHeight": {},
+  "pixelsPerUnit": {},
   "frames": [
 {}
   ]
@@ -254,6 +263,7 @@ pub fn generate_metadata(anim: &HdAnimFile, name: &str) -> String {
         anim.entry.grp_height,
         width,
         height,
+        pixels_per_unit,
         anim.frames
             .iter()
             .enumerate()

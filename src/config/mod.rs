@@ -24,10 +24,6 @@ pub struct ExtractionConfig {
     #[serde(default)]
     pub quality_settings: QualitySettings,
 
-    /// Performance and resource management settings
-    #[serde(default)]
-    pub performance_settings: PerformanceSettings,
-
     /// Output and export settings
     #[serde(default)]
     pub output_settings: OutputSettings,
@@ -91,32 +87,6 @@ pub struct QualitySettings {
     
     /// Color depth preference (8-bit, 16-bit, 32-bit)
     pub color_depth: ColorDepth,
-}
-
-/// Performance and resource management settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct PerformanceSettings {
-    /// Maximum memory usage in MB (0 = unlimited)
-    pub max_memory_usage_mb: u64,
-    
-    /// Number of parallel processing threads (0 = auto-detect)
-    pub parallel_threads: u32,
-    
-    /// Enable streaming processing for large files
-    pub use_streaming_processing: bool,
-    
-    /// Enable memory-mapped file access
-    pub use_memory_mapping: bool,
-    
-    /// Enable lazy loading of texture data
-    pub use_lazy_loading: bool,
-    
-    /// Object pooling for data structures
-    pub enable_object_pooling: bool,
-    
-    /// Batch size for parallel processing
-    pub batch_size: u32,
 }
 
 /// Output and export configuration settings
@@ -388,20 +358,6 @@ impl Default for QualitySettings {
             jpeg_quality: 85,
             prefer_lossless: true,
             color_depth: ColorDepth::Original,
-        }
-    }
-}
-
-impl Default for PerformanceSettings {
-    fn default() -> Self {
-        Self {
-            max_memory_usage_mb: 2048, // 2GB default limit
-            parallel_threads: 0, // Auto-detect
-            use_streaming_processing: true,
-            use_memory_mapping: true,
-            use_lazy_loading: true,
-            enable_object_pooling: true,
-            batch_size: 100,
         }
     }
 }

@@ -27,7 +27,7 @@ pub use grp::{GrpFile, GrpFrame, GrpError};
 pub use sprite::{DirectSpriteExtractor, SpriteData, SpriteFormat, SpriteError, ExtractionResult, UnityConverter, SpriteMetadata, UnityMetadata, UnityPivot, ImageDimensions};
 pub use sprite::export::{ExportConfig, ExportResult, export_anim, generate_metadata};
 pub use cli::ResolutionTier;
-pub use config::{ExtractionConfig, FormatSettings, QualitySettings, PerformanceSettings, OutputSettings, FeedbackSettings, UnityExportSettings, FormatType, ExtractionMode, FormatQuality, ColorDepth, MetadataOptions, OverwriteBehavior};
+pub use config::{ExtractionConfig, FormatSettings, QualitySettings, OutputSettings, FeedbackSettings, UnityExportSettings, FormatType, ExtractionMode, FormatQuality, ColorDepth, MetadataOptions, OverwriteBehavior};
 pub use filter::{FileFilter, FilterStats, FilterResult, FormatFilter, FileInfo};
 pub use progress::ProgressReporter;
 pub use research::{ResearchDataCollector, ResearchData, CascStats, FormatAnalysis, ExtractionStats};
