@@ -17,35 +17,45 @@ use crate::cli::{ResolutionTier, FormatFilterOption, UnityFilterMode, UnityWrapM
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ExtractionConfig {
     /// Format-specific settings and priorities
+    #[serde(default)]
     pub format_settings: FormatSettings,
-    
+
     /// Quality and output settings
+    #[serde(default)]
     pub quality_settings: QualitySettings,
-    
+
     /// Performance and resource management settings
+    #[serde(default)]
     pub performance_settings: PerformanceSettings,
-    
+
     /// Output and export settings
+    #[serde(default)]
     pub output_settings: OutputSettings,
-    
+
     /// Progress reporting and user feedback settings
+    #[serde(default)]
     pub feedback_settings: FeedbackSettings,
-    
+
     /// File filtering settings
+    #[serde(default)]
     pub filter_settings: FilterSettings,
-    
+
     /// Analysis settings
+    #[serde(default)]
     pub analysis_settings: AnalysisSettings,
-    
+
     /// Research data collection settings
+    #[serde(default)]
     pub research_settings: ResearchSettings,
-    
+
     /// Custom settings for extensibility
+    #[serde(default)]
     pub custom_settings: HashMap<String, serde_json::Value>,
 }
 
 /// Format-specific configuration settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct FormatSettings {
     /// Enabled formats for extraction (ANIM, GRP, etc.)
     pub enabled_formats: Vec<FormatType>,
@@ -62,6 +72,7 @@ pub struct FormatSettings {
 
 /// Quality and output configuration settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct QualitySettings {
     /// Resolution tier preference
     pub resolution_tier: ResolutionTier,
@@ -84,6 +95,7 @@ pub struct QualitySettings {
 
 /// Performance and resource management settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PerformanceSettings {
     /// Maximum memory usage in MB (0 = unlimited)
     pub max_memory_usage_mb: u64,
@@ -109,6 +121,7 @@ pub struct PerformanceSettings {
 
 /// Output and export configuration settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct OutputSettings {
     /// Base output directory
     pub output_directory: PathBuf,
@@ -125,6 +138,7 @@ pub struct OutputSettings {
 
 /// Progress reporting and user feedback settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct FeedbackSettings {
     /// Enable progress reporting
     pub enable_progress_reporting: bool,
@@ -147,6 +161,7 @@ pub struct FeedbackSettings {
 
 /// Unity-specific export settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct UnityExportSettings {
     /// Enable Unity-compatible output
     pub enabled: bool,
@@ -195,6 +210,7 @@ pub enum ExtractionMode {
 
 /// Format-specific quality settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct FormatQuality {
     /// Enable high-quality processing
     pub high_quality: bool,
@@ -224,6 +240,7 @@ pub enum ColorDepth {
 
 /// Metadata generation options
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct MetadataOptions {
     /// Generate JSON metadata files
     pub generate_json: bool,
@@ -276,6 +293,7 @@ pub enum UnityPivot {
 
 /// User feedback options
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct UserFeedbackOptions {
     /// Show extraction progress bar
     pub show_progress_bar: bool,
@@ -298,6 +316,7 @@ pub struct UserFeedbackOptions {
 
 /// File filtering settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct FilterSettings {
     /// Include patterns (regex)
     pub include_patterns: Option<Vec<String>>,
