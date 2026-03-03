@@ -1,5 +1,38 @@
-use crate::cli::ResolutionTier;
 use crate::casc::FileEntry;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ResolutionTier {
+    HD,
+    HD2,
+    SD,
+    All,
+}
+
+impl std::str::FromStr for ResolutionTier {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "hd" => Ok(ResolutionTier::HD),
+            "hd2" => Ok(ResolutionTier::HD2),
+            "sd" => Ok(ResolutionTier::SD),
+            "all" => Ok(ResolutionTier::All),
+            _ => Err(format!("Invalid resolution tier: {}", s)),
+        }
+    }
+}
+
+impl std::fmt::Display for ResolutionTier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ResolutionTier::HD => write!(f, "HD"),
+            ResolutionTier::HD2 => write!(f, "HD2"),
+            ResolutionTier::SD => write!(f, "SD"),
+            ResolutionTier::All => write!(f, "All"),
+        }
+    }
+}
 use std::path::{Path, PathBuf};
 
 /// Detect resolution tier from a file path string.

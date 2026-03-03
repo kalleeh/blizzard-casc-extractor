@@ -1,34 +1,16 @@
-# Blizzard CASC Sprite Extractor
+# casc-extractor
 
-Extract sprites from Blizzard games using CASC archives with authentic colors and complete animation frames.
+Extract sprites and audio from StarCraft: Remastered CASC archives.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Supported Games
 
-**StarCraft: Remastered** - Fully tested (133 sprites extracted)
+**StarCraft: Remastered** — fully tested (133 sprites extracted)
 
-Other CASC-based games are compatible but untested:
-- Warcraft III: Reforged
-- Heroes of the Storm
-- World of Warcraft
-- Diablo III
-- Overwatch
+Other CASC-based games are compatible but untested: Warcraft III: Reforged, Heroes of the Storm, World of Warcraft, Diablo III, Overwatch.
 
-*Note: Other games may require format-specific parsers.*
-
-## Features
-
-- **HD Content Extraction** - 4x Ultra HD and 2x HD animated sprites
-- **Quality Level Selection** - Extract SD, HD2, or HD4 content
-- **ANIM Format Parser** - Parse HD animated sprites with multiple layers
-- **Batch Extraction** - Extract animations, tilesets, and effects
-- Complete sprite extraction (units, buildings, effects)
-- Authentic game palettes from original files
-- Full animation frame preservation
-- Unity integration with JSON metadata
-- Organized output structure
-- Extensible parser architecture
+*Other games may require format-specific parsers.*
 
 ## Extraction Results
 
@@ -41,167 +23,260 @@ StarCraft: Remastered includes:
 
 ### HD Content Quality Levels
 
-StarCraft: Remastered provides **three quality levels** of assets:
+StarCraft: Remastered provides three quality levels:
 
-#### 4x HD (Ultra - 4K Quality)
-- **Path**: `anim/`, `tileset/`, `effect/` (NO PREFIX)
+#### 4x HD (Ultra — 4K)
+- **CASC path**: `anim/`, `tileset/`, `effect/` (no prefix)
 - **Animations**: ~4.5 MB per sprite (999 sprites available)
 - **Tilesets**: ~55 MB per tileset (8 tilesets)
-- **Effects**: Water, fire, explosions in 4K
-- **Best for**: High-resolution displays, modern Unity projects
 
 #### 2x HD
-- **Path**: `HD2/anim/`, `HD2/tileset/`, `HD2/effect/`
+- **CASC path**: `HD2/anim/`, `HD2/tileset/`, `HD2/effect/`
 - **Animations**: ~1.1 MB per sprite
 - **Tilesets**: ~14 MB per tileset
-- **Best for**: Balanced quality/performance
 
 #### SD (Original)
-- **Path**: `SD/mainSD.anim` (single 38 MB file with all sprites)
-- **Format**: Paletted 256-color graphics
-- **Best for**: Authentic retro look, minimal file size
+- **CASC path**: `SD/mainSD.anim` (single 38 MB file, all sprites)
+- **Format**: Paletted 256-color GRP graphics
 
-**Total HD Content**: ~5.2 GB in `Data/data/` folder
+**Total HD content**: ~5.2 GB in the game's `Data/data/` folder.
 
 ## Requirements
 
 - Rust 1.70+
-- A Blizzard game using CASC (StarCraft: Remastered, WC3: Reforged, etc.)
+- StarCraft: Remastered (or another CASC-based Blizzard game)
 - macOS (ARM64) or Linux (x86_64)
-- CascLib native library (must be built from source — see `lib/README.md`)
+- CascLib native library — must be built from source. See [`lib/README.md`](lib/README.md).
 
 ## Quick Start
 
-### Extract HD Content (NEW!)
-
 ```bash
-# Extract 4x Ultra HD animations, tilesets, and effects
-cd tools/casc-extractor
-cargo run --release --bin extract_hd -- --quality hd4 --all
-
-# Extract specific quality level
-cargo run --release --bin extract_hd -- --quality hd2 --animations
-
-# Extract specific animations by ID
-cargo run --release --bin extract_hd -- --anim-ids 0,1,7 --animations
-
-# Available quality levels:
-# - sd:  Original quality (GRP format)
-# - hd2: 2x HD (1.1MB animations, 14MB tilesets)
-# - hd4: 4x Ultra HD (4.5MB animations, 55MB tilesets) [DEFAULT]
-```
-
-### Extract SD Sprites (Legacy)
-
-```bash
-# Clone repository
-git clone https://github.com/kalleeh/blizzard-casc-extractor
-cd blizzard-casc-extractor
-
-# Build CascLib
-cd /tmp
-git clone https://github.com/ladislav-zezula/CascLib
-cd CascLib
-mkdir build && cd build
-cmake .. -DCASC_BUILD_SHARED_LIB=ON
-make
-cp libcasc.* /path/to/casc-extractor/lib/
-
-# Build and run
+# Build
 cargo build --release
-DYLD_LIBRARY_PATH=lib ./target/release/extract_organized
+
+# Auto-detects your StarCraft installation.
+# Override with --install-path /path/to/StarCraft if needed.
+DYLD_LIBRARY_PATH=lib ./target/release/casc-extractor <command>
 ```
 
-## Output Structure
+### Extract HD sprites (IDs 0, 1, 2)
+
+```bash
+casc-extractor extract anim --quality hd4 --ids 0,1,2
+```
+
+### Convert to PNG
+
+```bash
+casc-extractor extract anim --quality hd4 --ids 0 --convert-to-png
+```
+
+### Extract all SD sprites
+
+```bash
+casc-extractor extract anim --quality sd
+```
+
+### Extract tilesets
+
+```bash
+casc-extractor extract tileset
+```
+
+### Extract organized (using sprite mapping)
+
+```bash
+casc-extractor extract organized
+```
+
+### Extract sounds
+
+```bash
+casc-extractor sounds extract
+```
+
+### Inspect archive
+
+```bash
+casc-extractor inspect archive
+```
+
+### Inspect which sprite IDs exist
+
+```bash
+casc-extractor inspect sprites --max-id 20
+```
+
+## Global Flags
+
+These flags apply to all subcommands:
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--install-path <path>` | | Override auto-detected StarCraft installation directory |
+| `--output <dir>` | | Output directory (default: `output`; overrides config) |
+| `--config <path>` | `-c` | Path to a JSON config file |
+| `--verbose` | `-v` | Enable debug logging |
+
+## Configuration
+
+Generate a template config file:
+
+```bash
+casc-extractor config init
+# Writes casc-config.json in the current directory.
+# Use --output to choose a different path.
+casc-extractor config init --output my-config.json
+```
+
+Use the config file with any command:
+
+```bash
+casc-extractor -c my-config.json extract anim --quality hd4
+```
+
+### Key config fields
+
+```json
+{
+  "output_settings": {
+    "output_directory": "output",
+    "overwrite_behavior": "IfNewer",
+    "metadata_options": {
+      "generate_json": true
+    },
+    "unity_settings": {
+      "pixels_per_unit": 100.0
+    }
+  },
+  "quality_settings": {
+    "png_compression_level": 6
+  },
+  "filter_settings": {
+    "max_files": null,
+    "include_patterns": null,
+    "exclude_patterns": null
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `output_settings.output_directory` | string | Base output directory |
+| `output_settings.overwrite_behavior` | enum | `Always`, `Never`, `IfNewer`, `Backup`, `Prompt` |
+| `output_settings.metadata_options.generate_json` | bool | Write JSON metadata alongside extracted files |
+| `output_settings.unity_settings.pixels_per_unit` | float | Pixels per unit for Unity metadata (default: 100) |
+| `quality_settings.png_compression_level` | int 0–9 | PNG compression level (default: 6) |
+| `filter_settings.max_files` | int or null | Cap on number of files to process |
+| `filter_settings.include_patterns` | string[] or null | Regex patterns — only matching CASC paths are extracted |
+| `filter_settings.exclude_patterns` | string[] or null | Regex patterns — matching CASC paths are skipped |
+
+## Advanced Features
+
+### Name map for `extract anim`
+
+Supply a JSON file mapping anim IDs to unit names. Each extracted file will
+receive an additional copy named after the unit.
+
+```bash
+casc-extractor extract anim --quality hd4 --name-map names.json
+```
+
+`names.json` format:
+
+```json
+{
+  "0": "marine",
+  "1": "ghost",
+  "7": "zealot"
+}
+```
+
+### PNG conversion flags
+
+```bash
+# Extract diffuse layer as PNG
+casc-extractor extract anim --quality hd4 --ids 0 --convert-to-png
+
+# Also write team-color mask alongside diffuse PNG
+casc-extractor extract anim --quality hd4 --ids 0 --convert-to-png --team-color-mask
+```
+
+### Sound discovery fallback
+
+`sounds extract` first tries a curated list of known CASC paths for each
+sound. If none succeed, it falls back to dynamic discovery: it scans the full
+archive file listing for a `.wav`/`.ogg` whose path contains all keywords from
+the output filename. Sounds are saved as `.ogg` files.
+
+```bash
+casc-extractor sounds extract
+casc-extractor sounds list   # probe paths and enumerate Zerg/UI audio
+```
+
+### SD extraction
+
+SD quality extracts `SD/mainSD.anim` — a single 38 MB file containing all
+sprites in GRP format. Pass `--convert-to-png` to render a spritesheet PNG.
+
+```bash
+casc-extractor extract anim --quality sd --convert-to-png
+```
+
+### Organized extraction
+
+Extracts sprites according to a YAML mapping file that maps category paths to
+CASC paths, placing output in a categorized directory tree. Defaults to
+`mappings/starcraft-remastered.yaml`.
+
+```bash
+casc-extractor extract organized --mapping mappings/starcraft-remastered.yaml
+```
+
+Output structure:
 
 ```
 output/
-├── terran/
-│   ├── units/          # Marine, Firebat, Ghost, etc.
-│   └── buildings/      # Command Center, Barracks, etc.
-├── protoss/
-│   ├── units/          # Probe, Zealot, Dragoon, etc.
-│   └── buildings/      # Nexus, Gateway, etc.
-├── zerg/
-│   ├── units/          # Drone, Zergling, Hydralisk, etc.
-│   └── buildings/      # Hatchery, Spawning Pool, etc.
-├── effects/            # Projectiles, explosions, etc.
-├── neutral/            # Critters, resources
-└── ui/                 # Wireframes
+├── terran/units/       # Marine, Firebat, Ghost, …
+├── terran/buildings/   # Command Center, Barracks, …
+├── protoss/units/
+├── protoss/buildings/
+├── zerg/units/
+├── zerg/buildings/
+├── effects/
+├── neutral/
+└── ui/
 ```
 
-Each sprite includes:
-- PNG sprite sheet with all animation frames
-- JSON metadata for Unity automatic slicing
-- Text file with human-readable information
+## Architecture
 
-## Unity Integration
-
-The extractor includes Unity Editor scripts for automatic sprite slicing and animation creation:
-
-1. Copy extracted sprites to your Unity project
-2. Copy `unity/*.cs` scripts to `Assets/Editor/`
-3. Sprites will auto-slice on import
-4. Create animations via Tools > StarCraft > Create Animations
-
-See [Unity Integration Guide](docs/unity-guide.md) for complete setup instructions.
-
-## Technical Details
-
-### Architecture
-
-The extractor uses:
-- **CascLib FFI** - Rust bindings for CASC archive access
-- **GRP Parser** - Custom parser for StarCraft's sprite format
-- **RLE Decoder** - Run-length encoded sprite data handling
-- **Palette System** - Authentic 256-color game palette
-
-### GRP Format
-
-StarCraft sprites use the GRP format with:
-- Header containing frame count, width, and height
-- Frame table with 8 bytes per frame (offsets, dimensions)
-- RLE-encoded pixel data for each frame
-
-See [Technical Guide](docs/technical-guide.md) for implementation details.
-
-## Documentation
-
-- [Getting Started](docs/getting-started.md) - Installation and setup
-- [Sprite Reference](docs/sprite-reference.md) - Available sprites
-- [Unity Integration](docs/unity-guide.md) - Unity workflow
-- [Technical Guide](docs/technical-guide.md) - Implementation details
-
-## License
-
-MIT License - See [LICENSE](LICENSE) for details.
+```
+src/
+├── main.rs             — unified CLI (clap), all subcommand handlers
+├── lib.rs              — public API: export_anim, CascStorage, ExportConfig
+├── anim/               — HD ANIM format parser and frame export
+├── casc/               — CascLib FFI, archive discovery, file enumeration
+├── config/             — ExtractionConfig (serde JSON)
+├── grp/                — GRP (SD sprite) parser and RLE decoder
+├── mapping.rs          — YAML sprite mapping loader
+├── palette.rs          — 256-color game palette
+├── sprite/             — PNG spritesheet builder and export pipeline
+├── filter/             — Include/exclude regex filtering
+├── progress/           — Progress reporter
+└── validation/         — Byte comparison, visual validation helpers
+```
 
 ## Legal Notice
 
-This tool extracts sprites from Blizzard games using CASC archives for personal use and game development learning. You must own a legal copy of the game to use this tool. Extracted sprites and game assets are property of Blizzard Entertainment.
+You must own a legal copy of the game to use this tool. Extracted assets are
+property of Blizzard Entertainment and may only be used for personal or
+educational purposes.
 
-StarCraft®, Warcraft®, World of Warcraft®, Diablo®, Heroes of the Storm®, and Overwatch® are registered trademarks of Blizzard Entertainment, Inc.
-
-This project is not affiliated with, endorsed by, or sponsored by Blizzard Entertainment, Inc.
-
-## Contributing
-
-Contributions are welcome, especially:
-- Format parsers for other Blizzard games
-- Windows and Linux build support
-- Additional format support (PCX, WAV, BLP, M2)
-- Game-specific extraction guides
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+StarCraft® is a registered trademark of Blizzard Entertainment, Inc. This
+project is not affiliated with, endorsed by, or sponsored by Blizzard
+Entertainment, Inc.
 
 ## Acknowledgments
 
 - [CascLib](https://github.com/ladislav-zezula/CascLib) by Ladislav Zezula
 - StarCraft sprite format research by the modding community
-
-- [CascLib](https://github.com/ladislav-zezula/CascLib) by Ladislav Zezula
-- StarCraft modding community
-
----
-
-**A tool for extracting sprites from Blizzard CASC archives.**

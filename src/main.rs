@@ -15,14 +15,17 @@ use casc_extractor::anim::HdAnimFile;
 use casc_extractor::casc::casclib_ffi::CascArchive;
 use casc_extractor::casc::discovery::locate_starcraft;
 use casc_extractor::config::{ExtractionConfig, OverwriteBehavior};
+use casc_extractor::validation::regression_suite::KnownGoodExtraction;
+use casc_extractor::validation::regression_suite::SpriteMetadata as RegressionSpriteMetadata;
 use regex::Regex;
 use casc_extractor::grp::GrpFile;
 use casc_extractor::mapping::SpriteMapping;
 use casc_extractor::{export_anim, CascStorage, ExportConfig};
 use clap::{Parser, Subcommand, ValueEnum};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
@@ -195,6 +198,11 @@ enum Commands {
         #[command(subcommand)]
         action: ConfigCommands,
     },
+    /// Validation and regression testing
+    Validate {
+        #[command(subcommand)]
+        action: ValidateCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -204,6 +212,19 @@ enum ConfigCommands {
         /// Output path for the generated config file
         #[arg(long, default_value = "casc-config.json")]
         output: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum ValidateCommands {
+    /// Register a previously extracted file as a known-good baseline
+    Register {
+        /// Path to the extracted file to register
+        file: PathBuf,
+
+        /// Path to the regression suite JSON file
+        #[arg(long, default_value = "validation-suite.json")]
+        suite: PathBuf,
     },
 }
 
@@ -398,9 +419,14 @@ fn load_config(path: Option<&Path>) -> ExtractionConfig {
     }
 }
 
+const INSTALL_PATH_HINT: &str =
+    "Hint: Use --install-path to specify the StarCraft directory.\n\
+     Common paths: /Applications/StarCraft (macOS), ~/.local/share/StarCraft or ~/.wine/drive_c/Program Files/StarCraft (Linux)";
+
 /// Resolve the StarCraft install directory to a UTF-8 string.
 fn resolve_install_str(install_path: Option<&Path>) -> Result<String> {
-    let install_dir = locate_starcraft(install_path)?;
+    let install_dir = locate_starcraft(install_path)
+        .map_err(|e| anyhow::anyhow!("{}\n{}", e, INSTALL_PATH_HINT))?;
     install_dir
         .into_os_string()
         .into_string()
@@ -410,15 +436,27 @@ fn resolve_install_str(install_path: Option<&Path>) -> Result<String> {
 /// Open the CascLib-backed archive, resolving the install path.
 fn open_casc_archive(install_path: Option<&Path>) -> Result<CascArchive> {
     let install_str = resolve_install_str(install_path)?;
-    CascArchive::open(&install_str)
-        .map_err(|e| anyhow::anyhow!("Failed to open CASC archive at {}: {}", install_str, e))
+    CascArchive::open(&install_str).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to open CASC archive at {}: {}\n{}",
+            install_str,
+            e,
+            INSTALL_PATH_HINT
+        )
+    })
 }
 
 /// Open the index-based CascStorage (used for file enumeration).
 fn open_casc_storage(install_path: Option<&Path>) -> Result<CascStorage> {
     let install_str = resolve_install_str(install_path)?;
-    CascStorage::open(&install_str)
-        .map_err(|e| anyhow::anyhow!("Failed to open CascStorage at {}: {}", install_str, e))
+    CascStorage::open(&install_str).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to open CascStorage at {}: {}\n{}",
+            install_str,
+            e,
+            INSTALL_PATH_HINT
+        )
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -455,24 +493,30 @@ fn cmd_extract_anim(
                     println!("  mainSD.anim ({:.1} MB)", data.len() as f64 / 1_000_000.0);
 
                     if convert_to_png {
-                        if let Ok(anim) = HdAnimFile::parse(&data) {
-                            let export_cfg = ExportConfig {
-                                convert_to_png,
-                                team_color_mask,
-                                save_dds: false,
-                                generate_metadata: gen_meta,
-                                pixels_per_unit,
-                            };
-                            match export_anim(
-                                &anim,
-                                &output_path.with_extension(""),
-                                &export_cfg,
-                            ) {
-                                Ok(result) => println!(
-                                    "  mainSD ({} frames) exported as PNG",
-                                    result.frame_count
-                                ),
-                                Err(e) => println!("  mainSD export failed: {}", e),
+                        let has_anim_magic = data.starts_with(b"ANIM");
+                        if has_anim_magic {
+                            match HdAnimFile::parse(&data) {
+                                Ok(anim) => {
+                                    let export_cfg = ExportConfig {
+                                        convert_to_png,
+                                        team_color_mask,
+                                        save_dds: false,
+                                        generate_metadata: gen_meta,
+                                        pixels_per_unit,
+                                    };
+                                    match export_anim(
+                                        &anim,
+                                        &output_path.with_extension(""),
+                                        &export_cfg,
+                                    ) {
+                                        Ok(result) => println!(
+                                            "  mainSD ({} frames) exported as PNG",
+                                            result.frame_count
+                                        ),
+                                        Err(e) => println!("  mainSD ANIM export failed: {}", e),
+                                    }
+                                }
+                                Err(e) => println!("  mainSD ANIM parse failed: {}", e),
                             }
                         } else if let Ok(grp) = GrpFile::parse(&data) {
                             let png_path = output.join("mainSD.png");
@@ -485,7 +529,15 @@ fn cmd_extract_anim(
                                 Err(e) => println!("  mainSD spritesheet failed: {}", e),
                             }
                         } else {
-                            println!("  SD PNG conversion not supported for this archive format");
+                            let hex: Vec<String> = data
+                                .iter()
+                                .take(16)
+                                .map(|b| format!("{:02X}", b))
+                                .collect();
+                            println!(
+                                "  SD PNG conversion: unknown format (first 16 bytes: {})",
+                                hex.join(" ")
+                            );
                         }
                     }
                 }
@@ -1150,6 +1202,76 @@ fn cmd_config_init(output: &Path) -> Result<()> {
     Ok(())
 }
 
+fn cmd_validate_register(file: &Path, suite_path: &Path) -> Result<()> {
+    // Compute SHA256 of the file
+    let mut f = File::open(file)
+        .map_err(|e| anyhow::anyhow!("Cannot open file {:?}: {}", file, e))?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = f.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    let hash = format!("{:x}", hasher.finalize());
+
+    // Load or create suite
+    let entries: Vec<KnownGoodExtraction> = if suite_path.exists() {
+        let content = fs::read_to_string(suite_path)
+            .map_err(|e| anyhow::anyhow!("Cannot read suite {:?}: {}", suite_path, e))?;
+        serde_json::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("Cannot parse suite {:?}: {}", suite_path, e))?
+    } else {
+        Vec::new()
+    };
+
+    let sprite_name = file
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let timestamp = chrono::Utc::now().to_rfc3339();
+
+    let entry = KnownGoodExtraction {
+        sprite_name: sprite_name.clone(),
+        source_file: file.to_path_buf(),
+        expected_output: file.to_path_buf(),
+        expected_metadata: RegressionSpriteMetadata {
+            width: 0,
+            height: 0,
+            frame_count: 0,
+            format: String::new(),
+        },
+        sha256_hash: hash.clone(),
+        baseline_date: timestamp,
+        extractor_version: env!("CARGO_PKG_VERSION").to_string(),
+    };
+
+    // Replace existing entry with same name, or append
+    let mut entries = entries;
+    if let Some(pos) = entries.iter().position(|e| e.sprite_name == sprite_name) {
+        entries[pos] = entry;
+    } else {
+        entries.push(entry);
+    }
+
+    let json = serde_json::to_string_pretty(&entries)
+        .map_err(|e| anyhow::anyhow!("Cannot serialize suite: {}", e))?;
+    fs::write(suite_path, json.as_bytes())
+        .map_err(|e| anyhow::anyhow!("Cannot write suite {:?}: {}", suite_path, e))?;
+
+    println!(
+        "Registered {} (SHA256: {}) in {}",
+        sprite_name,
+        hash,
+        suite_path.display()
+    );
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -1246,7 +1368,170 @@ fn main() -> Result<()> {
                 cmd_config_init(&cfg_output)?;
             }
         },
+
+        // ------------------------------------------------------------------
+        Commands::Validate { action } => match action {
+            ValidateCommands::Register { file, suite } => {
+                cmd_validate_register(&file, &suite)?;
+            }
+        },
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------------
+    // passes_filter
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn passes_filter_empty_patterns_always_passes() {
+        assert!(passes_filter("anything/path.anim", &[], &[]));
+        assert!(passes_filter("", &[], &[]));
+    }
+
+    #[test]
+    fn passes_filter_include_match_passes() {
+        let include = compile_patterns(&Some(vec!["terran".to_string()]));
+        assert!(passes_filter("data/terran/unit.anim", &include, &[]));
+    }
+
+    #[test]
+    fn passes_filter_include_no_match_fails() {
+        let include = compile_patterns(&Some(vec!["terran".to_string()]));
+        assert!(!passes_filter("data/protoss/unit.anim", &include, &[]));
+    }
+
+    #[test]
+    fn passes_filter_exclude_match_blocks() {
+        let exclude = compile_patterns(&Some(vec!["ui".to_string()]));
+        assert!(!passes_filter("data/ui/button.anim", &[], &exclude));
+    }
+
+    #[test]
+    fn passes_filter_exclude_no_match_passes() {
+        let exclude = compile_patterns(&Some(vec!["ui".to_string()]));
+        assert!(passes_filter("data/terran/unit.anim", &[], &exclude));
+    }
+
+    #[test]
+    fn passes_filter_include_and_exclude_combined() {
+        let include = compile_patterns(&Some(vec!["anim".to_string()]));
+        let exclude = compile_patterns(&Some(vec!["ui".to_string()]));
+        // matches include, not excluded
+        assert!(passes_filter("data/terran/unit.anim", &include, &exclude));
+        // matches include but also excluded
+        assert!(!passes_filter("data/ui/button.anim", &include, &exclude));
+        // does not match include
+        assert!(!passes_filter("data/terran/unit.png", &include, &exclude));
+    }
+
+    // -----------------------------------------------------------------------
+    // png_compression
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn png_compression_level_0_is_fast() {
+        assert!(matches!(png_compression(0), png::Compression::Fast));
+    }
+
+    #[test]
+    fn png_compression_level_2_is_fast() {
+        assert!(matches!(png_compression(2), png::Compression::Fast));
+    }
+
+    #[test]
+    fn png_compression_level_5_is_default() {
+        assert!(matches!(png_compression(5), png::Compression::Default));
+    }
+
+    #[test]
+    fn png_compression_level_9_is_best() {
+        assert!(matches!(png_compression(9), png::Compression::Best));
+    }
+
+    #[test]
+    fn png_compression_level_7_is_best() {
+        assert!(matches!(png_compression(7), png::Compression::Best));
+    }
+
+    // -----------------------------------------------------------------------
+    // compile_patterns
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn compile_patterns_none_returns_empty() {
+        let result = compile_patterns(&None);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn compile_patterns_some_empty_vec_returns_empty() {
+        let result = compile_patterns(&Some(vec![]));
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn compile_patterns_valid_patterns_compile() {
+        let result = compile_patterns(&Some(vec![
+            "terran".to_string(),
+            r".*\.anim$".to_string(),
+        ]));
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn compile_patterns_invalid_pattern_silently_skipped() {
+        // "[invalid" is not a valid regex
+        let result = compile_patterns(&Some(vec![
+            "valid".to_string(),
+            "[invalid".to_string(),
+        ]));
+        // Only the valid one is compiled
+        assert_eq!(result.len(), 1);
+        assert!(result[0].is_match("valid_path"));
+    }
+
+    #[test]
+    fn compile_patterns_all_invalid_returns_empty() {
+        let result = compile_patterns(&Some(vec![
+            "[bad".to_string(),
+            "**broken**(".to_string(),
+        ]));
+        assert!(result.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // should_skip
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn should_skip_always_returns_false() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let existing = dir.path().join("file.txt");
+        std::fs::write(&existing, b"content").unwrap();
+        // Always behavior never skips, even for existing files
+        assert!(!should_skip(&existing, OverwriteBehavior::Always));
+        // Also false for non-existent paths
+        assert!(!should_skip(&dir.path().join("does_not_exist.txt"), OverwriteBehavior::Always));
+    }
+
+    #[test]
+    fn should_skip_never_with_nonexistent_path_is_false() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("nonexistent.txt");
+        assert!(!should_skip(&path, OverwriteBehavior::Never));
+    }
+
+    #[test]
+    fn should_skip_never_with_existing_file_is_true() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("existing.txt");
+        std::fs::write(&path, b"hello").unwrap();
+        assert!(should_skip(&path, OverwriteBehavior::Never));
+    }
 }

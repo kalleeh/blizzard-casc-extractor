@@ -5,18 +5,14 @@
 // Unity import validation, and regression testing.
 
 use super::{
-    ReferenceValidator, ByteComparison, VisualComparison, UnityImportValidator,
-    RegressionTestSuite, ValidationError, ErrorReporter,
+    ByteComparison, VisualComparison, UnityImportValidator,
+    ValidationError, ErrorReporter,
 };
 use std::path::{Path, PathBuf};
 
 /// Comprehensive validation pipeline that integrates all validation systems
 pub struct ValidationPipeline {
-    reference_validator: ReferenceValidator,
-    byte_comparison: ByteComparison,
-    visual_comparison: VisualComparison,
     unity_validator: UnityImportValidator,
-    regression_suite: RegressionTestSuite,
     error_reporter: ErrorReporter,
     report_dir: PathBuf,
 }
@@ -137,21 +133,9 @@ impl ValidationPipeline {
     /// Create a new validation pipeline with default configuration
     pub fn new(report_dir: PathBuf) -> Result<Self, ValidationError> {
         std::fs::create_dir_all(&report_dir)?;
-        
-        // Create default reference tool config
-        let ref_config = super::reference_validator::ReferenceToolConfig {
-            casc_explorer_path: None,
-            libgrp_path: None,
-            grp_editor_path: None,
-            stormex_path: None,
-        };
-        
+
         Ok(Self {
-            reference_validator: ReferenceValidator::new(ref_config),
-            byte_comparison: ByteComparison,
-            visual_comparison: VisualComparison,
             unity_validator: UnityImportValidator::new(None, None),
-            regression_suite: RegressionTestSuite::new(report_dir.join("regression-db"))?,
             error_reporter: ErrorReporter::new(report_dir.clone())?,
             report_dir,
         })

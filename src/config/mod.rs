@@ -11,7 +11,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use crate::cli::{ResolutionTier, FormatFilterOption, UnityFilterMode, UnityWrapMode};
+use crate::resolution::ResolutionTier;
+use crate::filter::{FormatFilterOption, UnityFilterMode, UnityWrapMode};
 
 /// Main configuration structure for the CASC sprite extractor
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -358,3 +359,47 @@ impl Default for FilterSettings {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extraction_config_default_roundtrip() {
+        let config = ExtractionConfig::default();
+        let json = serde_json::to_string(&config).expect("serialize failed");
+        let decoded: ExtractionConfig =
+            serde_json::from_str(&json).expect("deserialize failed");
+        // Spot-check a few defaults survived the roundtrip
+        assert_eq!(
+            decoded.output_settings.overwrite_behavior,
+            OverwriteBehavior::IfNewer
+        );
+        assert_eq!(decoded.quality_settings.png_compression_level, 6);
+    }
+
+    #[test]
+    fn partial_json_deserializes_with_defaults() {
+        let json = r#"{"output_settings": {"overwrite_behavior": "Never"}}"#;
+        let config: ExtractionConfig =
+            serde_json::from_str(json).expect("partial JSON deserialize failed");
+        assert_eq!(
+            config.output_settings.overwrite_behavior,
+            OverwriteBehavior::Never
+        );
+        // All other fields should be at their defaults
+        assert_eq!(config.quality_settings.png_compression_level, 6);
+        assert!(config.filter_settings.include_patterns.is_none());
+    }
+
+    #[test]
+    fn invalid_json_returns_error() {
+        let result = serde_json::from_str::<ExtractionConfig>("{ not valid json }");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn output_settings_default_overwrite_behavior_is_if_newer() {
+        let settings = OutputSettings::default();
+        assert_eq!(settings.overwrite_behavior, OverwriteBehavior::IfNewer);
+    }
+}

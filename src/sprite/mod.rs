@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::blte_enhanced::{BlteDecompressor, BlteError};
 
 use crate::casc::{CascArchive, CascError, FileInfo, FileAnalysis};
-use crate::cli::ResolutionTier;
+use crate::resolution::ResolutionTier;
 use crate::grp::{GrpFile, GrpError}; // Import GrpFile and GrpError for GRP format conversion
 
 #[derive(Debug, Error)]
