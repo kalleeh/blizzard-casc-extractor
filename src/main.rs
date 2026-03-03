@@ -131,17 +131,13 @@ const SOUND_TARGETS: &[(&str, &[&str])] = &[
         "sound\\Misc\\Klink.wav",
         "sound\\misc\\klink.wav",
     ]),
-    ("select.ogg", &[
+    ("mouseover.ogg", &[
+        "sound\\Glue\\mouseover.wav",
+        "sound\\Glue\\swishlock.wav",
+        "sound\\glue\\mouseover.wav",
+        "sound\\glue\\swishlock.wav",
         "\\glue\\mouseover.wav",
-        "\\glue\\swishlock.wav",
-        "\\misc\\button.wav",
-        "\\misc\\perror.wav",
-        "sound/Misc/select.wav",
-        "sound/Glue/select.wav",
         "glue\\mouseover.wav",
-        "glue/mouseover.wav",
-        "misc\\button.wav",
-        "misc/button.wav",
     ]),
 ];
 
@@ -194,6 +190,21 @@ enum Commands {
         #[command(subcommand)]
         target: InspectCommands,
     },
+    /// Configuration management
+    Config {
+        #[command(subcommand)]
+        action: ConfigCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConfigCommands {
+    /// Write a default config JSON file to disk
+    Init {
+        /// Output path for the generated config file
+        #[arg(long, default_value = "casc-config.json")]
+        output: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -215,6 +226,10 @@ enum ExtractCommands {
         /// Export team-color mask alongside diffuse PNG (requires --convert-to-png)
         #[arg(long)]
         team_color_mask: bool,
+
+        /// JSON file mapping anim IDs to unit names (e.g. {"0": "marine", "1": "ghost"})
+        #[arg(long)]
+        name_map: Option<PathBuf>,
     },
 
     /// Extract HD tilesets
@@ -301,6 +316,33 @@ fn should_skip(path: &Path, behavior: OverwriteBehavior) -> bool {
                         .unwrap_or(false)
                 })
                 .unwrap_or(false)
+        }
+        OverwriteBehavior::Backup => {
+            if path.exists() {
+                let bak = path.with_extension(
+                    format!(
+                        "{}.bak",
+                        path.extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("")
+                    )
+                );
+                if let Err(e) = fs::rename(path, &bak) {
+                    eprintln!("Warning: could not back up {:?}: {}", path, e);
+                }
+            }
+            false
+        }
+        OverwriteBehavior::Prompt => {
+            if !path.exists() {
+                return false;
+            }
+            print!("File {:?} already exists. Overwrite? [y/N]: ", path);
+            let _ = std::io::stdout().flush();
+            let mut line = String::new();
+            let _ = std::io::stdin().read_line(&mut line);
+            let answer = line.trim();
+            !(answer == "y" || answer == "Y")
         }
         _ => false,
     }
@@ -390,6 +432,7 @@ fn cmd_extract_anim(
     ids: Option<Vec<u16>>,
     convert_to_png: bool,
     team_color_mask: bool,
+    name_map: Option<PathBuf>,
     config: &ExtractionConfig,
 ) -> Result<()> {
     fs::create_dir_all(output)?;
@@ -410,6 +453,41 @@ fn cmd_extract_anim(
                 Ok(data) => {
                     File::create(&output_path)?.write_all(&data)?;
                     println!("  mainSD.anim ({:.1} MB)", data.len() as f64 / 1_000_000.0);
+
+                    if convert_to_png {
+                        if let Ok(anim) = HdAnimFile::parse(&data) {
+                            let export_cfg = ExportConfig {
+                                convert_to_png,
+                                team_color_mask,
+                                save_dds: false,
+                                generate_metadata: gen_meta,
+                                pixels_per_unit,
+                            };
+                            match export_anim(
+                                &anim,
+                                &output_path.with_extension(""),
+                                &export_cfg,
+                            ) {
+                                Ok(result) => println!(
+                                    "  mainSD ({} frames) exported as PNG",
+                                    result.frame_count
+                                ),
+                                Err(e) => println!("  mainSD export failed: {}", e),
+                            }
+                        } else if let Ok(grp) = GrpFile::parse(&data) {
+                            let png_path = output.join("mainSD.png");
+                            let compression = png_compression(config.quality_settings.png_compression_level);
+                            match build_spritesheet(&grp, &png_path, compression) {
+                                Ok(()) => println!(
+                                    "  mainSD spritesheet PNG ({} frames)",
+                                    grp.frame_count
+                                ),
+                                Err(e) => println!("  mainSD spritesheet failed: {}", e),
+                            }
+                        } else {
+                            println!("  SD PNG conversion not supported for this archive format");
+                        }
+                    }
                 }
                 Err(e) => println!("  mainSD.anim - {}", e),
             }
@@ -420,6 +498,17 @@ fn cmd_extract_anim(
     }
 
     let prefix = quality.path_prefix();
+
+    // Load optional name map (ID -> unit name).
+    let id_to_name: HashMap<String, String> = match name_map {
+        Some(ref p) => {
+            let raw = fs::read_to_string(p)
+                .map_err(|e| anyhow::anyhow!("Failed to read name map {:?}: {}", p, e))?;
+            serde_json::from_str::<HashMap<String, String>>(&raw)
+                .map_err(|e| anyhow::anyhow!("Failed to parse name map {:?}: {}", p, e))?
+        }
+        None => HashMap::new(),
+    };
 
     // Build id list, then cap to max_files if set.
     let mut id_list: Vec<u16> = ids.unwrap_or_else(|| (0..1000).collect());
@@ -455,6 +544,15 @@ fn cmd_extract_anim(
 
                 File::create(&output_path)?.write_all(&data)?;
 
+                // Write a named copy if the ID has a mapping.
+                let mapped_name = id_to_name.get(&id.to_string()).cloned();
+                if let Some(ref name) = mapped_name {
+                    let named_path = output.join(format!("{}.anim", name));
+                    if let Err(e) = fs::copy(&output_path, &named_path) {
+                        eprintln!("Warning: could not write named copy {:?}: {}", named_path, e);
+                    }
+                }
+
                 if convert_to_png {
                     match HdAnimFile::parse(&data) {
                         Ok(anim) => {
@@ -470,18 +568,38 @@ fn cmd_extract_anim(
                                 &output_path.with_extension(""),
                                 &export_cfg,
                             ) {
-                                Ok(result) => println!(
-                                    "  {} ({} frames, {:.1} MB) tc={}",
-                                    output_name,
-                                    result.frame_count,
-                                    data.len() as f64 / 1_000_000.0,
-                                    result.tc_mask_written
-                                ),
+                                Ok(result) => {
+                                    if let Some(ref name) = mapped_name {
+                                        println!(
+                                            "  {}.anim ({}, {} frames, {:.1} MB) tc={}",
+                                            name,
+                                            output_name,
+                                            result.frame_count,
+                                            data.len() as f64 / 1_000_000.0,
+                                            result.tc_mask_written
+                                        );
+                                    } else {
+                                        println!(
+                                            "  {} ({} frames, {:.1} MB) tc={}",
+                                            output_name,
+                                            result.frame_count,
+                                            data.len() as f64 / 1_000_000.0,
+                                            result.tc_mask_written
+                                        );
+                                    }
+                                }
                                 Err(e) => println!("  Export failed: {}", e),
                             }
                         }
                         Err(e) => println!("  {} - Parse error: {}", output_name, e),
                     }
+                } else if let Some(ref name) = mapped_name {
+                    println!(
+                        "  {}.anim ({}, {:.1} MB)",
+                        name,
+                        output_name,
+                        data.len() as f64 / 1_000_000.0
+                    );
                 } else {
                     println!(
                         "  {} ({:.1} MB)",
@@ -1022,6 +1140,16 @@ fn cmd_inspect_archive(install_path: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
+fn cmd_config_init(output: &Path) -> Result<()> {
+    let cfg = ExtractionConfig::default();
+    let json = serde_json::to_string_pretty(&cfg)
+        .map_err(|e| anyhow::anyhow!("Failed to serialize config: {}", e))?;
+    fs::write(output, json.as_bytes())
+        .map_err(|e| anyhow::anyhow!("Failed to write config to {:?}: {}", output, e))?;
+    println!("Config written to {:?}", output);
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -1057,6 +1185,7 @@ fn main() -> Result<()> {
                     ids,
                     convert_to_png,
                     team_color_mask,
+                    name_map,
                 } => {
                     cmd_extract_anim(
                         &archive,
@@ -1065,6 +1194,7 @@ fn main() -> Result<()> {
                         ids,
                         convert_to_png,
                         team_color_mask,
+                        name_map,
                         &config,
                     )?;
                 }
@@ -1107,6 +1237,13 @@ fn main() -> Result<()> {
             }
             InspectCommands::Archive => {
                 cmd_inspect_archive(cli.install_path.as_deref())?;
+            }
+        },
+
+        // ------------------------------------------------------------------
+        Commands::Config { action } => match action {
+            ConfigCommands::Init { output: cfg_output } => {
+                cmd_config_init(&cfg_output)?;
             }
         },
     }

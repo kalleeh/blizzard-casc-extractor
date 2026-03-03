@@ -16,10 +16,6 @@ use crate::cli::{ResolutionTier, FormatFilterOption, UnityFilterMode, UnityWrapM
 /// Main configuration structure for the CASC sprite extractor
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ExtractionConfig {
-    /// Format-specific settings and priorities
-    #[serde(default)]
-    pub format_settings: FormatSettings,
-
     /// Quality and output settings
     #[serde(default)]
     pub quality_settings: QualitySettings,
@@ -47,23 +43,6 @@ pub struct ExtractionConfig {
     /// Custom settings for extensibility
     #[serde(default)]
     pub custom_settings: HashMap<String, serde_json::Value>,
-}
-
-/// Format-specific configuration settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct FormatSettings {
-    /// Enabled formats for extraction (ANIM, GRP, etc.)
-    pub enabled_formats: Vec<FormatType>,
-
-    /// Priority order for format detection (higher priority = checked first)
-    pub format_priorities: HashMap<FormatType, u32>,
-
-    /// Selective format extraction mode
-    pub extraction_mode: ExtractionMode,
-
-    /// Format-specific quality settings
-    pub format_quality: HashMap<FormatType, FormatQuality>,
 }
 
 /// Quality and output configuration settings
@@ -156,43 +135,6 @@ pub struct UnityExportSettings {
     
     /// Generate .meta files
     pub generate_meta_files: bool,
-}
-
-/// Supported sprite formats
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum FormatType {
-    ANIM,
-    GRP,
-    PNG,
-    JPEG,
-}
-
-/// Format extraction modes
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ExtractionMode {
-    /// Extract all enabled formats
-    All,
-    /// Extract only image formats (PNG, JPEG)
-    ImagesOnly,
-    /// Custom format selection
-    Custom,
-}
-
-/// Format-specific quality settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct FormatQuality {
-    /// Enable high-quality processing
-    pub high_quality: bool,
-    
-    /// Preserve original color depth
-    pub preserve_color_depth: bool,
-    
-    /// Enable transparency preservation
-    pub preserve_transparency: bool,
-    
-    /// Enable metadata extraction
-    pub extract_metadata: bool,
 }
 
 /// Color depth options
@@ -327,28 +269,6 @@ pub struct ResearchSettings {
     pub collect_performance_metrics: bool,
 }
 
-impl Default for FormatSettings {
-    fn default() -> Self {
-        let mut format_priorities = HashMap::new();
-        format_priorities.insert(FormatType::ANIM, 100);
-        format_priorities.insert(FormatType::GRP, 90);
-        format_priorities.insert(FormatType::PNG, 70);
-        format_priorities.insert(FormatType::JPEG, 60);
-
-        let mut format_quality = HashMap::new();
-        for format in &[FormatType::ANIM, FormatType::GRP, FormatType::PNG, FormatType::JPEG] {
-            format_quality.insert(*format, FormatQuality::default());
-        }
-
-        Self {
-            enabled_formats: vec![FormatType::ANIM, FormatType::GRP, FormatType::PNG, FormatType::JPEG],
-            format_priorities,
-            extraction_mode: ExtractionMode::All,
-            format_quality,
-        }
-    }
-}
-
 impl Default for QualitySettings {
     fn default() -> Self {
         Self {
@@ -397,17 +317,6 @@ impl Default for UnityExportSettings {
             generate_mipmaps: false,
             pivot_point: UnityPivot::Center,
             generate_meta_files: true,
-        }
-    }
-}
-
-impl Default for FormatQuality {
-    fn default() -> Self {
-        Self {
-            high_quality: true,
-            preserve_color_depth: true,
-            preserve_transparency: true,
-            extract_metadata: true,
         }
     }
 }
