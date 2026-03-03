@@ -27,8 +27,8 @@ impl CascDecryptor {
         Self { key_map }
     }
 
-    /// Decrypt CASC encrypted data
-    /// Format: [key_name_size][key_name][iv_size][iv][encryption_type][encrypted_data]
+    /// Decrypt CASC encrypted data.
+    /// Format: `[key_name_size][key_name][iv_size][iv][encryption_type][encrypted_data]`
     pub fn decrypt(&self, input: &[u8], frame_index: u32) -> Result<Vec<u8>, String> {
         if input.is_empty() {
             return Err("Empty input".to_string());

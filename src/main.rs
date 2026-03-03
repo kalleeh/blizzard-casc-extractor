@@ -152,48 +152,35 @@ const SOUND_TARGETS: &[(&str, &[&str])] = &[
         "glue\\mouseover.wav",
     ]),
     ("hydralisk_yes1.ogg", &[
-        "\\zerg\\hydra\\zhyyes00.wav",
-        "\\Zerg\\hydra\\zhyyes00.wav",
-        "\\zerg\\hydra\\zhyyes01.wav",
-        "\\Zerg\\hydra\\zhyyes01.wav",
-        "zerg\\hydra\\zhyyes00.wav",
-        "zerg/hydra/zhyyes00.wav",
+        "sound\\Zerg\\hydra\\zhyyes00.wav",
+        "sound\\zerg\\hydra\\zhyyes00.wav",
+        "sound\\Zerg\\hydra\\zhyyes01.wav",
     ]),
     ("hydralisk_ready.ogg", &[
-        "\\zerg\\hydra\\zhyrdy00.wav",
-        "\\Zerg\\hydra\\zhyrdy00.wav",
-        "zerg\\hydra\\zhyrdy00.wav",
-        "zerg/hydra/zhyrdy00.wav",
+        "sound\\Zerg\\hydra\\zhyrdy00.wav",
+        "sound\\zerg\\hydra\\zhyrdy00.wav",
     ]),
     ("hydralisk_attack.ogg", &[
-        "\\zerg\\hydra\\spifir00.wav",
-        "\\Zerg\\hydra\\spifir00.wav",
-        "zerg\\hydra\\spifir00.wav",
-        "zerg/hydra/spifir00.wav",
+        "sound\\Zerg\\hydra\\spifir00.wav",
+        "sound\\zerg\\hydra\\spifir00.wav",
     ]),
     ("ghost_yes1.ogg", &[
-        "\\terran\\ghost\\tghyes01.wav",
-        "\\Terran\\ghost\\tghyes01.wav",
-        "terran\\ghost\\tghyes01.wav",
-        "terran/ghost/tghyes01.wav",
+        "sound\\Terran\\ghost\\tghyes01.wav",
+        "sound\\terran\\ghost\\tghyes01.wav",
+        "sound\\Terran\\ghost\\tghyes00.wav",
     ]),
     ("ghost_ready.ogg", &[
-        "\\terran\\ghost\\tghrdy00.wav",
-        "\\Terran\\ghost\\tghrdy00.wav",
-        "terran\\ghost\\tghrdy00.wav",
-        "terran/ghost/tghrdy00.wav",
+        "sound\\Terran\\ghost\\tghrdy00.wav",
+        "sound\\terran\\ghost\\tghrdy00.wav",
     ]),
     ("scv_yes1.ogg", &[
-        "\\terran\\scv\\tscpss00.wav",
-        "\\Terran\\scv\\tscpss00.wav",
-        "terran\\scv\\tscpss00.wav",
-        "terran/scv/tscpss00.wav",
+        "sound\\Terran\\scv\\tscpss00.wav",
+        "sound\\terran\\scv\\tscpss00.wav",
+        "sound\\Terran\\scv\\tscyes00.wav",
     ]),
     ("scv_die.ogg", &[
-        "\\terran\\scv\\tscdth00.wav",
-        "\\Terran\\scv\\tscdth00.wav",
-        "terran\\scv\\tscdth00.wav",
-        "terran/scv/tscdth00.wav",
+        "sound\\Terran\\scv\\tscdth00.wav",
+        "sound\\terran\\scv\\tscdth00.wav",
     ]),
 ];
 
@@ -635,20 +622,47 @@ fn cmd_extract_anim(
                                                 "  mainSD parsed: {} sprites (SD ANIM v0x0101)",
                                                 sd.sprite_count
                                             );
-                                            // SD sprite export: build a spritesheet PNG for
-                                            // each sprite that has DDS data.
+                                            // Build a name map from the sprite mapping if available:
+                                            // "terran/marine" -> "anim/main_000.anim" => id 0 -> "terran/marine"
+                                            let mapping_path = PathBuf::from("mappings/starcraft-remastered.yaml");
+                                            let id_to_name: std::collections::HashMap<usize, String> =
+                                                if mapping_path.exists() {
+                                                    SpriteMapping::load(&mapping_path)
+                                                        .map(|m| m.entries.into_iter().filter_map(|(name, casc_path)| {
+                                                            // Extract numeric ID from "anim/main_NNN.anim"
+                                                            casc_path.trim_end_matches(".anim")
+                                                                .rsplit('_').next()
+                                                                .and_then(|s| s.parse::<usize>().ok())
+                                                                .map(|id| (id, name.replace('/', "_")))
+                                                        }).collect())
+                                                        .unwrap_or_default()
+                                                } else {
+                                                    std::collections::HashMap::new()
+                                                };
+
+                                            let export_teamcolor = team_color_mask;
                                             let mut exported = 0usize;
-                                            for sprite in &sd.sprites {
+                                            for (idx, sprite) in sd.sprites.iter().enumerate() {
                                                 if sprite.dds1_data.is_empty() { continue; }
-                                                let sprite_path = output.join(
-                                                    format!("mainSD_sprite_{:03}.png", exported)
-                                                );
+                                                let stem = id_to_name.get(&idx)
+                                                    .cloned()
+                                                    .unwrap_or_else(|| format!("mainSD_sprite_{:03}", idx));
+                                                let sprite_path = output.join(format!("{}.png", stem));
                                                 if let Err(e) = casc_extractor::dds_converter::save_dds_as_png(
                                                     &sprite.dds1_data, &sprite_path
                                                 ) {
                                                     log::debug!("SD sprite export failed: {}", e);
                                                 } else {
                                                     exported += 1;
+                                                    // Export team-color layer if requested and available
+                                                    if export_teamcolor && !sprite.layer2_data.is_empty() {
+                                                        let tc_path = output.join(format!("{}_tc.png", stem));
+                                                        if let Err(e) = casc_extractor::dds_converter::save_dds_as_png(
+                                                            &sprite.layer2_data, &tc_path
+                                                        ) {
+                                                            log::debug!("SD TC export failed: {}", e);
+                                                        }
+                                                    }
                                                 }
                                             }
                                             println!("  Exported {} SD sprite PNGs", exported);

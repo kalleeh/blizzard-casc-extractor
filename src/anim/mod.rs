@@ -2868,6 +2868,7 @@ mod tests {
 
         /// Performance benchmark for ZLIB decompression
         #[test]
+        #[ignore = "performance benchmark — run with --release"]
         fn benchmark_zlib_decompression_performance() {
             use flate2::write::ZlibEncoder;
             use flate2::Compression;
@@ -2922,6 +2923,7 @@ mod tests {
 
         /// Performance benchmark for LZ4 decompression
         #[test]
+        #[ignore = "performance benchmark — run with --release"]
         fn benchmark_lz4_decompression_performance() {
             // Create large test data (1MB of RGBA data)
             let width = 512;
@@ -2970,6 +2972,7 @@ mod tests {
 
         /// Performance benchmark for uncompressed data processing
         #[test]
+        #[ignore = "performance benchmark — run with --release"]
         fn benchmark_uncompressed_processing_performance() {
             // Create large test data (1MB of RGBA data)
             let width = 512;
