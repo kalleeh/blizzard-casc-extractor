@@ -1,14 +1,14 @@
-/// casc-extractor — unified CLI entry point for StarCraft: Remastered asset extraction
-///
-/// Exposes all extraction functionality under one binary:
-///   casc-extractor extract anim
-///   casc-extractor extract tileset
-///   casc-extractor extract effect
-///   casc-extractor extract organized
-///   casc-extractor sounds extract
-///   casc-extractor sounds list
-///   casc-extractor inspect sprites
-///   casc-extractor inspect archive
+//! casc-extractor — unified CLI entry point for StarCraft: Remastered asset extraction
+//!
+//! Exposes all extraction functionality under one binary:
+//!   casc-extractor extract anim
+//!   casc-extractor extract tileset
+//!   casc-extractor extract effect
+//!   casc-extractor extract organized
+//!   casc-extractor sounds extract
+//!   casc-extractor sounds list
+//!   casc-extractor inspect sprites
+//!   casc-extractor inspect archive
 
 use anyhow::Result;
 use casc_extractor::anim::HdAnimFile;
@@ -236,6 +236,10 @@ enum ValidateCommands {
         /// Path to the regression suite JSON
         #[arg(long, default_value = "validation-suite.json")]
         suite: PathBuf,
+
+        /// Output results as JSON instead of human-readable text
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -479,6 +483,7 @@ fn open_casc_storage(install_path: Option<&Path>) -> Result<CascStorage> {
 // Subcommand handlers
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_extract_anim(
     archive: &CascArchive,
     output: &Path,
@@ -634,53 +639,63 @@ fn cmd_extract_anim(
         let id_to_name_ref = &id_to_name;
         let output_ref = output;
 
-        extracted.par_iter().for_each(|(id, output_path, data)| {
-            let output_name = format!("main_{:03}.anim", id);
-            let mapped_name = id_to_name_ref.get(&id.to_string()).cloned();
+        let results: Vec<anyhow::Result<()>> = extracted
+            .par_iter()
+            .map(|(id, output_path, data)| -> anyhow::Result<()> {
+                let output_name = format!("main_{:03}.anim", id);
+                let mapped_name = id_to_name_ref.get(&id.to_string()).cloned();
 
-            if let Some(ref name) = mapped_name {
-                let named_path = output_ref.join(format!("{}.anim", name));
-                if let Err(e) = fs::copy(output_path, &named_path) {
-                    eprintln!("Warning: could not write named copy {:?}: {}", named_path, e);
-                }
-            }
-
-            match HdAnimFile::parse(data) {
-                Ok(anim) => {
-                    let export_cfg = ExportConfig {
-                        convert_to_png: true,
-                        team_color_mask,
-                        save_dds: false,
-                        generate_metadata: gen_meta,
-                        pixels_per_unit,
-                    };
-                    match export_anim(&anim, &output_path.with_extension(""), &export_cfg) {
-                        Ok(result) => {
-                            if let Some(ref name) = mapped_name {
-                                println!(
-                                    "  {}.anim ({}, {} frames, {:.1} MB) tc={}",
-                                    name,
-                                    output_name,
-                                    result.frame_count,
-                                    data.len() as f64 / 1_000_000.0,
-                                    result.tc_mask_written
-                                );
-                            } else {
-                                println!(
-                                    "  {} ({} frames, {:.1} MB) tc={}",
-                                    output_name,
-                                    result.frame_count,
-                                    data.len() as f64 / 1_000_000.0,
-                                    result.tc_mask_written
-                                );
-                            }
-                        }
-                        Err(e) => println!("  Export failed: {}", e),
+                if let Some(ref name) = mapped_name {
+                    let named_path = output_ref.join(format!("{}.anim", name));
+                    if let Err(e) = fs::copy(output_path, &named_path) {
+                        eprintln!("Warning: could not write named copy {:?}: {}", named_path, e);
                     }
                 }
-                Err(e) => println!("  {} - Parse error: {}", output_name, e),
+
+                match HdAnimFile::parse(data) {
+                    Ok(anim) => {
+                        let export_cfg = ExportConfig {
+                            convert_to_png: true,
+                            team_color_mask,
+                            save_dds: false,
+                            generate_metadata: gen_meta,
+                            pixels_per_unit,
+                        };
+                        match export_anim(&anim, &output_path.with_extension(""), &export_cfg) {
+                            Ok(result) => {
+                                if let Some(ref name) = mapped_name {
+                                    println!(
+                                        "  {}.anim ({}, {} frames, {:.1} MB) tc={}",
+                                        name,
+                                        output_name,
+                                        result.frame_count,
+                                        data.len() as f64 / 1_000_000.0,
+                                        result.tc_mask_written
+                                    );
+                                } else {
+                                    println!(
+                                        "  {} ({} frames, {:.1} MB) tc={}",
+                                        output_name,
+                                        result.frame_count,
+                                        data.len() as f64 / 1_000_000.0,
+                                        result.tc_mask_written
+                                    );
+                                }
+                                Ok(())
+                            }
+                            Err(e) => Err(anyhow::anyhow!("  Export failed: {}", e)),
+                        }
+                    }
+                    Err(e) => Err(anyhow::anyhow!("  {} - Parse error: {}", output_name, e)),
+                }
+            })
+            .collect();
+
+        for result in results {
+            if let Err(e) = result {
+                println!("  Export failed: {}", e);
             }
-        });
+        }
     } else {
         // -----------------------------------------------------------------------
         // Non-PNG path: sequential write, fast enough without parallelism.
@@ -765,6 +780,8 @@ fn cmd_extract_tileset(
         "desert", "ice", "twilight", "install",
     ];
 
+    // Phase 1 — Sequential: extract raw bytes from the archive (FFI, non-Send).
+    let mut extracted: Vec<(String, PathBuf, Vec<u8>)> = Vec::new();
     for tileset in &tilesets {
         let output_name = format!("{}.dds.vr4", tileset);
         let output_path = output.join(&output_name);
@@ -774,11 +791,24 @@ fn cmd_extract_tileset(
         }
         let path = format!("{}tileset/{}.dds.vr4", prefix, tileset);
         match archive.extract_file(&path) {
-            Ok(data) => {
-                File::create(&output_path)?.write_all(&data)?;
-                println!("  {} ({:.1} MB)", output_name, data.len() as f64 / 1_000_000.0);
-            }
+            Ok(data) => extracted.push((output_name, output_path, data)),
             Err(e) => println!("  {} - {}", tileset, e),
+        }
+    }
+
+    // Phase 2 — Parallel: write files to disk (I/O-bound, no archive access).
+    let results: Vec<anyhow::Result<()>> = extracted
+        .par_iter()
+        .map(|(output_name, output_path, data)| -> anyhow::Result<()> {
+            File::create(output_path)?.write_all(data)?;
+            println!("  {} ({:.1} MB)", output_name, data.len() as f64 / 1_000_000.0);
+            Ok(())
+        })
+        .collect();
+
+    for result in results {
+        if let Err(e) = result {
+            println!("  Write failed: {}", e);
         }
     }
 
@@ -804,6 +834,8 @@ fn cmd_extract_effect(
     let overwrite = config.output_settings.overwrite_behavior;
     let effects = ["water_normal_1.dds.grp", "water_normal_2.dds.grp"];
 
+    // Phase 1 — Sequential: extract raw bytes from the archive (FFI, non-Send).
+    let mut extracted: Vec<(String, PathBuf, Vec<u8>)> = Vec::new();
     for effect in &effects {
         let output_path = output.join(effect);
         if should_skip(&output_path, overwrite, session_start) {
@@ -812,11 +844,24 @@ fn cmd_extract_effect(
         }
         let path = format!("{}effect/{}", prefix, effect);
         match archive.extract_file(&path) {
-            Ok(data) => {
-                File::create(&output_path)?.write_all(&data)?;
-                println!("  {} ({:.1} MB)", effect, data.len() as f64 / 1_000_000.0);
-            }
+            Ok(data) => extracted.push((effect.to_string(), output_path, data)),
             Err(e) => println!("  {} - {}", effect, e),
+        }
+    }
+
+    // Phase 2 — Parallel: write files to disk (I/O-bound, no archive access).
+    let results: Vec<anyhow::Result<()>> = extracted
+        .par_iter()
+        .map(|(output_name, output_path, data)| -> anyhow::Result<()> {
+            File::create(output_path)?.write_all(data)?;
+            println!("  {} ({:.1} MB)", output_name, data.len() as f64 / 1_000_000.0);
+            Ok(())
+        })
+        .collect();
+
+    for result in results {
+        if let Err(e) = result {
+            println!("  Write failed: {}", e);
         }
     }
 
@@ -827,7 +872,7 @@ fn cmd_extract_effect(
 /// Build a spritesheet PNG from GRP frames and write it to `output_path`.
 fn build_spritesheet(grp: &GrpFile, output_path: &Path, compression: png::Compression) -> Result<()> {
     let frames_per_row = 17usize;
-    let rows = (grp.frame_count as usize + frames_per_row - 1) / frames_per_row;
+    let rows = (grp.frame_count as usize).div_ceil(frames_per_row);
     let sheet_width = grp.width as u32 * frames_per_row as u32;
     let sheet_height = grp.height as u32 * rows as u32;
 
@@ -867,7 +912,7 @@ fn build_spritesheet(grp: &GrpFile, output_path: &Path, compression: png::Compre
 /// Write .txt metadata for a GRP spritesheet.
 fn write_text_metadata(grp: &GrpFile, path: &Path) -> Result<()> {
     let frames_per_row = 17usize;
-    let rows = (grp.frame_count as usize + frames_per_row - 1) / frames_per_row;
+    let rows = (grp.frame_count as usize).div_ceil(frames_per_row);
     let sheet_width = grp.width as u32 * frames_per_row as u32;
     let sheet_height = grp.height as u32 * rows as u32;
 
@@ -882,7 +927,7 @@ fn write_text_metadata(grp: &GrpFile, path: &Path) -> Result<()> {
 /// Write .json (Unity) metadata for a GRP spritesheet.
 fn write_json_metadata(grp: &GrpFile, path: &Path) -> Result<()> {
     let frames_per_row = 17usize;
-    let rows = (grp.frame_count as usize + frames_per_row - 1) / frames_per_row;
+    let rows = (grp.frame_count as usize).div_ceil(frames_per_row);
     let sheet_width = grp.width as u32 * frames_per_row as u32;
     let sheet_height = grp.height as u32 * rows as u32;
 
@@ -1372,9 +1417,13 @@ fn cmd_validate_register(file: &Path, suite_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn cmd_validate_run(dir: &Path, suite_path: &Path) -> Result<()> {
+fn cmd_validate_run(dir: &Path, suite_path: &Path, json_output: bool) -> Result<()> {
     if !suite_path.exists() {
-        println!("No suite found at {}", suite_path.display());
+        if json_output {
+            println!("{}", serde_json::json!({"total": 0, "passed": 0, "results": []}));
+        } else {
+            println!("No suite found at {}", suite_path.display());
+        }
         return Ok(());
     }
 
@@ -1385,6 +1434,7 @@ fn cmd_validate_run(dir: &Path, suite_path: &Path) -> Result<()> {
 
     let total = entries.len();
     let mut passed = 0usize;
+    let mut json_results: Vec<serde_json::Value> = Vec::new();
 
     for entry in &entries {
         let filename = entry.expected_output
@@ -1393,7 +1443,14 @@ fn cmd_validate_run(dir: &Path, suite_path: &Path) -> Result<()> {
         let candidate = dir.join(filename);
 
         if !candidate.exists() {
-            println!("MISSING: {}", entry.sprite_name);
+            if json_output {
+                json_results.push(serde_json::json!({
+                    "file": entry.sprite_name,
+                    "status": "missing"
+                }));
+            } else {
+                println!("MISSING: {}", entry.sprite_name);
+            }
             continue;
         }
 
@@ -1412,8 +1469,22 @@ fn cmd_validate_run(dir: &Path, suite_path: &Path) -> Result<()> {
         let actual_hash = format!("{:x}", hasher.finalize());
 
         if actual_hash == entry.sha256_hash {
-            println!("PASS: {}", entry.sprite_name);
+            if json_output {
+                json_results.push(serde_json::json!({
+                    "file": entry.sprite_name,
+                    "status": "pass"
+                }));
+            } else {
+                println!("PASS: {}", entry.sprite_name);
+            }
             passed += 1;
+        } else if json_output {
+            json_results.push(serde_json::json!({
+                "file": entry.sprite_name,
+                "status": "fail",
+                "expected": entry.sha256_hash,
+                "actual": actual_hash
+            }));
         } else {
             println!(
                 "FAIL: {} (expected {}, got {})",
@@ -1422,7 +1493,16 @@ fn cmd_validate_run(dir: &Path, suite_path: &Path) -> Result<()> {
         }
     }
 
-    println!("\n{}/{} checks passed", passed, total);
+    if json_output {
+        let report = serde_json::json!({
+            "total": total,
+            "passed": passed,
+            "results": json_results
+        });
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("\n{}/{} checks passed", passed, total);
+    }
     Ok(())
 }
 
@@ -1528,8 +1608,8 @@ fn main() -> Result<()> {
             ValidateCommands::Register { file, suite } => {
                 cmd_validate_register(&file, &suite)?;
             }
-            ValidateCommands::Run { dir, suite } => {
-                cmd_validate_run(&dir, &suite)?;
+            ValidateCommands::Run { dir, suite, json } => {
+                cmd_validate_run(&dir, &suite, json)?;
             }
         },
     }

@@ -682,10 +682,7 @@ impl DirectSpriteExtractor {
         }
         
         // Enhanced error handling: Create Unity metadata with validation
-        let unity_metadata = match self.create_unity_metadata_with_validation(sprite_data, unity_converter) {
-            Ok(metadata) => metadata,
-            Err(e) => return Err(e),
-        };
+        let unity_metadata = self.create_unity_metadata_with_validation(sprite_data, unity_converter)?;
         
         let sprite_with_unity = SpriteData {
             name: sprite_data.name.clone(),
@@ -1026,10 +1023,7 @@ impl DirectSpriteExtractor {
         if !Self::looks_like_blte_data(data) {
             return None;
         }
-        match Self::decompress_blte_data(data) {
-            Ok(decompressed) => Some(decompressed),
-            Err(_) => None,
-        }
+        Self::decompress_blte_data(data).ok()
     }
 
     /// Attempt LZ4 decompression; returns Some(data) on success, None on failure.
@@ -1135,7 +1129,7 @@ impl DirectSpriteExtractor {
 
         // All decompression/decryption attempts failed
         log::warn!("❌ All decompression attempts failed for {}, creating diagnostic visualization", file_info.name);
-        Ok(self.create_compressed_data_visualization(compressed_data, file_info)?)
+        self.create_compressed_data_visualization(compressed_data, file_info)
     }
 
     /// Create a visualization of decompressed data that couldn't be identified
@@ -1167,7 +1161,7 @@ impl DirectSpriteExtractor {
         
         // Fall back to a grid visualization
         let width = 64u32;
-        let height = ((data_len + 63) / 64).min(64) as u32;
+        let height = data_len.div_ceil(64).min(64) as u32;
         let mut pixel_data = vec![0u8; (width * height) as usize];
         
         // Map decompressed bytes to pixels
@@ -1182,7 +1176,7 @@ impl DirectSpriteExtractor {
     fn create_compressed_data_visualization(&self, compressed_data: &[u8], _file_info: &FileInfo) -> Result<Vec<u8>, SpriteError> {
         // Create a small visualization of the compressed data
         let width = 64u32;
-        let height = (compressed_data.len() as u32 + width - 1) / width;
+        let height = (compressed_data.len() as u32).div_ceil(width);
         let height = height.min(64); // Cap at 64x64
         
         let mut pixel_data = vec![0u8; (width * height) as usize];
@@ -1235,43 +1229,43 @@ impl DirectSpriteExtractor {
                                     log::info!("Successfully decoded {} RGBA pixels", rgba_pixels.len() / 4);
                                     
                                     // Convert RGBA to PNG
-                                    return self.create_png_from_rgba_pixels(
+                                    self.create_png_from_rgba_pixels(
                                         &rgba_pixels, 
                                         first_frame.width as u32, 
                                         first_frame.height as u32
-                                    );
+                                    )
                                 }
                                 Err(e) => {
-                                    return Err(SpriteError::DecodeError(format!(
+                                    Err(SpriteError::DecodeError(format!(
                                         "Failed to decode ANIM texture pixels in {}: {}", 
                                         file_info.name, e
-                                    )));
+                                    )))
                                 }
                             }
                         } else {
-                            return Err(SpriteError::DecodeError(format!(
+                            Err(SpriteError::DecodeError(format!(
                                 "No textures found in ANIM sprite: {}", 
                                 file_info.name
-                            )));
+                            )))
                         }
                     } else {
-                        return Err(SpriteError::DecodeError(format!(
+                        Err(SpriteError::DecodeError(format!(
                             "No frames found in ANIM sprite: {}", 
                             file_info.name
-                        )));
+                        )))
                     }
                 } else {
-                    return Err(SpriteError::DecodeError(format!(
+                    Err(SpriteError::DecodeError(format!(
                         "No sprites found in ANIM file: {}", 
                         file_info.name
-                    )));
+                    )))
                 }
             }
             Err(e) => {
-                return Err(SpriteError::DecodeError(format!(
+                Err(SpriteError::DecodeError(format!(
                     "Failed to parse ANIM file {}: {}", 
                     file_info.name, e
-                )));
+                )))
             }
         }
     }
@@ -1483,7 +1477,7 @@ impl DirectSpriteExtractor {
         
         // Image data should have some variation (not all the same value)
         // but not be completely random (some structure)
-        variation >= 16 && variation <= 240
+        (16..=240).contains(&variation)
     }
     
     /// Create PNG from RGB pixel data
@@ -1825,11 +1819,10 @@ impl DirectSpriteExtractor {
         }
         
         // Check for other compression signatures
-        if data.len() >= 4 {
-            if &data[0..4] == b"BLTE" || &data[0..4] == b"\x04\"M\x18" {
+        if data.len() >= 4
+            && (&data[0..4] == b"BLTE" || &data[0..4] == b"\x04\"M\x18") {
                 return true;
             }
-        }
         
         // Check if entropy suggests compressed data (but not as high as encrypted)
         let mut byte_counts = [0u32; 256];

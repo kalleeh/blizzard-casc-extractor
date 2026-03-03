@@ -1,8 +1,7 @@
 /// Property-based test generators for ANIM and GRP formats
-/// 
+///
 /// This module provides generators for creating valid ANIM and GRP test data
 /// for comprehensive property-based testing using proptest.
-
 use proptest::prelude::*;
 use proptest::strategy::ValueTree;
 use byteorder::{LittleEndian, WriteBytesExt};
@@ -149,31 +148,31 @@ mod tests {
         // Compressed data should be smaller than uncompressed
         let uncompressed_size = 64 * 64 * 4; // RGBA
         assert!(compressed.len() < uncompressed_size);
-        assert!(compressed.len() > 0);
+        assert!(!compressed.is_empty());
     }
-    
+
     #[test]
     fn test_generate_lz4_compressed_texture() {
         let compressed = generate_lz4_compressed_texture(64, 64);
-        
+
         // Should have data
-        assert!(compressed.len() > 0);
-        
+        assert!(!compressed.is_empty());
+
         // LZ4 prepends size, so should have at least 4 bytes
         assert!(compressed.len() >= 4);
     }
-    
+
     #[test]
     fn test_grp_params_strategy_generates_valid_ranges() {
         let strategy = grp_params_strategy();
         let mut runner = proptest::test_runner::TestRunner::default();
-        
+
         for _ in 0..10 {
             let (frame_count, width, height) = strategy.new_tree(&mut runner).unwrap().current();
-            
-            assert!(frame_count >= 1 && frame_count < 100);
-            assert!(width >= 1 && width < 512);
-            assert!(height >= 1 && height < 512);
+
+            assert!((1..100).contains(&frame_count));
+            assert!((1..512).contains(&width));
+            assert!((1..512).contains(&height));
         }
     }
 }

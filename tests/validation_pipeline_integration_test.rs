@@ -369,10 +369,8 @@ fn test_end_to_end_validation_workflow() {
         // List generated files
         if let Ok(entries) = std::fs::read_dir(&report_dir) {
             println!("  Generated files:");
-            for entry in entries {
-                if let Ok(entry) = entry {
-                    println!("    - {:?}", entry.file_name());
-                }
+            for entry in entries.flatten() {
+                println!("    - {:?}", entry.file_name());
             }
         }
     }

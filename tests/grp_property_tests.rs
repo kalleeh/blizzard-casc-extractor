@@ -128,7 +128,7 @@ mod grp_palette_conversion {
             // Property: Each frame converts to valid RGBA data
             for (i, frame) in grp.frames.iter().enumerate() {
                 let rgba_data = frame.to_rgba_with_palette(&palette)
-                    .expect(&format!("Frame {} should convert to RGBA", i));
+                    .unwrap_or_else(|_| panic!("Frame {} should convert to RGBA", i));
                 
                 // Property: RGBA data size must be 4x pixel count
                 let expected_size = frame.pixel_data.len() * 4;
@@ -165,7 +165,7 @@ mod grp_transparency_preservation {
             // Property: Index 0 must always be transparent
             for (i, frame) in grp.frames.iter().enumerate() {
                 let rgba_data = frame.to_rgba_with_transparency(&palette)
-                    .expect(&format!("Frame {} should convert with transparency", i));
+                    .unwrap_or_else(|_| panic!("Frame {} should convert with transparency", i));
                 
                 // Check each pixel
                 for (pixel_idx, &palette_index) in frame.pixel_data.iter().enumerate() {
@@ -249,7 +249,7 @@ mod grp_multi_frame_conversion {
             
             for (i, frame) in grp.frames.iter().enumerate() {
                 let individual_rgba = frame.to_rgba_with_palette(&palette)
-                    .expect(&format!("Frame {} should convert individually", i));
+                    .unwrap_or_else(|_| panic!("Frame {} should convert individually", i));
                 
                 prop_assert_eq!(
                     &all_frames_rgba[i],
@@ -277,10 +277,10 @@ mod grp_optimized_conversion_equivalence {
             // Property: Optimized and regular conversion must produce identical results
             for (i, frame) in grp.frames.iter().enumerate() {
                 let regular_rgba = frame.to_rgba_with_transparency(&palette)
-                    .expect(&format!("Frame {} should convert regularly", i));
-                
+                    .unwrap_or_else(|_| panic!("Frame {} should convert regularly", i));
+
                 let optimized_rgba = frame.to_rgba_optimized(&palette)
-                    .expect(&format!("Frame {} should convert optimized", i));
+                    .unwrap_or_else(|_| panic!("Frame {} should convert optimized", i));
                 
                 prop_assert_eq!(
                     regular_rgba,

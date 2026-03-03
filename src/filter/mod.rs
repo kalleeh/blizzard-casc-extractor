@@ -1,9 +1,8 @@
 /// File filtering system for CASC sprite extraction
-/// 
+///
 /// This module provides functionality for filtering files based on regex patterns,
-/// resolution tiers, and file format signatures, supporting both inclusion and 
+/// resolution tiers, and file format signatures, supporting both inclusion and
 /// exclusion filters with OR logic for multiple patterns.
-
 use regex::Regex;
 use anyhow::{Result, Context};
 use serde::{Deserialize, Serialize};
@@ -539,8 +538,8 @@ mod tests {
             let mut expected_skipped = 0;
             
             // Generate file data for format filtering
-            let file_data_samples = vec![
-                vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00], // PNG
+            let file_data_samples = [
+                vec![0x89u8, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00], // PNG
                 vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10], // JPEG
                 vec![0x00, 0x01, 0x02, 0x03], // Other
             ];

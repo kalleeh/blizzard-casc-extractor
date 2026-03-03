@@ -189,28 +189,28 @@ impl ErrorReporter {
             
             let mut priority = 1;
             
-            if report.reference_validation.as_ref().map_or(false, |r| !r.passed) {
+            if report.reference_validation.as_ref().is_some_and(|r| !r.passed) {
                 writeln!(file, "{}. FIX REFERENCE TOOL MISMATCH (CRITICAL)", priority)?;
                 writeln!(file, "   - Compare with reference tool output byte-by-byte")?;
                 writeln!(file, "   - Study reference tool source code if available")?;
                 priority += 1;
             }
             
-            if report.byte_comparison.as_ref().map_or(false, |r| !r.passed) {
+            if report.byte_comparison.as_ref().is_some_and(|r| !r.passed) {
                 writeln!(file, "{}. FIX BYTE-LEVEL DIFFERENCES (HIGH)", priority)?;
                 writeln!(file, "   - Review hex dump for specific byte differences")?;
                 writeln!(file, "   - Check binary parsing logic")?;
                 priority += 1;
             }
             
-            if report.visual_comparison.as_ref().map_or(false, |r| !r.passed) {
+            if report.visual_comparison.as_ref().is_some_and(|r| !r.passed) {
                 writeln!(file, "{}. FIX VISUAL DIFFERENCES (HIGH)", priority)?;
                 writeln!(file, "   - Review visual diff image")?;
                 writeln!(file, "   - Check color conversion and transparency")?;
                 priority += 1;
             }
             
-            if report.unity_import.as_ref().map_or(false, |r| !r.passed) {
+            if report.unity_import.as_ref().is_some_and(|r| !r.passed) {
                 writeln!(file, "{}. FIX UNITY IMPORT (MEDIUM)", priority)?;
                 writeln!(file, "   - Verify PNG format compatibility")?;
                 writeln!(file, "   - Check sprite metadata")?;

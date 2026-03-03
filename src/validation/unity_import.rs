@@ -173,7 +173,7 @@ impl UnityImportValidator {
         let asset_path = self.copy_to_unity_project(sprite_path, test_project)?;
         
         // Step 2: Trigger Unity asset import
-        let _import_result = self.trigger_unity_import(unity_editor, test_project, &asset_path)?;
+        self.trigger_unity_import(unity_editor, test_project, &asset_path)?;
         
         // Step 3: Check for import errors
         let log_messages = self.read_unity_import_log(test_project)?;
@@ -361,7 +361,7 @@ impl UnityImportValidator {
         }
         
         // Verify texture format is supported
-        let supported_formats = vec!["RGBA32", "RGB24", "ARGB32", "Alpha8", "Rgba", "Rgb"];
+        let supported_formats = ["RGBA32", "RGB24", "ARGB32", "Alpha8", "Rgba", "Rgb"];
         if !supported_formats.iter().any(|f| metadata.texture_format.contains(f)) {
             warn!("Unusual texture format: {}", metadata.texture_format);
         }

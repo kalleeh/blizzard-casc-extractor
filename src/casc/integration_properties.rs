@@ -1,8 +1,7 @@
 /// Property-based tests for CASC integration consistency
-/// 
+///
 /// This module contains property-based tests that validate the consistency
 /// and correctness of CASC file system integration across different scenarios.
-
 #[cfg(test)]
 mod tests {
     use super::super::{CascNavigator, Installation, GameVersion, FileSystemType};
@@ -105,8 +104,8 @@ mod tests {
         for i in 0..3 {
             let mut entry_data = vec![0u8; 17]; // 9 bytes key + 4 bytes data_file_number + 4 bytes data_file_offset
             // Key
-            for j in 0..9 {
-                entry_data[j] = ((i * 9 + j) % 256) as u8;
+            for (j, byte) in entry_data[..9].iter_mut().enumerate() {
+                *byte = ((i * 9 + j) % 256) as u8;
             }
             // Data file number (4 bytes)
             entry_data[9..13].copy_from_slice(&(i as u32).to_le_bytes());

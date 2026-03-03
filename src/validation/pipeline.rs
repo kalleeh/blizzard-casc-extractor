@@ -326,7 +326,7 @@ impl ValidationPipeline {
         };
 
         let overall_pass = failed_files == 0 
-            && regression_results.as_ref().map_or(true, |r| r.failed_tests == 0);
+            && regression_results.as_ref().is_none_or(|r| r.failed_tests == 0);
 
         let summary = format!(
             "Validation Summary: {}/{} files passed, {} failed. Overall: {}",

@@ -2,7 +2,6 @@
 ///
 /// Provides helpers to locate the game directory and open the CASC archive
 /// without callers needing to hard-code platform-specific paths.
-
 use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Result};
 use crate::casc::CascArchive;

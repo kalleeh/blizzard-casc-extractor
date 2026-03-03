@@ -3,7 +3,6 @@
 /// `SpriteExporter` consolidates DDS saving, PNG conversion (with optional
 /// team-color-mask stripping), and Unity-compatible JSON metadata generation
 /// into a single, testable unit that multiple binaries can share.
-
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -107,8 +106,7 @@ pub fn export_anim(
                         Some(Ok(img)) => img
                             .save(&png_path)
                             .map_err(|e| {
-                                std::io::Error::new(
-                                    std::io::ErrorKind::Other,
+                                std::io::Error::other(
                                     format!("PNG save error: {}", e),
                                 )
                             }),
@@ -180,7 +178,7 @@ pub fn export_anim(
                 }
 
                 let magick_ok = std::process::Command::new("magick")
-                    .args(&[
+                    .args([
                         dds_path.to_str().unwrap_or(""),
                         png_path.to_str().unwrap_or(""),
                     ])

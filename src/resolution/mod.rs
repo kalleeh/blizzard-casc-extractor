@@ -60,7 +60,7 @@ pub fn detect_resolution_tier(path: &str) -> Option<ResolutionTier> {
 }
 
 /// Filter a slice of `FileEntry` values by resolution tier.
-pub fn filter_by_resolution<'a>(files: &'a [FileEntry], tier: ResolutionTier) -> Vec<&'a FileEntry> {
+pub fn filter_by_resolution(files: &[FileEntry], tier: ResolutionTier) -> Vec<&FileEntry> {
     let tier_name = format!("{}", tier);
     match tier {
         ResolutionTier::All => files.iter().collect(),
@@ -329,31 +329,19 @@ mod tests {
             
             // Test HD path filtering
             let should_process_hd = handler.should_process_file(&hd_path);
-            let expected_hd = match filter_tier {
-                ResolutionTier::All => true,
-                ResolutionTier::HD => true,
-                _ => false,
-            };
+            let expected_hd = matches!(filter_tier, ResolutionTier::All | ResolutionTier::HD);
             prop_assert_eq!(should_process_hd, expected_hd, 
                 "HD path '{}' processing with filter {:?} should be {}", hd_path, filter_tier, expected_hd);
 
             // Test HD2 path filtering
             let should_process_hd2 = handler.should_process_file(&hd2_path);
-            let expected_hd2 = match filter_tier {
-                ResolutionTier::All => true,
-                ResolutionTier::HD2 => true,
-                _ => false,
-            };
+            let expected_hd2 = matches!(filter_tier, ResolutionTier::All | ResolutionTier::HD2);
             prop_assert_eq!(should_process_hd2, expected_hd2,
                 "HD2 path '{}' processing with filter {:?} should be {}", hd2_path, filter_tier, expected_hd2);
 
             // Test SD path filtering
             let should_process_sd = handler.should_process_file(&sd_path);
-            let expected_sd = match filter_tier {
-                ResolutionTier::All => true,
-                ResolutionTier::SD => true,
-                _ => false,
-            };
+            let expected_sd = matches!(filter_tier, ResolutionTier::All | ResolutionTier::SD);
             prop_assert_eq!(should_process_sd, expected_sd,
                 "SD path '{}' processing with filter {:?} should be {}", sd_path, filter_tier, expected_sd);
 

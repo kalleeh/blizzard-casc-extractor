@@ -789,7 +789,7 @@ impl ResearchDataCollector {
         if !self.data.casc_stats.corrupted_files.is_empty() {
             report.push_str(&format!("- **Corrupted Files:** {}\n", self.data.casc_stats.corrupted_files.len()));
         }
-        report.push_str("\n");
+        report.push('\n');
         
         // File Format Analysis
         report.push_str("## File Format Analysis\n\n");
@@ -804,7 +804,7 @@ impl ResearchDataCollector {
                 report.push_str(&format!("  - {}: {}\n", format, count));
             }
         }
-        report.push_str("\n");
+        report.push('\n');
         
         // Size Distribution
         report.push_str("### File Size Distribution\n\n");
@@ -814,7 +814,7 @@ impl ResearchDataCollector {
         report.push_str(&format!("- **10KB - 100KB:** {}\n", dist.medium_files));
         report.push_str(&format!("- **100KB - 1MB:** {}\n", dist.large_files));
         report.push_str(&format!("- **> 1MB:** {}\n", dist.huge_files));
-        report.push_str("\n");
+        report.push('\n');
         
         // Extraction Results
         report.push_str("## Extraction Results\n\n");
@@ -824,7 +824,7 @@ impl ResearchDataCollector {
         report.push_str(&format!("- **Conversion Failures:** {}\n", self.data.extraction_stats.conversion_failures));
         report.push_str(&format!("- **Total Time:** {:.2} seconds\n", self.data.extraction_stats.extraction_time_seconds));
         report.push_str(&format!("- **Avg Processing Time:** {:.2} ms/file\n", self.data.extraction_stats.average_processing_time_ms));
-        report.push_str("\n");
+        report.push('\n');
         
         // Format Statistics (Requirement 11.1)
         if !self.data.format_statistics.format_success_rates.is_empty() {
@@ -856,7 +856,7 @@ impl ResearchDataCollector {
                         report.push_str(&format!("  - {}: {} occurrences\n", reason, count));
                     }
                 }
-                report.push_str("\n");
+                report.push('\n');
             }
         }
         
@@ -894,7 +894,7 @@ impl ResearchDataCollector {
                         report.push_str(&format!("  - `{}`\n", sample));
                     }
                 }
-                report.push_str("\n");
+                report.push('\n');
             }
         }
         
@@ -910,7 +910,7 @@ impl ResearchDataCollector {
         report.push_str(&format!("- **Total RAM:** {:.2} GB\n", sys_info.total_ram as f64 / 1_073_741_824.0));
         report.push_str(&format!("- **Available RAM:** {:.2} GB\n", sys_info.available_ram as f64 / 1_073_741_824.0));
         report.push_str(&format!("- **Storage Type:** {}\n", sys_info.storage_type));
-        report.push_str("\n");
+        report.push('\n');
         
         // Operation Performance
         if !self.data.performance_metrics.operation_performance.is_empty() {
@@ -923,7 +923,7 @@ impl ResearchDataCollector {
                 report.push_str(&format!("- **Min Time:** {:.2}ms\n", perf.min_time_ms));
                 report.push_str(&format!("- **Max Time:** {:.2}ms\n", perf.max_time_ms));
                 report.push_str(&format!("- **Operations/sec:** {:.2}\n", perf.operations_per_second));
-                report.push_str("\n");
+                report.push('\n');
             }
         }
         
@@ -940,7 +940,7 @@ impl ResearchDataCollector {
                     report.push_str(&format!("  - {}: {:.2} MB\n", component, *memory as f64 / 1_048_576.0));
                 }
             }
-            report.push_str("\n");
+            report.push('\n');
         }
         
         // I/O Performance
@@ -953,7 +953,7 @@ impl ResearchDataCollector {
             report.push_str(&format!("- **Average Read Speed:** {:.2} MB/s\n", io_perf.average_read_speed_mbps));
             report.push_str(&format!("- **Average Write Speed:** {:.2} MB/s\n", io_perf.average_write_speed_mbps));
             report.push_str(&format!("- **Average File Op Time:** {:.2} ms\n", io_perf.average_file_op_time_ms));
-            report.push_str("\n");
+            report.push('\n');
         }
         
         // Tool Integration
@@ -983,7 +983,7 @@ impl ResearchDataCollector {
                         report.push_str(&format!("  - {}\n", error));
                     }
                 }
-                report.push_str("\n");
+                report.push('\n');
             }
         }
         
@@ -1003,7 +1003,7 @@ impl ResearchDataCollector {
                         report.push_str(&format!("  - `{}`\n", path));
                     }
                 }
-                report.push_str("\n");
+                report.push('\n');
             }
         }
         

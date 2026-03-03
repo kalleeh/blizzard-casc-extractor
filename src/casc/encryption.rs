@@ -1,8 +1,7 @@
 /// CASC Encryption and Protection Handling
-/// 
+///
 /// This module provides functionality for handling encrypted and protected files
 /// in CASC archives, including decryption key management for legitimate installations.
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -260,7 +259,7 @@ impl EncryptionHandler {
         // Generate a 32-byte key from the hash
         let mut key = Vec::with_capacity(32);
         for i in 0..4 {
-            let bytes = ((hash >> (i * 8)) as u64).to_le_bytes();
+            let bytes = (hash >> (i * 8)).to_le_bytes();
             key.extend_from_slice(&bytes);
         }
         

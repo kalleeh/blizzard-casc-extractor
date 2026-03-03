@@ -1,8 +1,7 @@
 /// CASC (Content Addressable Storage Container) reader module
-/// 
+///
 /// This module provides functionality for reading and extracting files
 /// from Blizzard's CASC archive format used in StarCraft: Remastered.
-
 pub mod navigator;
 pub mod encryption;
 pub mod salsa20;
@@ -172,7 +171,7 @@ impl IndexFile {
     /// Parse an index file from a file path
     pub fn parse_from_file(path: &Path) -> Result<Self, CascError> {
         let mut file = File::open(path)
-            .map_err(|e| CascError::Io(e))?;
+            .map_err(CascError::Io)?;
         
         Self::parse_from_reader(&mut file, path)
     }
@@ -277,7 +276,7 @@ impl IndexFile {
             if data_file_number >= 6 {
                 data_file_number = raw_data_file_number & 0x7; // Lower 3 bits (0-7)
                 if data_file_number >= 6 {
-                    data_file_number = data_file_number % 6; // Ensure 0-5
+                    data_file_number %= 6; // Ensure 0-5
                 }
                 log::debug!("Data file number {} -> {} (lower 3 bits)", raw_data_file_number, data_file_number);
             }
@@ -394,10 +393,10 @@ impl CascArchive {
         
         // Read directory and find .idx files
         let entries = std::fs::read_dir(&data_dir)
-            .map_err(|e| CascError::Io(e))?;
+            .map_err(CascError::Io)?;
         
         for entry in entries {
-            let entry = entry.map_err(|e| CascError::Io(e))?;
+            let entry = entry.map_err(CascError::Io)?;
             let path = entry.path();
             
             if let Some(extension) = path.extension() {
@@ -444,10 +443,10 @@ impl CascArchive {
         // Discover data files
         let mut data_files = HashMap::new();
         let data_entries = std::fs::read_dir(&data_dir)
-            .map_err(|e| CascError::Io(e))?;
+            .map_err(CascError::Io)?;
         
         for entry in data_entries {
-            let entry = entry.map_err(|e| CascError::Io(e))?;
+            let entry = entry.map_err(CascError::Io)?;
             let path = entry.path();
             
             if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
@@ -651,7 +650,7 @@ impl CascArchive {
                     // based on file size and key patterns instead of trying to extract samples
                     
                     // Accept files with reasonable sizes for sprites (1KB to 10MB)
-                    if calculated_size >= 1024 && calculated_size <= 10_485_760 {
+                    if (1024..=10_485_760).contains(&calculated_size) {
                         is_sprite_candidate = true;
                         sprite_candidates += 1;
                         log::debug!("Accepting file with key {:02x?} as sprite candidate based on size: {} bytes", 
@@ -742,12 +741,12 @@ impl CascArchive {
         // Create parent directories if needed
         if let Some(parent) = output_path.parent() {
             std::fs::create_dir_all(parent)
-                .map_err(|e| CascError::Io(e))?;
+                .map_err(CascError::Io)?;
         }
         
         // Write the data to file
         std::fs::write(output_path, &data)
-            .map_err(|e| CascError::Io(e))?;
+            .map_err(CascError::Io)?;
         
         Ok(())
     }
@@ -775,15 +774,15 @@ impl CascArchive {
         
         // Get the data file path
         let data_file_path = self.data_files.get(&entry.data_file_number)
-            .ok_or_else(|| CascError::MissingDataFile(entry.data_file_number))?;
+            .ok_or(CascError::MissingDataFile(entry.data_file_number))?;
         
         // Open and read from the data file
         let mut file = File::open(data_file_path)
-            .map_err(|e| CascError::Io(e))?;
+            .map_err(CascError::Io)?;
         
         // Seek to the file offset
         file.seek(std::io::SeekFrom::Start(entry.data_file_offset as u64))
-            .map_err(|e| CascError::Io(e))?;
+            .map_err(CascError::Io)?;
         
         // Calculate file size by finding the next entry or using a reasonable default
         let file_size = self.calculate_file_size(entry)?;
@@ -791,7 +790,7 @@ impl CascArchive {
         // Read the actual file data
         let mut buffer = vec![0u8; file_size];
         let bytes_read = file.read(&mut buffer)
-            .map_err(|e| CascError::Io(e))?;
+            .map_err(CascError::Io)?;
         
         buffer.truncate(bytes_read);
         
@@ -858,20 +857,20 @@ impl CascArchive {
         
         // Get the data file path
         let data_file_path = self.data_files.get(&entry.data_file_number)
-            .ok_or_else(|| CascError::MissingDataFile(entry.data_file_number))?;
+            .ok_or(CascError::MissingDataFile(entry.data_file_number))?;
         
         // Open and read from the data file
         let mut file = File::open(data_file_path)
-            .map_err(|e| CascError::Io(e))?;
+            .map_err(CascError::Io)?;
         
         // Seek to the file offset
         file.seek(std::io::SeekFrom::Start(entry.data_file_offset as u64))
-            .map_err(|e| CascError::Io(e))?;
+            .map_err(CascError::Io)?;
         
         // For now, read a reasonable amount of data since we don't have the exact size
         let mut buffer = vec![0u8; 1024]; // Read up to 1KB for testing
         let bytes_read = file.read(&mut buffer)
-            .map_err(|e| CascError::Io(e))?;
+            .map_err(CascError::Io)?;
         
         buffer.truncate(bytes_read);
         
@@ -920,19 +919,19 @@ impl CascArchive {
         
         // Fallback: Try to read the data file header to determine size
         let data_file_path = self.data_files.get(&entry.data_file_number)
-            .ok_or_else(|| CascError::MissingDataFile(entry.data_file_number))?;
+            .ok_or(CascError::MissingDataFile(entry.data_file_number))?;
         
         let mut file = File::open(data_file_path)
-            .map_err(|e| CascError::Io(e))?;
+            .map_err(CascError::Io)?;
         
         // Seek to the file offset
         file.seek(std::io::SeekFrom::Start(entry.data_file_offset as u64))
-            .map_err(|e| CascError::Io(e))?;
+            .map_err(CascError::Io)?;
         
         // Try to read a header to determine file type and size
         let mut header = [0u8; 32];
         let header_bytes_read = file.read(&mut header)
-            .map_err(|e| CascError::Io(e))?;
+            .map_err(CascError::Io)?;
         
         if header_bytes_read >= 8 {
             // Check for common file signatures and extract size if possible
@@ -1021,8 +1020,8 @@ mod tests {
             for i in 0..3 {
                 let mut entry_data = vec![0u8; 17]; // 9 bytes key + 4 bytes data_file_number + 4 bytes data_file_offset
                 // Key
-                for j in 0..9 {
-                    entry_data[j] = ((i * 9 + j) % 256) as u8;
+                for (j, byte) in entry_data[..9].iter_mut().enumerate() {
+                    *byte = ((i * 9 + j) % 256) as u8;
                 }
                 // Data file number (4 bytes)
                 entry_data[9..13].copy_from_slice(&(i as u32).to_le_bytes());
@@ -1068,11 +1067,6 @@ mod tests {
             
             let report = validation_result.unwrap();
             
-            // Verify basic validation structure
-            prop_assert!(report.index_file_count > 0 || report.index_file_count == 0, "Index file count should be non-negative");
-            prop_assert!(report.data_file_count > 0 || report.data_file_count == 0, "Data file count should be non-negative");
-            prop_assert!(report.total_size > 0 || report.total_size == 0, "Total size should be non-negative");
-            
             // Verify expected file lists are populated (Requirements 10.2, 10.3)
             prop_assert_eq!(report.expected_index_files.len(), 16, "Should expect exactly 16 index files");
             prop_assert_eq!(report.expected_data_files.len(), 6, "Should expect exactly 6 data files");
@@ -1112,7 +1106,7 @@ mod tests {
             prop_assert!(!report.is_valid, "Test installation should be marked as invalid due to missing files and size");
             
             // Should detect missing index files (we only create 1, expect 16)
-            prop_assert!(report.missing_index_files.len() > 0, "Should detect missing index files");
+            prop_assert!(!report.missing_index_files.is_empty(), "Should detect missing index files");
             
             // Verify consistency: if files are missing, validation should be invalid
             if !report.missing_index_files.is_empty() || !report.missing_data_files.is_empty() {

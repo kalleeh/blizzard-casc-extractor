@@ -139,9 +139,11 @@ impl ByteComparison {
         );
 
         // Generate hex dump if requested and we found a difference
-        if generate_hex_dump && first_diff.is_some() {
-            if let Ok(hex_dump_path) = Self::generate_hex_dump(file1, file2, first_diff.unwrap()) {
-                result.hex_dump_path = Some(hex_dump_path);
+        if generate_hex_dump {
+            if let Some(diff_offset) = first_diff {
+                if let Ok(hex_dump_path) = Self::generate_hex_dump(file1, file2, diff_offset) {
+                    result.hex_dump_path = Some(hex_dump_path);
+                }
             }
         }
 
@@ -271,7 +273,7 @@ impl ByteComparison {
                 let idx = chunk_start + i;
                 if idx < data1.len() {
                     let c = data1[idx];
-                    if c >= 32 && c <= 126 {
+                    if (32..=126).contains(&c) {
                         write!(output, "{}", c as char)?;
                     } else {
                         write!(output, ".")?;

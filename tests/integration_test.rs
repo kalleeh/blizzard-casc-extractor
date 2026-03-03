@@ -1,7 +1,6 @@
 /// Enhanced integration tests for sprite extraction functionality
 /// These tests verify that the enhanced DirectSpriteExtractor works with actual
 /// StarCraft: Remastered installations and validates against research findings
-
 use std::path::Path;
 use tempfile::TempDir;
 
@@ -456,17 +455,17 @@ fn validate_extraction_against_research(result: &casc_extractor::sprite::Extract
     println!("🔍 Validating extraction results against research findings...");
     
     // Research expectation: minimum 24 PNG files
-    if result.png_files.len() > 0 {
+    if !result.png_files.is_empty() {
         println!("   ✅ PNG files found: {} (research expects ≥24)", result.png_files.len());
     }
-    
+
     // Research expectation: minimum 8 JPEG files
-    if result.jpeg_files.len() > 0 {
+    if !result.jpeg_files.is_empty() {
         println!("   ✅ JPEG files found: {} (research expects ≥8)", result.jpeg_files.len());
     }
-    
+
     // Validate Unity metadata generation
-    if result.unity_metadata_files.len() > 0 {
+    if !result.unity_metadata_files.is_empty() {
         println!("   ✅ Unity metadata files generated: {}", result.unity_metadata_files.len());
     }
     

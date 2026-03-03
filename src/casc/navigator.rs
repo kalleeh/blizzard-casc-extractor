@@ -1,8 +1,7 @@
 /// CASC Navigator System
-/// 
+///
 /// This module provides functionality for automatically detecting StarCraft installations
 /// and navigating CASC directory structures with transparent MPQ/CASC file system handling.
-
 use std::path::{Path, PathBuf};
 use std::fs;
 use thiserror::Error;

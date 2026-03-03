@@ -1,6 +1,5 @@
 /// Salsa20 stream cipher implementation for CASC decryption
 /// Ported from CascLib's CascDecrypt.cpp
-
 use super::salsa20::decrypt_salsa20;
 use std::collections::HashMap;
 
@@ -94,8 +93,8 @@ impl CascDecryptor {
             .ok_or_else(|| format!("Unknown encryption key: 0x{:016X}", key_name))?;
 
         // XOR vector with frame index
-        for i in 0..4 {
-            vector[i] ^= ((frame_index >> (i * 8)) & 0xFF) as u8;
+        for (i, byte) in vector[..4].iter_mut().enumerate() {
+            *byte ^= ((frame_index >> (i * 8)) & 0xFF) as u8;
         }
 
         // Decrypt based on type

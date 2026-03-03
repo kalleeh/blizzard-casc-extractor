@@ -1,5 +1,4 @@
 /// CascLib FFI bindings — single extern block shared by CascArchive and CascStorage.
-
 use std::ffi::{CString, CStr, c_void, c_char};
 use std::os::raw::c_int;
 use std::ptr;
@@ -27,7 +26,7 @@ pub enum CascLibError {
 }
 
 type Handle = *mut c_void;
-type DWORD = u32;
+type Dword = u32;
 
 #[repr(C)]
 struct CascFindData {
@@ -45,7 +44,7 @@ extern "C" {
     fn CascOpenFile(storage: Handle, filename: *const c_char, locale: u32, flags: u32, file: *mut Handle) -> bool;
     fn CascReadFile(file: Handle, buffer: *mut u8, bytes_to_read: u32, bytes_read: *mut u32) -> bool;
     fn CascCloseFile(file: Handle) -> bool;
-    fn CascGetFileSize(hFile: Handle, pdwFileSizeHigh: *mut DWORD) -> DWORD;
+    fn CascGetFileSize(hFile: Handle, pdwFileSizeHigh: *mut Dword) -> Dword;
     fn CascFindFirstFile(storage: Handle, mask: *const c_char, find_data: *mut CascFindData, listfile: *const c_char) -> Handle;
     fn CascFindNextFile(find: Handle, find_data: *mut CascFindData) -> bool;
     fn CascFindClose(find: Handle) -> bool;
@@ -84,7 +83,7 @@ impl CascArchive {
                 return Err(CascLibError::FileNotFound { path: filename.to_string() });
             }
 
-            let mut file_size_high: DWORD = 0;
+            let mut file_size_high: Dword = 0;
             let file_size_low = CascGetFileSize(file_handle, &mut file_size_high);
             let file_size = ((file_size_high as u64) << 32) | (file_size_low as u64);
 
@@ -100,9 +99,9 @@ impl CascArchive {
             }
 
             let mut buffer = vec![0u8; file_size as usize];
-            let mut bytes_read: DWORD = 0;
+            let mut bytes_read: Dword = 0;
 
-            if !CascReadFile(file_handle, buffer.as_mut_ptr(), file_size as DWORD, &mut bytes_read) {
+            if !CascReadFile(file_handle, buffer.as_mut_ptr(), file_size as Dword, &mut bytes_read) {
                 CascCloseFile(file_handle);
                 return Err(CascLibError::ReadFailed { path: filename.to_string() });
             }

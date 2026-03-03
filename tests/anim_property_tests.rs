@@ -7,7 +7,6 @@
 /// 
 /// **Validates: Requirements 17.6, 1.1, 1.2, 1.3**
 /// **100 ITERATIONS MINIMUM**: Each property must pass 100+ random inputs
-
 use proptest::prelude::*;
 use byteorder::{LittleEndian, WriteBytesExt, ReadBytesExt};
 use std::io::{Write, Cursor, Read};
@@ -410,9 +409,9 @@ mod tests {
     fn test_property_test_generators_are_available() {
         // Verify generators work
         let anim_data = generate_valid_anim_data(1, 1, 1, 64, 64, 0);
-        assert!(anim_data.len() > 0);
-        
+        assert!(!anim_data.is_empty());
+
         let compressed = generate_zlib_compressed_texture(64, 64);
-        assert!(compressed.len() > 0);
+        assert!(!compressed.is_empty());
     }
 }

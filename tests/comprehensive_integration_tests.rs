@@ -80,7 +80,7 @@ fn test_end_to_end_anim_extraction_pipeline() {
     match casc_extractor::AnimFile::parse(&anim_data) {
         Ok(anim_file) => {
             println!("Successfully parsed ANIM file with {} sprites", anim_file.sprites.len());
-            assert!(anim_file.sprites.len() > 0, "ANIM file should contain sprites");
+            assert!(!anim_file.sprites.is_empty(), "ANIM file should contain sprites");
         }
         Err(e) => {
             println!("ANIM parsing failed (expected for mock data): {:?}", e);
@@ -338,7 +338,7 @@ fn create_test_anim_file() -> Vec<u8> {
     data.extend_from_slice(&4u16.to_le_bytes()); // height
     
     // Add texture pixel data (4x4 RGBA = 64 bytes)
-    data.extend_from_slice(&vec![128u8; 64]);
+    data.extend_from_slice(&[128u8; 64]);
     
     data
 }

@@ -315,7 +315,7 @@ impl SpritePatternAnalysis {
         report.push_str(&format!("- HD2 ANIM files: {}\n", self.hd2_anim_files));
         report.push_str(&format!("- SD ANIM files: {}\n", self.sd_anim_files));
         
-        report.push_str(&format!("\n## Structure Compatibility\n"));
+        report.push_str("\n## Structure Compatibility\n");
         report.push_str(&format!("- Has expected Animosity structure: {}\n", self.has_expected_structure()));
         
         report.push_str("\n## Top Directories\n");

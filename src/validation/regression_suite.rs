@@ -413,7 +413,7 @@ impl RegressionTestSuite {
                     report.push_str(&format!("\n   Diff image: {}\n", diff_path));
                 }
                 
-                report.push_str("\n");
+                report.push('\n');
             }
         }
 
@@ -425,7 +425,7 @@ impl RegressionTestSuite {
             for (i, result) in passed.iter().enumerate() {
                 report.push_str(&format!("{}. ✅ {}\n", i + 1, result.sprite_name));
             }
-            report.push_str("\n");
+            report.push('\n');
         }
 
         // Footer

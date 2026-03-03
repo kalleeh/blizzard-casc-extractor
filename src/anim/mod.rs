@@ -1,8 +1,7 @@
 /// StarCraft: Remastered .anim file parser and converter module
-/// 
+///
 /// This module provides functionality for parsing .anim sprite files
 /// and converting them to PNG format with metadata extraction.
-
 use std::path::PathBuf;
 use std::io::Cursor;
 use byteorder::{LittleEndian, ReadBytesExt};
@@ -147,7 +146,7 @@ impl AnimPalette {
     
     /// Create a palette from StarCraft standard palette data
     pub fn from_starcraft_palette(palette_data: &[u8], palette_type: PaletteType) -> Result<Self, AnimError> {
-        if palette_data.len() % 3 != 0 {
+        if !palette_data.len().is_multiple_of(3) {
             return Err(AnimError::PaletteConversion(
                 format!("Invalid palette data length: {} (must be multiple of 3)", palette_data.len())
             ));
@@ -256,11 +255,10 @@ impl AnimPalette {
         }
         
         // Validate that index 0 is transparent for StarCraft palettes
-        if matches!(self.palette_type, PaletteType::Unit | PaletteType::Tileset) {
-            if !self.colors.is_empty() && self.colors[0][3] != 0 {
+        if matches!(self.palette_type, PaletteType::Unit | PaletteType::Tileset)
+            && !self.colors.is_empty() && self.colors[0][3] != 0 {
                 log::warn!("StarCraft palette index 0 should be transparent, but alpha is {}", self.colors[0][3]);
             }
-        }
         
         Ok(())
     }
@@ -603,7 +601,7 @@ impl Texture {
             },
             PixelFormat::Indexed4 => {
                 let pixel_count = (self.width as usize) * (self.height as usize);
-                let expected_size = (pixel_count + 1) / 2; // 4-bit data: 2 pixels per byte
+                let expected_size = pixel_count.div_ceil(2); // 4-bit data: 2 pixels per byte
                 
                 if self.data.len() != expected_size {
                     return Err(AnimError::FrameDecodeError(
@@ -640,8 +638,8 @@ impl Texture {
     
     /// Decode DXT1 compressed blocks to RGBA
     fn decode_dxt1_blocks(&self, compressed_data: &[u8], width: usize, height: usize) -> Result<Vec<u8>, AnimError> {
-        let blocks_x = (width + 3) / 4;
-        let blocks_y = (height + 3) / 4;
+        let blocks_x = width.div_ceil(4);
+        let blocks_y = height.div_ceil(4);
         let expected_size = blocks_x * blocks_y * 8; // 8 bytes per DXT1 block
         
         if compressed_data.len() != expected_size {
@@ -742,8 +740,8 @@ impl Texture {
     
     /// Decode DXT5 compressed blocks to RGBA
     fn decode_dxt5_blocks(&self, compressed_data: &[u8], width: usize, height: usize) -> Result<Vec<u8>, AnimError> {
-        let blocks_x = (width + 3) / 4;
-        let blocks_y = (height + 3) / 4;
+        let blocks_x = width.div_ceil(4);
+        let blocks_y = height.div_ceil(4);
         let expected_size = blocks_x * blocks_y * 16; // 16 bytes per DXT5 block
         
         if compressed_data.len() != expected_size {
@@ -787,22 +785,22 @@ impl Texture {
             [
                 alpha0,
                 alpha1,
-                ((6 * alpha0 as u16 + 1 * alpha1 as u16) / 7) as u8,
+                ((6 * alpha0 as u16 + (alpha1 as u16)) / 7) as u8,
                 ((5 * alpha0 as u16 + 2 * alpha1 as u16) / 7) as u8,
                 ((4 * alpha0 as u16 + 3 * alpha1 as u16) / 7) as u8,
                 ((3 * alpha0 as u16 + 4 * alpha1 as u16) / 7) as u8,
                 ((2 * alpha0 as u16 + 5 * alpha1 as u16) / 7) as u8,
-                ((1 * alpha0 as u16 + 6 * alpha1 as u16) / 7) as u8,
+                (((alpha0 as u16) + 6 * alpha1 as u16) / 7) as u8,
             ]
         } else {
             // 6-alpha mode
             [
                 alpha0,
                 alpha1,
-                ((4 * alpha0 as u16 + 1 * alpha1 as u16) / 5) as u8,
+                ((4 * alpha0 as u16 + (alpha1 as u16)) / 5) as u8,
                 ((3 * alpha0 as u16 + 2 * alpha1 as u16) / 5) as u8,
                 ((2 * alpha0 as u16 + 3 * alpha1 as u16) / 5) as u8,
-                ((1 * alpha0 as u16 + 4 * alpha1 as u16) / 5) as u8,
+                (((alpha0 as u16) + 4 * alpha1 as u16) / 5) as u8,
                 0,   // Fully transparent
                 255, // Fully opaque
             ]
@@ -1296,7 +1294,7 @@ impl AnimFile {
         } else {
             // For non-DDS data, determine format based on size
             // If data size suggests it's raw pixel data, assume RGBA or monochrome
-            if data.len() % 4 == 0 {
+            if data.len().is_multiple_of(4) {
                 Ok(TextureFormat::RGBA)
             } else {
                 Ok(TextureFormat::Monochrome)
@@ -1314,7 +1312,7 @@ impl AnimFile {
         
         // Create output directory if it doesn't exist
         fs::create_dir_all(output_dir)
-            .map_err(|e| AnimError::Io(e))?;
+            .map_err(AnimError::Io)?;
         
         let mut png_files = Vec::new();
         let mut frame_index = 0;
@@ -1356,8 +1354,7 @@ impl AnimFile {
                 
                 // Save PNG file
                 img.save(&png_path)
-                    .map_err(|e| AnimError::Io(std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    .map_err(|e| AnimError::Io(std::io::Error::other(
                         format!("Failed to save PNG: {}", e)
                     )))?;
                 
@@ -1372,13 +1369,12 @@ impl AnimFile {
         let metadata_path = output_dir.join(&metadata_filename);
         
         let metadata_json = serde_json::to_string_pretty(&metadata)
-            .map_err(|e| AnimError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            .map_err(|e| AnimError::Io(std::io::Error::other(
                 format!("Failed to serialize metadata: {}", e)
             )))?;
         
         fs::write(&metadata_path, metadata_json)
-            .map_err(|e| AnimError::Io(e))?;
+            .map_err(AnimError::Io)?;
         
         Ok(ConversionResult {
             png_files,
@@ -1646,8 +1642,8 @@ mod tests {
         data.extend_from_slice(&0u32.to_le_bytes());
         
         // Add minimal DXT1 compressed data
-        let blocks_x = (width as usize + 3) / 4;
-        let blocks_y = (height as usize + 3) / 4;
+        let blocks_x = (width as usize).div_ceil(4);
+        let blocks_y = (height as usize).div_ceil(4);
         let block_count = blocks_x * blocks_y;
         
         // Each DXT1 block is 8 bytes

@@ -176,7 +176,7 @@ impl HdAnimFile {
     }
     
     pub fn get_diffuse_layer(&self) -> Option<&[u8]> {
-        self.layer_data.get(0).filter(|d| !d.is_empty()).map(|d| d.as_slice())
+        self.layer_data.first().filter(|d| !d.is_empty()).map(|d| d.as_slice())
     }
 
     pub fn get_team_color_layer(&self) -> Option<&[u8]> {

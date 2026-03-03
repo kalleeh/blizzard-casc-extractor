@@ -1,8 +1,7 @@
 /// Enhanced BLTE decompression with fallback chains
-/// 
+///
 /// This module provides robust BLTE decompression with multiple fallback methods
 /// to handle the "0 bytes" extraction issue and improve extraction reliability.
-
 use std::io::{Cursor, Read};
 use byteorder::{BigEndian, ReadBytesExt};
 use flate2::read::ZlibDecoder;
@@ -45,6 +44,12 @@ pub struct KeyManager {
     fallback_keys: Vec<Vec<u8>>,
     key_cache: std::collections::HashMap<u64, Vec<u8>>,
     key_success_stats: std::collections::HashMap<Vec<u8>, u32>,
+}
+
+impl Default for KeyManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl KeyManager {

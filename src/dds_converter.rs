@@ -78,7 +78,7 @@ pub fn dds_to_png(dds_data: &[u8]) -> io::Result<RgbaImage> {
 pub fn save_dds_as_png(dds_data: &[u8], output_path: &std::path::Path) -> io::Result<()> {
     let img = dds_to_png(dds_data)?;
     img.save(output_path)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("PNG save error: {}", e)))?;
+        .map_err(|e| io::Error::other(format!("PNG save error: {}", e)))?;
     Ok(())
 }
 

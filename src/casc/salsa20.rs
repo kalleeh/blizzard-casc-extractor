@@ -1,6 +1,5 @@
 /// Salsa20 stream cipher implementation for CASC decryption
 /// Ported from CascLib's CascDecrypt.cpp
-
 const KEY_CONSTANT_16: &[u8; 16] = b"expand 16-byte k";
 const KEY_CONSTANT_32: &[u8; 16] = b"expand 32-byte k";
 
