@@ -7,8 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  check:
-    name: check
+  ci:
+    name: ci
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,7 +17,29 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Build libcasc
+        run: |
+          git clone --depth=1 https://github.com/ladislav-zezula/CascLib /tmp/CascLib
+          cmake -S /tmp/CascLib -B /tmp/CascLib/build \
+            -DCASC_BUILD_SHARED_LIB=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build /tmp/CascLib/build --parallel
+          mkdir -p lib
+          cp /tmp/CascLib/build/libcasc.so lib/
+
       - name: cargo check
         env:
           RUSTFLAGS: "-D warnings"
         run: cargo check --all-targets
+
+      - name: cargo test
+        env:
+          RUSTFLAGS: "-D warnings"
+          LD_LIBRARY_PATH: lib
+        run: cargo test --lib
+
+      - name: cargo clippy
+        env:
+          RUSTFLAGS: "-D warnings"
+        run: cargo clippy --all-targets -- -D warnings

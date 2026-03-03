@@ -53,6 +53,9 @@ sha2 = "0.10"  # SHA256 hashing for byte-level comparison
 blte = "0.3"  # BLTE decompression library for Blizzard's NGDP/CASC system
 ngdp-crypto = "0.3"  # Required for encrypted BLTE content
 
+# Parallelism
+rayon = "1.10"
+
 # Logging
 env_logger = "0.11"
 log = "0.4"

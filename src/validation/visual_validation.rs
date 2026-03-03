@@ -395,9 +395,24 @@ mod tests {
 
     #[test]
     fn test_perceptual_hash() {
-        let img = DynamicImage::ImageRgba8(RgbaImage::from_pixel(100, 100, Rgba([128, 128, 128, 255])));
-        let hash = VisualComparison::calculate_perceptual_hash(&img);
-        assert!(hash > 0); // Hash should be non-zero for non-uniform image
+        // Same image → same hash (deterministic).
+        let img1 = DynamicImage::ImageRgba8(RgbaImage::from_pixel(100, 100, Rgba([128, 128, 128, 255])));
+        let img2 = DynamicImage::ImageRgba8(RgbaImage::from_pixel(100, 100, Rgba([128, 128, 128, 255])));
+        assert_eq!(
+            VisualComparison::calculate_perceptual_hash(&img1),
+            VisualComparison::calculate_perceptual_hash(&img2),
+            "same image should produce same hash"
+        );
+
+        // Non-uniform image (gradient) should produce a different hash than the uniform one.
+        let mut gradient = RgbaImage::new(100, 100);
+        for (x, y, pixel) in gradient.enumerate_pixels_mut() {
+            let v = ((x + y) % 256) as u8;
+            *pixel = Rgba([v, v, v, 255]);
+        }
+        let hash_uniform = VisualComparison::calculate_perceptual_hash(&img1);
+        let hash_gradient = VisualComparison::calculate_perceptual_hash(&DynamicImage::ImageRgba8(gradient));
+        assert_ne!(hash_uniform, hash_gradient, "uniform vs gradient should differ");
     }
 
     #[test]

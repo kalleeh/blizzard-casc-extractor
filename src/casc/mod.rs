@@ -1152,7 +1152,7 @@ mod tests {
         // Add one entry
         let mut entry_data = vec![0u8; 17];
         entry_data[0..9].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9]); // key
-        entry_data[9..13].copy_from_slice(&42u32.to_le_bytes()); // data_file_number
+        entry_data[9..13].copy_from_slice(&3u32.to_le_bytes()); // data_file_number (must be 0-5)
         entry_data[13..17].copy_from_slice(&1024u32.to_le_bytes()); // data_file_offset
         data.extend_from_slice(&entry_data);
         
@@ -1167,7 +1167,7 @@ mod tests {
         assert_eq!(index_file.bucket_index, 5);
         assert_eq!(index_file.entries.len(), 1);
         assert_eq!(index_file.entries[0].key, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
-        assert_eq!(index_file.entries[0].data_file_number, 42);
+        assert_eq!(index_file.entries[0].data_file_number, 3);
         assert_eq!(index_file.entries[0].data_file_offset, 1024);
     }
     

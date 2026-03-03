@@ -227,6 +227,7 @@ dependencies = [
  "ngdp-crypto",
  "png",
  "proptest",
+ "rayon",
  "regex",
  "serde",
  "serde_json",

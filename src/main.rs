@@ -17,6 +17,7 @@ use casc_extractor::casc::discovery::locate_starcraft;
 use casc_extractor::config::{ExtractionConfig, OverwriteBehavior};
 use casc_extractor::validation::regression_suite::KnownGoodExtraction;
 use casc_extractor::validation::regression_suite::SpriteMetadata as RegressionSpriteMetadata;
+use rayon::prelude::*;
 use regex::Regex;
 use casc_extractor::grp::GrpFile;
 use casc_extractor::mapping::SpriteMapping;
@@ -226,6 +227,16 @@ enum ValidateCommands {
         #[arg(long, default_value = "validation-suite.json")]
         suite: PathBuf,
     },
+
+    /// Run regression checks against a directory of extracted files
+    Run {
+        /// Directory of extracted files to validate
+        dir: PathBuf,
+
+        /// Path to the regression suite JSON
+        #[arg(long, default_value = "validation-suite.json")]
+        suite: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -292,8 +303,14 @@ enum SoundsCommands {
         sounds_output: Option<PathBuf>,
     },
 
-    /// List available audio files in the archive (Zerg + UI)
-    List,
+    /// List available audio files in the archive (Zerg + UI).
+    /// Use --search to filter all archive paths by a pattern.
+    List {
+        /// Case-insensitive substring to filter archive paths (e.g. "zergling").
+        /// When provided, all matches are printed and the 30-result cap is lifted.
+        #[arg(long)]
+        search: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -318,24 +335,23 @@ enum InspectCommands {
 // ---------------------------------------------------------------------------
 
 /// Returns `true` when the file should be skipped based on overwrite policy.
-fn should_skip(path: &Path, behavior: OverwriteBehavior) -> bool {
+///
+/// `session_start` is used only by `IfNewer`: skip the file if it already
+/// exists and its mtime is at or after the session start time (i.e., it was
+/// written during this extraction session and need not be re-extracted).
+fn should_skip(path: &Path, behavior: OverwriteBehavior, session_start: std::time::SystemTime) -> bool {
     match behavior {
         OverwriteBehavior::Never => path.exists(),
         OverwriteBehavior::IfNewer => {
             if !path.exists() {
                 return false;
             }
-            // Skip if the file was modified within the last 60 seconds
-            // (heuristic: it was just extracted in this or a very recent run).
+            // Skip if the file was written at or after the session start time,
+            // meaning it was already extracted during this run.
             // On any metadata error, conservatively overwrite.
             std::fs::metadata(path)
                 .and_then(|m| m.modified())
-                .map(|mtime| {
-                    std::time::SystemTime::now()
-                        .duration_since(mtime)
-                        .map(|age| age.as_secs() < 60)
-                        .unwrap_or(false)
-                })
+                .map(|mtime| mtime >= session_start)
                 .unwrap_or(false)
         }
         OverwriteBehavior::Backup => {
@@ -473,6 +489,8 @@ fn cmd_extract_anim(
     name_map: Option<PathBuf>,
     config: &ExtractionConfig,
 ) -> Result<()> {
+    let session_start = std::time::SystemTime::now();
+
     fs::create_dir_all(output)?;
     println!("Extracting Animations...");
     println!("Quality:  {}", quality.description());
@@ -486,7 +504,7 @@ fn cmd_extract_anim(
     if matches!(quality, QualityLevel::Sd) {
         let casc_path = "SD/mainSD.anim";
         let output_path = output.join("mainSD.anim");
-        if !should_skip(&output_path, overwrite) {
+        if !should_skip(&output_path, overwrite, session_start) {
             match archive.extract_file(casc_path) {
                 Ok(data) => {
                     File::create(&output_path)?.write_all(&data)?;
@@ -572,80 +590,133 @@ fn cmd_extract_anim(
     let include = compile_patterns(&config.filter_settings.include_patterns);
     let exclude = compile_patterns(&config.filter_settings.exclude_patterns);
 
-    let mut progress = casc_extractor::ProgressReporter::new(id_list.len() as u64, config.feedback_settings.verbose_logging);
+    if convert_to_png {
+        // -----------------------------------------------------------------------
+        // Phase 1 — Sequential: extract from the CASC archive (FFI, non-Send).
+        // -----------------------------------------------------------------------
+        let mut progress = casc_extractor::ProgressReporter::new(
+            id_list.len() as u64,
+            config.feedback_settings.verbose_logging,
+        );
 
-    for id in id_list {
-        let casc_path = format!("{}anim/main_{:03}.anim", prefix, id);
+        let mut extracted: Vec<(u16, PathBuf, Vec<u8>)> = Vec::new();
 
-        if !passes_filter(&casc_path, &include, &exclude) {
+        for &id in &id_list {
+            let casc_path = format!("{}anim/main_{:03}.anim", prefix, id);
+
+            if !passes_filter(&casc_path, &include, &exclude) {
+                progress.increment();
+                continue;
+            }
+
+            progress.update_current_file(&casc_path);
+
+            if let Ok(data) = archive.extract_file(&casc_path) {
+                let output_path = output.join(format!("main_{:03}.anim", id));
+                if !should_skip(&output_path, overwrite, session_start) {
+                    if let Err(e) = File::create(&output_path).and_then(|mut f| f.write_all(&data)) {
+                        eprintln!("Warning: could not write {:?}: {}", output_path, e);
+                    } else {
+                        extracted.push((id, output_path, data));
+                    }
+                }
+            }
+            // Silently skip missing anim IDs — not every ID exists.
+
             progress.increment();
-            continue;
         }
 
-        progress.update_current_file(&casc_path);
+        progress.finish(0, 0);
 
-        match archive.extract_file(&casc_path) {
-            Ok(data) => {
+        // -----------------------------------------------------------------------
+        // Phase 2 — Parallel: pure-Rust PNG conversion (no archive access).
+        // -----------------------------------------------------------------------
+        let id_to_name_ref = &id_to_name;
+        let output_ref = output;
+
+        extracted.par_iter().for_each(|(id, output_path, data)| {
+            let output_name = format!("main_{:03}.anim", id);
+            let mapped_name = id_to_name_ref.get(&id.to_string()).cloned();
+
+            if let Some(ref name) = mapped_name {
+                let named_path = output_ref.join(format!("{}.anim", name));
+                if let Err(e) = fs::copy(output_path, &named_path) {
+                    eprintln!("Warning: could not write named copy {:?}: {}", named_path, e);
+                }
+            }
+
+            match HdAnimFile::parse(data) {
+                Ok(anim) => {
+                    let export_cfg = ExportConfig {
+                        convert_to_png: true,
+                        team_color_mask,
+                        save_dds: false,
+                        generate_metadata: gen_meta,
+                        pixels_per_unit,
+                    };
+                    match export_anim(&anim, &output_path.with_extension(""), &export_cfg) {
+                        Ok(result) => {
+                            if let Some(ref name) = mapped_name {
+                                println!(
+                                    "  {}.anim ({}, {} frames, {:.1} MB) tc={}",
+                                    name,
+                                    output_name,
+                                    result.frame_count,
+                                    data.len() as f64 / 1_000_000.0,
+                                    result.tc_mask_written
+                                );
+                            } else {
+                                println!(
+                                    "  {} ({} frames, {:.1} MB) tc={}",
+                                    output_name,
+                                    result.frame_count,
+                                    data.len() as f64 / 1_000_000.0,
+                                    result.tc_mask_written
+                                );
+                            }
+                        }
+                        Err(e) => println!("  Export failed: {}", e),
+                    }
+                }
+                Err(e) => println!("  {} - Parse error: {}", output_name, e),
+            }
+        });
+    } else {
+        // -----------------------------------------------------------------------
+        // Non-PNG path: sequential write, fast enough without parallelism.
+        // -----------------------------------------------------------------------
+        let mut progress = casc_extractor::ProgressReporter::new(
+            id_list.len() as u64,
+            config.feedback_settings.verbose_logging,
+        );
+
+        for &id in &id_list {
+            let casc_path = format!("{}anim/main_{:03}.anim", prefix, id);
+
+            if !passes_filter(&casc_path, &include, &exclude) {
+                progress.increment();
+                continue;
+            }
+
+            progress.update_current_file(&casc_path);
+
+            if let Ok(data) = archive.extract_file(&casc_path) {
                 let output_name = format!("main_{:03}.anim", id);
                 let output_path = output.join(&output_name);
 
-                if should_skip(&output_path, overwrite) {
+                if should_skip(&output_path, overwrite, session_start) {
                     progress.increment();
                     continue;
                 }
 
                 File::create(&output_path)?.write_all(&data)?;
 
-                // Write a named copy if the ID has a mapping.
                 let mapped_name = id_to_name.get(&id.to_string()).cloned();
                 if let Some(ref name) = mapped_name {
                     let named_path = output.join(format!("{}.anim", name));
                     if let Err(e) = fs::copy(&output_path, &named_path) {
                         eprintln!("Warning: could not write named copy {:?}: {}", named_path, e);
                     }
-                }
-
-                if convert_to_png {
-                    match HdAnimFile::parse(&data) {
-                        Ok(anim) => {
-                            let export_cfg = ExportConfig {
-                                convert_to_png,
-                                team_color_mask,
-                                save_dds: false,
-                                generate_metadata: gen_meta,
-                                pixels_per_unit,
-                            };
-                            match export_anim(
-                                &anim,
-                                &output_path.with_extension(""),
-                                &export_cfg,
-                            ) {
-                                Ok(result) => {
-                                    if let Some(ref name) = mapped_name {
-                                        println!(
-                                            "  {}.anim ({}, {} frames, {:.1} MB) tc={}",
-                                            name,
-                                            output_name,
-                                            result.frame_count,
-                                            data.len() as f64 / 1_000_000.0,
-                                            result.tc_mask_written
-                                        );
-                                    } else {
-                                        println!(
-                                            "  {} ({} frames, {:.1} MB) tc={}",
-                                            output_name,
-                                            result.frame_count,
-                                            data.len() as f64 / 1_000_000.0,
-                                            result.tc_mask_written
-                                        );
-                                    }
-                                }
-                                Err(e) => println!("  Export failed: {}", e),
-                            }
-                        }
-                        Err(e) => println!("  {} - Parse error: {}", output_name, e),
-                    }
-                } else if let Some(ref name) = mapped_name {
                     println!(
                         "  {}.anim ({}, {:.1} MB)",
                         name,
@@ -660,13 +731,14 @@ fn cmd_extract_anim(
                     );
                 }
             }
-            Err(_) => {} // Silently skip missing anim IDs — not every ID exists.
+            // Silently skip missing anim IDs — not every ID exists.
+
+            progress.increment();
         }
 
-        progress.increment();
+        progress.finish(0, 0);
     }
 
-    progress.finish(0, 0);
     println!("\nExtraction complete!");
     println!("Files saved to: {:?}", output);
     Ok(())
@@ -679,6 +751,8 @@ fn cmd_extract_tileset(
     _convert_to_png: bool,
     config: &ExtractionConfig,
 ) -> Result<()> {
+    let session_start = std::time::SystemTime::now();
+
     fs::create_dir_all(output)?;
     println!("Extracting Tilesets...");
     println!("Quality: {}", quality.description());
@@ -694,7 +768,7 @@ fn cmd_extract_tileset(
     for tileset in &tilesets {
         let output_name = format!("{}.dds.vr4", tileset);
         let output_path = output.join(&output_name);
-        if should_skip(&output_path, overwrite) {
+        if should_skip(&output_path, overwrite, session_start) {
             println!("  {} (skipped)", output_name);
             continue;
         }
@@ -719,6 +793,8 @@ fn cmd_extract_effect(
     _convert_to_png: bool,
     config: &ExtractionConfig,
 ) -> Result<()> {
+    let session_start = std::time::SystemTime::now();
+
     fs::create_dir_all(output)?;
     println!("Extracting Effects...");
     println!("Quality: {}", quality.description());
@@ -730,7 +806,7 @@ fn cmd_extract_effect(
 
     for effect in &effects {
         let output_path = output.join(effect);
-        if should_skip(&output_path, overwrite) {
+        if should_skip(&output_path, overwrite, session_start) {
             println!("  {} (skipped)", effect);
             continue;
         }
@@ -853,6 +929,8 @@ fn cmd_extract_organized(
     mapping_file: &Path,
     config: &ExtractionConfig,
 ) -> Result<()> {
+    let session_start = std::time::SystemTime::now();
+
     let mapping = SpriteMapping::load(mapping_file).map_err(|e| {
         anyhow::anyhow!("Failed to load mapping file '{:?}': {}", mapping_file, e)
     })?;
@@ -889,7 +967,7 @@ fn cmd_extract_organized(
             fs::create_dir_all(parent)?;
         }
 
-        if should_skip(&output_path.with_extension("png"), overwrite) {
+        if should_skip(&output_path.with_extension("png"), overwrite, session_start) {
             progress.increment();
             continue;
         }
@@ -1037,7 +1115,29 @@ fn cmd_sounds_extract(archive: &CascArchive, storage: &CascStorage, output: &Pat
     Ok(())
 }
 
-fn cmd_sounds_list(install_path: Option<&Path>) -> Result<()> {
+fn cmd_sounds_list(install_path: Option<&Path>, search: Option<String>) -> Result<()> {
+    if let Some(ref pattern) = search {
+        // Search mode: open the archive, list all files, filter by pattern (no cap).
+        let storage = open_casc_storage(install_path)?;
+        let files = storage
+            .list_files()
+            .map_err(|e| anyhow::anyhow!("list_files failed: {}", e))?;
+
+        let pattern_lower = pattern.to_lowercase();
+        let matches: Vec<_> = files
+            .iter()
+            .filter(|f| f.to_lowercase().contains(&pattern_lower))
+            .collect();
+
+        println!("Search results for {:?}:", pattern);
+        for f in &matches {
+            println!("  {}", f);
+        }
+        println!("\n{} match(es) found.", matches.len());
+        return Ok(());
+    }
+
+    // Default mode: probe known paths + enumerate Zerg/UI audio.
     let archive = open_casc_archive(install_path)?;
     println!("  Opened archive\n");
 
@@ -1272,6 +1372,60 @@ fn cmd_validate_register(file: &Path, suite_path: &Path) -> Result<()> {
     Ok(())
 }
 
+fn cmd_validate_run(dir: &Path, suite_path: &Path) -> Result<()> {
+    if !suite_path.exists() {
+        println!("No suite found at {}", suite_path.display());
+        return Ok(());
+    }
+
+    let content = fs::read_to_string(suite_path)
+        .map_err(|e| anyhow::anyhow!("Cannot read suite {:?}: {}", suite_path, e))?;
+    let entries: Vec<KnownGoodExtraction> = serde_json::from_str(&content)
+        .map_err(|e| anyhow::anyhow!("Cannot parse suite {:?}: {}", suite_path, e))?;
+
+    let total = entries.len();
+    let mut passed = 0usize;
+
+    for entry in &entries {
+        let filename = entry.expected_output
+            .file_name()
+            .unwrap_or(entry.expected_output.as_os_str());
+        let candidate = dir.join(filename);
+
+        if !candidate.exists() {
+            println!("MISSING: {}", entry.sprite_name);
+            continue;
+        }
+
+        // Compute SHA256 of the candidate file.
+        let mut f = File::open(&candidate)
+            .map_err(|e| anyhow::anyhow!("Cannot open {:?}: {}", candidate, e))?;
+        let mut hasher = Sha256::new();
+        let mut buf = [0u8; 8192];
+        loop {
+            let n = f.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
+        let actual_hash = format!("{:x}", hasher.finalize());
+
+        if actual_hash == entry.sha256_hash {
+            println!("PASS: {}", entry.sprite_name);
+            passed += 1;
+        } else {
+            println!(
+                "FAIL: {} (expected {}, got {})",
+                entry.sprite_name, entry.sha256_hash, actual_hash
+            );
+        }
+    }
+
+    println!("\n{}/{} checks passed", passed, total);
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -1346,8 +1500,8 @@ fn main() -> Result<()> {
                 let storage = open_casc_storage(cli.install_path.as_deref())?;
                 cmd_sounds_extract(&archive, &storage, &out)?;
             }
-            SoundsCommands::List => {
-                cmd_sounds_list(cli.install_path.as_deref())?;
+            SoundsCommands::List { search } => {
+                cmd_sounds_list(cli.install_path.as_deref(), search)?;
             }
         },
 
@@ -1373,6 +1527,9 @@ fn main() -> Result<()> {
         Commands::Validate { action } => match action {
             ValidateCommands::Register { file, suite } => {
                 cmd_validate_register(&file, &suite)?;
+            }
+            ValidateCommands::Run { dir, suite } => {
+                cmd_validate_run(&dir, &suite)?;
             }
         },
     }
@@ -1514,17 +1671,19 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let existing = dir.path().join("file.txt");
         std::fs::write(&existing, b"content").unwrap();
+        let t = std::time::SystemTime::now();
         // Always behavior never skips, even for existing files
-        assert!(!should_skip(&existing, OverwriteBehavior::Always));
+        assert!(!should_skip(&existing, OverwriteBehavior::Always, t));
         // Also false for non-existent paths
-        assert!(!should_skip(&dir.path().join("does_not_exist.txt"), OverwriteBehavior::Always));
+        assert!(!should_skip(&dir.path().join("does_not_exist.txt"), OverwriteBehavior::Always, t));
     }
 
     #[test]
     fn should_skip_never_with_nonexistent_path_is_false() {
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("nonexistent.txt");
-        assert!(!should_skip(&path, OverwriteBehavior::Never));
+        let t = std::time::SystemTime::now();
+        assert!(!should_skip(&path, OverwriteBehavior::Never, t));
     }
 
     #[test]
@@ -1532,6 +1691,7 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("existing.txt");
         std::fs::write(&path, b"hello").unwrap();
-        assert!(should_skip(&path, OverwriteBehavior::Never));
+        let t = std::time::SystemTime::now();
+        assert!(should_skip(&path, OverwriteBehavior::Never, t));
     }
 }
