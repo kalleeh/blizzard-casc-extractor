@@ -65,6 +65,14 @@ impl QualityLevel {
 // Sound targets (mirrored from src/bin/extract_sounds.rs)
 // ---------------------------------------------------------------------------
 
+/// JSON-serialisable representation of a single sound target entry.
+/// Used by `sounds export-targets` (write) and `sounds extract --targets` (read).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SoundTargetEntry {
+    output: String,
+    candidates: Vec<String>,
+}
+
 /// (output_filename, list of candidate CASC paths to try in order)
 const SOUND_TARGETS: &[(&str, &[&str])] = &[
     ("marine_yes1.ogg", &[
@@ -295,6 +303,14 @@ enum ExtractCommands {
         /// Path to the YAML sprite mapping file
         #[arg(long, default_value = "mappings/starcraft-remastered.yaml")]
         mapping: PathBuf,
+
+        /// Quality level: sd extracts GRP spritesheets, hd4/hd2 extract raw ANIM files
+        #[arg(long, value_enum, default_value = "sd")]
+        quality: QualityLevel,
+
+        /// Convert extracted ANIM files to PNG (only applies to hd4/hd2 quality)
+        #[arg(long)]
+        convert_to_png: bool,
     },
 }
 
@@ -305,6 +321,11 @@ enum SoundsCommands {
         /// Output directory for extracted sounds (overrides global --output)
         #[arg(long)]
         sounds_output: Option<PathBuf>,
+
+        /// Path to a JSON targets file produced by `sounds export-targets`.
+        /// When supplied, replaces the built-in target list.
+        #[arg(long)]
+        targets: Option<PathBuf>,
     },
 
     /// List available audio files in the archive (Zerg + UI).
@@ -314,6 +335,13 @@ enum SoundsCommands {
         /// When provided, all matches are printed and the 30-result cap is lifted.
         #[arg(long)]
         search: Option<String>,
+    },
+
+    /// Write the built-in sound targets to a JSON file for customisation
+    ExportTargets {
+        /// Path to write the JSON targets file
+        #[arg(long, default_value = "sound-targets.json")]
+        output: PathBuf,
     },
 }
 
@@ -518,6 +546,11 @@ fn cmd_extract_anim(
                     if convert_to_png {
                         let has_anim_magic = data.starts_with(b"ANIM");
                         if has_anim_magic {
+                            // mainSD.anim uses the SD ANIM variant (version 0x0101).
+                            // The HD parser (HdAnimFile) expects version 0x0202 or 0x0204 and
+                            // explicitly rejects 0x0101 — the SD format uses a different
+                            // per-sprite structure with palettised pixel data rather than
+                            // DDS texture slabs, and is not yet implemented.
                             match HdAnimFile::parse(&data) {
                                 Ok(anim) => {
                                     let export_cfg = ExportConfig {
@@ -539,7 +572,20 @@ fn cmd_extract_anim(
                                         Err(e) => println!("  mainSD ANIM export failed: {}", e),
                                     }
                                 }
-                                Err(e) => println!("  mainSD ANIM parse failed: {}", e),
+                                Err(e) => {
+                                    // Read the version field (bytes 4-5, little-endian u16)
+                                    // to give a more actionable error message.
+                                    let version = if data.len() >= 6 {
+                                        u16::from_le_bytes([data[4], data[5]])
+                                    } else {
+                                        0
+                                    };
+                                    println!("  SD ANIM parse error: {}", e);
+                                    println!(
+                                        "  SD ANIM version: 0x{:04X} (HD expects 0x0202 or 0x0204)",
+                                        version
+                                    );
+                                }
                             }
                         } else if let Ok(grp) = GrpFile::parse(&data) {
                             let png_path = output.join("mainSD.png");
@@ -972,6 +1018,8 @@ fn cmd_extract_organized(
     archive: &CascArchive,
     output: &Path,
     mapping_file: &Path,
+    quality: QualityLevel,
+    convert_to_png: bool,
     config: &ExtractionConfig,
 ) -> Result<()> {
     let session_start = std::time::SystemTime::now();
@@ -981,12 +1029,14 @@ fn cmd_extract_organized(
     })?;
 
     println!("StarCraft Sprite Extraction (Organized)");
+    println!("Quality:  {}", quality.description());
     println!("Using mapping: {:?}", mapping_file);
     println!("--------------------------------------------------------\n");
 
     let overwrite   = config.output_settings.overwrite_behavior;
     let gen_meta    = config.output_settings.metadata_options.generate_json;
     let compression = png_compression(config.quality_settings.png_compression_level);
+    let pixels_per_unit = config.output_settings.unity_settings.pixels_per_unit;
     let include     = compile_patterns(&config.filter_settings.include_patterns);
     let exclude     = compile_patterns(&config.filter_settings.exclude_patterns);
 
@@ -1012,36 +1062,92 @@ fn cmd_extract_organized(
             fs::create_dir_all(parent)?;
         }
 
-        if should_skip(&output_path.with_extension("png"), overwrite, session_start) {
-            progress.increment();
-            continue;
-        }
+        match quality {
+            QualityLevel::Sd => {
+                if should_skip(&output_path.with_extension("png"), overwrite, session_start) {
+                    progress.increment();
+                    continue;
+                }
 
-        match archive.extract_file(file_path) {
-            Ok(data) => match GrpFile::parse(&data) {
-                Ok(grp) => {
-                    build_spritesheet(&grp, &output_path.with_extension("png"), compression)?;
-                    if gen_meta {
-                        write_text_metadata(&grp, &output_path.with_extension("txt"))?;
-                        write_json_metadata(&grp, &output_path.with_extension("json"))?;
+                match archive.extract_file(file_path) {
+                    Ok(data) => match GrpFile::parse(&data) {
+                        Ok(grp) => {
+                            build_spritesheet(&grp, &output_path.with_extension("png"), compression)?;
+                            if gen_meta {
+                                write_text_metadata(&grp, &output_path.with_extension("txt"))?;
+                                write_json_metadata(&grp, &output_path.with_extension("json"))?;
+                            }
+
+                            println!("  {}", category_path);
+                            let category = category_path
+                                .split('/')
+                                .next()
+                                .unwrap_or(category_path)
+                                .to_string();
+                            *stats.entry(category).or_insert(0) += 1;
+                            total_success += 1;
+                        }
+                        Err(e) => {
+                            println!("  {}: Parse error - {}", category_path, e);
+                            total_failed += 1;
+                        }
+                    },
+                    Err(_) => {
+                        total_failed += 1;
                     }
+                }
+            }
 
-                    println!("  {}", category_path);
-                    let category = category_path
-                        .split('/')
-                        .next()
-                        .unwrap_or(category_path)
-                        .to_string();
-                    *stats.entry(category).or_insert(0) += 1;
-                    total_success += 1;
+            QualityLevel::Hd4 | QualityLevel::Hd2 => {
+                let anim_path = output_path.with_extension("anim");
+                if should_skip(&anim_path, overwrite, session_start) {
+                    progress.increment();
+                    continue;
                 }
-                Err(e) => {
-                    println!("  {}: Parse error - {}", category_path, e);
-                    total_failed += 1;
+
+                match archive.extract_file(file_path) {
+                    Ok(data) => {
+                        if let Err(e) = File::create(&anim_path).and_then(|mut f| f.write_all(&data)) {
+                            eprintln!("Warning: could not write {:?}: {}", anim_path, e);
+                            total_failed += 1;
+                        } else {
+                            println!("  {} ({:.1} MB)", category_path, data.len() as f64 / 1_000_000.0);
+
+                            if convert_to_png {
+                                match HdAnimFile::parse(&data) {
+                                    Ok(anim) => {
+                                        let export_cfg = ExportConfig {
+                                            convert_to_png: true,
+                                            team_color_mask: false,
+                                            save_dds: false,
+                                            generate_metadata: gen_meta,
+                                            pixels_per_unit,
+                                        };
+                                        match export_anim(&anim, &output_path, &export_cfg) {
+                                            Ok(result) => println!(
+                                                "    -> {} frames exported as PNG",
+                                                result.frame_count
+                                            ),
+                                            Err(e) => println!("    -> ANIM export failed: {}", e),
+                                        }
+                                    }
+                                    Err(e) => println!("    -> ANIM parse failed: {}", e),
+                                }
+                            }
+
+                            let category = category_path
+                                .split('/')
+                                .next()
+                                .unwrap_or(category_path)
+                                .to_string();
+                            *stats.entry(category).or_insert(0) += 1;
+                            total_success += 1;
+                        }
+                    }
+                    Err(_) => {
+                        total_failed += 1;
+                    }
                 }
-            },
-            Err(_) => {
-                total_failed += 1;
             }
         }
 
@@ -1080,16 +1186,51 @@ fn discover_sound(archive: &CascArchive, storage: &CascStorage, stem_hint: &str)
     archive.extract_file(candidate).ok().filter(|d| !d.is_empty())
 }
 
-fn cmd_sounds_extract(archive: &CascArchive, storage: &CascStorage, output: &Path) -> Result<()> {
+fn cmd_sounds_extract(
+    archive: &CascArchive,
+    storage: &CascStorage,
+    output: &Path,
+    targets_path: Option<&Path>,
+) -> Result<()> {
     println!("  StarCraft Sound Extractor");
     println!("==================================================");
     println!("  Opened CASC archive");
 
     fs::create_dir_all(output)?;
 
+    // Load custom targets from JSON if provided, otherwise use the built-in list.
+    // `custom_targets` owns the heap-allocated strings when a JSON file is used;
+    // it must live as long as `targets` to avoid dangling references.
+    let custom_targets: Vec<(String, Vec<String>)> = if let Some(path) = targets_path {
+        let raw = fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("Failed to read targets file {:?}: {}", path, e))?;
+        let entries: Vec<SoundTargetEntry> = serde_json::from_str(&raw)
+            .map_err(|e| anyhow::anyhow!("Failed to parse targets file {:?}: {}", path, e))?;
+        entries
+            .into_iter()
+            .map(|e| (e.output, e.candidates))
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    // Build a uniform `Vec<(&str, Vec<&str>)>` view regardless of source.
+    let targets: Vec<(&str, Vec<&str>)> = if targets_path.is_some() {
+        custom_targets
+            .iter()
+            .map(|(out, cands)| (out.as_str(), cands.iter().map(|s| s.as_str()).collect()))
+            .collect()
+    } else {
+        SOUND_TARGETS
+            .iter()
+            .map(|(out, cands)| (*out, cands.to_vec()))
+            .collect()
+    };
+
+    let total = targets.len();
     let mut extracted = 0usize;
 
-    for (out_name, candidates) in SOUND_TARGETS {
+    for (out_name, candidates) in &targets {
         let dest = output.join(out_name);
         if dest.exists() {
             println!("  {} already exists, skipping", out_name);
@@ -1098,7 +1239,7 @@ fn cmd_sounds_extract(archive: &CascArchive, storage: &CascStorage, output: &Pat
         }
 
         let mut found = false;
-        for casc_path in *candidates {
+        for casc_path in candidates {
             let variants = [
                 casc_path.to_string(),
                 casc_path.replace('\\', "/"),
@@ -1150,13 +1291,30 @@ fn cmd_sounds_extract(archive: &CascArchive, storage: &CascStorage, output: &Pat
         "\n== Result ==================================================\n  \
          {}/{} sounds extracted to {}",
         extracted,
-        SOUND_TARGETS.len(),
+        total,
         output.display()
     );
     println!(
         "\nIf any are missing, check exact paths with:\n  \
          casc-extractor sounds list"
     );
+    Ok(())
+}
+
+fn cmd_sounds_export_targets(output: &Path) -> Result<()> {
+    let entries: Vec<SoundTargetEntry> = SOUND_TARGETS
+        .iter()
+        .map(|(out, cands)| SoundTargetEntry {
+            output: out.to_string(),
+            candidates: cands.iter().map(|s| s.to_string()).collect(),
+        })
+        .collect();
+    let json = serde_json::to_string_pretty(&entries)
+        .map_err(|e| anyhow::anyhow!("Failed to serialize targets: {}", e))?;
+    fs::write(output, json.as_bytes())
+        .map_err(|e| anyhow::anyhow!("Failed to write targets to {:?}: {}", output, e))?;
+    println!("Sound targets written to {:?}", output);
+    println!("Edit the file then use:  casc-extractor sounds extract --targets {:?}", output);
     Ok(())
 }
 
@@ -1566,22 +1724,25 @@ fn main() -> Result<()> {
                 } => {
                     cmd_extract_effect(&archive, &output, quality, convert_to_png, &config)?;
                 }
-                ExtractCommands::Organized { mapping } => {
-                    cmd_extract_organized(&archive, &output, &mapping, &config)?;
+                ExtractCommands::Organized { mapping, quality, convert_to_png } => {
+                    cmd_extract_organized(&archive, &output, &mapping, quality, convert_to_png, &config)?;
                 }
             }
         }
 
         // ------------------------------------------------------------------
         Commands::Sounds { action } => match action {
-            SoundsCommands::Extract { sounds_output } => {
+            SoundsCommands::Extract { sounds_output, targets } => {
                 let out = sounds_output.unwrap_or(output);
                 let archive = open_casc_archive(cli.install_path.as_deref())?;
                 let storage = open_casc_storage(cli.install_path.as_deref())?;
-                cmd_sounds_extract(&archive, &storage, &out)?;
+                cmd_sounds_extract(&archive, &storage, &out, targets.as_deref())?;
             }
             SoundsCommands::List { search } => {
                 cmd_sounds_list(cli.install_path.as_deref(), search)?;
+            }
+            SoundsCommands::ExportTargets { output: targets_output } => {
+                cmd_sounds_export_targets(&targets_output)?;
             }
         },
 
