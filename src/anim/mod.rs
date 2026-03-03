@@ -3365,3 +3365,278 @@ mod tests {
 }
 pub mod hd_parser;
 pub use hd_parser::{HdAnimFile, HdAnimHeader, HdAnimEntry, HdAnimFrame};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SD ANIM (version 0x0101) parser
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// File layout
+// ───────────
+// Header (fixed):
+//   +0   u32  magic  "ANIM" (0x4D494E41)
+//   +4   u16  version        0x0101
+//   +6   u16  unknown        (always 0)
+//   +8   u16  layer_count    (e.g. 2 for "diffuse" + "teamcolor")
+//   +10  u16  sprite_count
+//   +12  layer_count * 32 bytes: null-padded layer name strings
+//            Stored in 10 fixed slots regardless of layer_count:
+//            10 × 32 = 320 bytes, so header_end = 12 + 320 = 332 (0x14c).
+//   +332 sprite_count * 4 bytes: absolute file offsets to each sprite entry
+//
+// Sprite entry (variable length, starts at absolute offset from the table):
+//   +0   u16  frame_count
+//   +2   u16  unknown (0xffff)
+//   +4   u32  unknown (0)
+//   +8   u32  absolute offset to frame table
+//   +12  u32  absolute offset to DDS1 (diffuse) data
+//   +16  u32  DDS1 data size in bytes
+//   +20  u16  texture width
+//   +22  u16  texture height
+//   +24  u32  absolute offset to layer2 data  (0 if absent)
+//   +28  u32  layer2 data size in bytes        (0 if absent)
+//   +32  u16  texture width  (repeated)
+//   +34  u16  texture height (repeated)
+//   +36  raw DDS1 data follows inline
+//        then layer2 data follows inline (if present)
+//
+// Frame table (at the absolute offset stored in sprite entry +8):
+//   frame_count × layer_count × 16 bytes
+//   where layer_count = 2 if layer2 is present, else 1.
+//   Per-layer frame entry (16 bytes):
+//     +0  u16  tex_x      (X in texture atlas)
+//     +2  u16  tex_y      (Y in texture atlas)
+//     +4  i16  x_offset   (draw offset X)
+//     +6  i16  y_offset   (draw offset Y)
+//     +8  u16  width      (frame width in pixels)
+//     +10 u16  height     (frame height in pixels)
+//     +12 u32  unknown    (padding)
+
+const SD_ANIM_VERSION: u16 = 0x0101;
+const SD_LAYER_NAME_SLOTS: usize = 10;
+const SD_LAYER_NAME_LEN: usize = 32;
+const SD_SPRITE_ENTRY_HEADER: usize = 36;
+const SD_FRAME_ENTRY_LEN: usize = 16;
+
+/// SD ANIM file (version 0x0101) — palettised sprite container.
+pub struct SdAnimFile {
+    pub version: u16,
+    pub layer_count: u16,
+    pub layer_names: Vec<String>,
+    pub sprite_count: u16,
+    pub sprites: Vec<SdSprite>,
+}
+
+pub struct SdSprite {
+    pub frame_count: u16,
+    /// Width of the texture atlas (first / diffuse layer).
+    pub width: u16,
+    /// Height of the texture atlas (first / diffuse layer).
+    pub height: u16,
+    /// Raw DDS blob for the diffuse layer.
+    pub dds1_data: Vec<u8>,
+    /// Raw data for the second layer (teamcolor / mask), if present.
+    pub layer2_data: Vec<u8>,
+    pub frames: Vec<SdFrame>,
+}
+
+pub struct SdFrame {
+    /// One entry per layer present in the parent sprite.
+    pub layers: Vec<SdFrameLayer>,
+}
+
+pub struct SdFrameLayer {
+    pub tex_x: u16,
+    pub tex_y: u16,
+    pub x_offset: i16,
+    pub y_offset: i16,
+    pub width: u16,
+    pub height: u16,
+}
+
+impl SdAnimFile {
+    pub fn parse(data: &[u8]) -> Result<Self, AnimError> {
+        use byteorder::{LittleEndian, ReadBytesExt};
+        use std::io::Cursor;
+
+        let file_len = data.len();
+
+        // ── magic ─────────────────────────────────────────────────────────────
+        if file_len < 12 {
+            return Err(AnimError::FileTooShort { expected: 12, actual: file_len });
+        }
+        let magic = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+        if magic != 0x4D494E41 {
+            return Err(AnimError::InvalidMagic(magic));
+        }
+
+        let mut cur = Cursor::new(data);
+        cur.set_position(4);
+        let version     = cur.read_u16::<LittleEndian>()?;
+        let _unknown    = cur.read_u16::<LittleEndian>()?;
+        let layer_count = cur.read_u16::<LittleEndian>()?;
+        let sprite_count = cur.read_u16::<LittleEndian>()?;
+
+        if version != SD_ANIM_VERSION {
+            return Err(AnimError::UnsupportedType(version as u8));
+        }
+
+        // ── layer names ───────────────────────────────────────────────────────
+        let layer_names_start = 12_usize;
+        let layer_names_end   = layer_names_start + SD_LAYER_NAME_SLOTS * SD_LAYER_NAME_LEN;
+        if file_len < layer_names_end {
+            return Err(AnimError::FileTooShort {
+                expected: layer_names_end,
+                actual:   file_len,
+            });
+        }
+        let mut layer_names = Vec::with_capacity(layer_count as usize);
+        for i in 0..layer_count as usize {
+            let off   = layer_names_start + i * SD_LAYER_NAME_LEN;
+            let bytes = &data[off..off + SD_LAYER_NAME_LEN];
+            let name  = bytes
+                .iter()
+                .copied()
+                .take_while(|&b| b != 0)
+                .collect::<Vec<u8>>();
+            layer_names.push(
+                String::from_utf8(name)
+                    .map_err(|e| AnimError::InvalidString(e.to_string()))?,
+            );
+        }
+
+        // ── sprite offset table ───────────────────────────────────────────────
+        let table_start = layer_names_end;
+        let table_end   = table_start + sprite_count as usize * 4;
+        if file_len < table_end {
+            return Err(AnimError::FileTooShort {
+                expected: table_end,
+                actual:   file_len,
+            });
+        }
+
+        let mut sprites = Vec::with_capacity(sprite_count as usize);
+        for i in 0..sprite_count as usize {
+            let off_pos = table_start + i * 4;
+            let sp_off  = u32::from_le_bytes([
+                data[off_pos],
+                data[off_pos + 1],
+                data[off_pos + 2],
+                data[off_pos + 3],
+            ]) as usize;
+
+            sprites.push(Self::parse_sprite(data, sp_off)?);
+        }
+
+        Ok(SdAnimFile {
+            version,
+            layer_count,
+            layer_names,
+            sprite_count,
+            sprites,
+        })
+    }
+
+    fn parse_sprite(data: &[u8], sp_off: usize) -> Result<SdSprite, AnimError> {
+        use byteorder::{LittleEndian, ReadBytesExt};
+        use std::io::Cursor;
+
+        let file_len = data.len();
+
+        if file_len < sp_off + SD_SPRITE_ENTRY_HEADER {
+            return Err(AnimError::FileTooShort {
+                expected: sp_off + SD_SPRITE_ENTRY_HEADER,
+                actual:   file_len,
+            });
+        }
+
+        let mut cur = Cursor::new(data);
+        cur.set_position(sp_off as u64);
+
+        let frame_count = cur.read_u16::<LittleEndian>()?;
+        let _unk0       = cur.read_u16::<LittleEndian>()?;
+        let _unk1       = cur.read_u32::<LittleEndian>()?;
+        let frames_ptr  = cur.read_u32::<LittleEndian>()? as usize;
+        let dds1_off    = cur.read_u32::<LittleEndian>()? as usize;
+        let dds1_size   = cur.read_u32::<LittleEndian>()? as usize;
+        let width       = cur.read_u16::<LittleEndian>()?;
+        let height      = cur.read_u16::<LittleEndian>()?;
+        let layer2_off  = cur.read_u32::<LittleEndian>()? as usize;
+        let layer2_size = cur.read_u32::<LittleEndian>()? as usize;
+        // +32: repeated width/height — skip
+        let _w2 = cur.read_u16::<LittleEndian>()?;
+        let _h2 = cur.read_u16::<LittleEndian>()?;
+
+        // ── DDS1 data ─────────────────────────────────────────────────────────
+        let dds1_data = if dds1_size > 0 && dds1_off > 0 {
+            let end = dds1_off.saturating_add(dds1_size);
+            if end > file_len {
+                return Err(AnimError::TextureOutOfBounds {
+                    offset:    dds1_off as u32,
+                    size:      dds1_size as u32,
+                    file_size: file_len,
+                });
+            }
+            data[dds1_off..end].to_vec()
+        } else {
+            Vec::new()
+        };
+
+        // ── layer2 data ───────────────────────────────────────────────────────
+        let layer2_data = if layer2_size > 0 && layer2_off > 0 {
+            let end = layer2_off.saturating_add(layer2_size);
+            if end > file_len {
+                return Err(AnimError::TextureOutOfBounds {
+                    offset:    layer2_off as u32,
+                    size:      layer2_size as u32,
+                    file_size: file_len,
+                });
+            }
+            data[layer2_off..end].to_vec()
+        } else {
+            Vec::new()
+        };
+
+        // ── frame table ───────────────────────────────────────────────────────
+        // Each frame has one 16-byte sub-entry per present layer.
+        let sprite_layer_count: usize = if layer2_off != 0 { 2 } else { 1 };
+        let frame_entry_bytes = frame_count as usize * sprite_layer_count * SD_FRAME_ENTRY_LEN;
+
+        let mut frames = Vec::with_capacity(frame_count as usize);
+
+        if frame_count > 0 && frames_ptr > 0 {
+            if file_len < frames_ptr.saturating_add(frame_entry_bytes) {
+                // TODO: frame table extends beyond EOF; return empty frames rather than erroring
+                for _ in 0..frame_count {
+                    frames.push(SdFrame { layers: Vec::new() });
+                }
+            } else {
+                let mut fc = Cursor::new(data);
+                fc.set_position(frames_ptr as u64);
+
+                for _ in 0..frame_count {
+                    let mut layers = Vec::with_capacity(sprite_layer_count);
+                    for _ in 0..sprite_layer_count {
+                        let tex_x    = fc.read_u16::<LittleEndian>()?;
+                        let tex_y    = fc.read_u16::<LittleEndian>()?;
+                        let x_offset = fc.read_i16::<LittleEndian>()?;
+                        let y_offset = fc.read_i16::<LittleEndian>()?;
+                        let fw       = fc.read_u16::<LittleEndian>()?;
+                        let fh       = fc.read_u16::<LittleEndian>()?;
+                        let _pad     = fc.read_u32::<LittleEndian>()?;
+                        layers.push(SdFrameLayer { tex_x, tex_y, x_offset, y_offset, width: fw, height: fh });
+                    }
+                    frames.push(SdFrame { layers });
+                }
+            }
+        }
+
+        Ok(SdSprite {
+            frame_count,
+            width,
+            height,
+            dds1_data,
+            layer2_data,
+            frames,
+        })
+    }
+}

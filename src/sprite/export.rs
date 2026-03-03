@@ -28,6 +28,10 @@ pub struct ExportConfig {
     pub generate_metadata: bool,
     /// Pixels per unit for Unity sprite import.
     pub pixels_per_unit: f32,
+    /// Which ANIM layers to export when convert_to_png is true.
+    /// Valid values: "diffuse", "teamcolor", "normal", "specular", "emissive", "ao"
+    /// Default: ["diffuse"] — same as current behaviour.
+    pub layers: Vec<String>,
 }
 
 impl Default for ExportConfig {
@@ -38,6 +42,7 @@ impl Default for ExportConfig {
             save_dds: false,
             generate_metadata: true,
             pixels_per_unit: 100.0,
+            layers: vec!["diffuse".to_string()],
         }
     }
 }
@@ -199,6 +204,62 @@ pub fn export_anim(
                 if !config.save_dds {
                     let _ = std::fs::remove_file(&dds_path);
                 }
+            }
+        }
+
+        // -----------------------------------------------------------------
+        // Export additional requested layers (normal, specular, emissive, ao …)
+        // -----------------------------------------------------------------
+        // Conventional layer-name → index mapping for HD ANIM files.
+        // Layer 0 = diffuse (handled above), layer 1 = teamcolor (handled via
+        // team_color_mask), remaining layers are optional.
+        let conventional_index: &[(&str, usize)] = &[
+            ("diffuse",   0),
+            ("teamcolor", 1),
+            ("normal",    2),
+            ("specular",  3),
+            ("emissive",  4),
+            ("ao",        5),
+        ];
+
+        for layer_name in &config.layers {
+            let lname = layer_name.to_lowercase();
+            // "diffuse" is already handled above; skip it here.
+            if lname == "diffuse" {
+                continue;
+            }
+
+            // Resolve the layer index: try matching against the file's own
+            // layer_names first, then fall back to the conventional table.
+            let layer_index = anim
+                .header
+                .layer_names
+                .iter()
+                .position(|n| n.to_lowercase() == lname)
+                .or_else(|| {
+                    conventional_index
+                        .iter()
+                        .find(|(k, _)| *k == lname.as_str())
+                        .map(|(_, idx)| *idx)
+                });
+
+            if let Some(idx) = layer_index {
+                if let Some(layer_dds) = anim.get_layer(idx) {
+                    let stem = output_base
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("anim");
+                    let layer_png_path = output_base
+                        .with_file_name(format!("{}_{}.png", stem, lname));
+
+                    if let Err(e) = save_dds_as_png(layer_dds, &layer_png_path) {
+                        eprintln!(
+                            "     Warning: could not export {} layer: {}",
+                            lname, e
+                        );
+                    }
+                }
+                // If get_layer returns None the layer simply isn't in this file — skip silently.
             }
         }
     }

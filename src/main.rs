@@ -151,6 +151,50 @@ const SOUND_TARGETS: &[(&str, &[&str])] = &[
         "\\glue\\mouseover.wav",
         "glue\\mouseover.wav",
     ]),
+    ("hydralisk_yes1.ogg", &[
+        "\\zerg\\hydra\\zhyyes00.wav",
+        "\\Zerg\\hydra\\zhyyes00.wav",
+        "\\zerg\\hydra\\zhyyes01.wav",
+        "\\Zerg\\hydra\\zhyyes01.wav",
+        "zerg\\hydra\\zhyyes00.wav",
+        "zerg/hydra/zhyyes00.wav",
+    ]),
+    ("hydralisk_ready.ogg", &[
+        "\\zerg\\hydra\\zhyrdy00.wav",
+        "\\Zerg\\hydra\\zhyrdy00.wav",
+        "zerg\\hydra\\zhyrdy00.wav",
+        "zerg/hydra/zhyrdy00.wav",
+    ]),
+    ("hydralisk_attack.ogg", &[
+        "\\zerg\\hydra\\spifir00.wav",
+        "\\Zerg\\hydra\\spifir00.wav",
+        "zerg\\hydra\\spifir00.wav",
+        "zerg/hydra/spifir00.wav",
+    ]),
+    ("ghost_yes1.ogg", &[
+        "\\terran\\ghost\\tghyes01.wav",
+        "\\Terran\\ghost\\tghyes01.wav",
+        "terran\\ghost\\tghyes01.wav",
+        "terran/ghost/tghyes01.wav",
+    ]),
+    ("ghost_ready.ogg", &[
+        "\\terran\\ghost\\tghrdy00.wav",
+        "\\Terran\\ghost\\tghrdy00.wav",
+        "terran\\ghost\\tghrdy00.wav",
+        "terran/ghost/tghrdy00.wav",
+    ]),
+    ("scv_yes1.ogg", &[
+        "\\terran\\scv\\tscpss00.wav",
+        "\\Terran\\scv\\tscpss00.wav",
+        "terran\\scv\\tscpss00.wav",
+        "terran/scv/tscpss00.wav",
+    ]),
+    ("scv_die.ogg", &[
+        "\\terran\\scv\\tscdth00.wav",
+        "\\Terran\\scv\\tscdth00.wav",
+        "terran\\scv\\tscdth00.wav",
+        "terran/scv/tscdth00.wav",
+    ]),
 ];
 
 // ---------------------------------------------------------------------------
@@ -180,6 +224,10 @@ struct Cli {
     /// Enable verbose/debug logging (overrides config file)
     #[arg(long, short = 'v', global = true)]
     verbose: bool,
+
+    /// Check that the archive can be opened and files found without writing output
+    #[arg(long, global = true)]
+    validate_only: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -274,6 +322,11 @@ enum ExtractCommands {
         /// JSON file mapping anim IDs to unit names (e.g. {"0": "marine", "1": "ghost"})
         #[arg(long)]
         name_map: Option<PathBuf>,
+
+        /// Comma-separated list of ANIM layers to export (requires --convert-to-png).
+        /// Valid: diffuse,teamcolor,normal,specular,emissive,ao  (default: diffuse)
+        #[arg(long, value_delimiter = ',', default_values = ["diffuse"])]
+        layers: Vec<String>,
     },
 
     /// Extract HD tilesets
@@ -521,6 +574,7 @@ fn cmd_extract_anim(
     team_color_mask: bool,
     name_map: Option<PathBuf>,
     config: &ExtractionConfig,
+    layers: Vec<String>,
 ) -> Result<()> {
     let session_start = std::time::SystemTime::now();
 
@@ -559,6 +613,7 @@ fn cmd_extract_anim(
                                         save_dds: false,
                                         generate_metadata: gen_meta,
                                         pixels_per_unit,
+                                        layers: layers.clone(),
                                     };
                                     match export_anim(
                                         &anim,
@@ -572,19 +627,43 @@ fn cmd_extract_anim(
                                         Err(e) => println!("  mainSD ANIM export failed: {}", e),
                                     }
                                 }
-                                Err(e) => {
-                                    // Read the version field (bytes 4-5, little-endian u16)
-                                    // to give a more actionable error message.
-                                    let version = if data.len() >= 6 {
-                                        u16::from_le_bytes([data[4], data[5]])
-                                    } else {
-                                        0
-                                    };
-                                    println!("  SD ANIM parse error: {}", e);
-                                    println!(
-                                        "  SD ANIM version: 0x{:04X} (HD expects 0x0202 or 0x0204)",
-                                        version
-                                    );
+                                Err(_) => {
+                                    // HdAnimFile failed — try the SD ANIM v0x0101 parser.
+                                    match casc_extractor::anim::SdAnimFile::parse(&data) {
+                                        Ok(sd) => {
+                                            println!(
+                                                "  mainSD parsed: {} sprites (SD ANIM v0x0101)",
+                                                sd.sprite_count
+                                            );
+                                            // SD sprite export: build a spritesheet PNG for
+                                            // each sprite that has DDS data.
+                                            let mut exported = 0usize;
+                                            for sprite in &sd.sprites {
+                                                if sprite.dds1_data.is_empty() { continue; }
+                                                let sprite_path = output.join(
+                                                    format!("mainSD_sprite_{:03}.png", exported)
+                                                );
+                                                if let Err(e) = casc_extractor::dds_converter::save_dds_as_png(
+                                                    &sprite.dds1_data, &sprite_path
+                                                ) {
+                                                    log::debug!("SD sprite export failed: {}", e);
+                                                } else {
+                                                    exported += 1;
+                                                }
+                                            }
+                                            println!("  Exported {} SD sprite PNGs", exported);
+                                        }
+                                        Err(e) => {
+                                            let version = if data.len() >= 6 {
+                                                u16::from_le_bytes([data[4], data[5]])
+                                            } else { 0 };
+                                            println!("  SD ANIM parse error: {}", e);
+                                            println!(
+                                                "  SD ANIM version: 0x{:04X}",
+                                                version
+                                            );
+                                        }
+                                    }
                                 }
                             }
                         } else if let Ok(grp) = GrpFile::parse(&data) {
@@ -684,6 +763,7 @@ fn cmd_extract_anim(
         // -----------------------------------------------------------------------
         let id_to_name_ref = &id_to_name;
         let output_ref = output;
+        let layers_ref = &layers;
 
         let results: Vec<anyhow::Result<()>> = extracted
             .par_iter()
@@ -706,6 +786,7 @@ fn cmd_extract_anim(
                             save_dds: false,
                             generate_metadata: gen_meta,
                             pixels_per_unit,
+                            layers: layers_ref.clone(),
                         };
                         match export_anim(&anim, &output_path.with_extension(""), &export_cfg) {
                             Ok(result) => {
@@ -1122,6 +1203,7 @@ fn cmd_extract_organized(
                                             save_dds: false,
                                             generate_metadata: gen_meta,
                                             pixels_per_unit,
+                                            layers: vec!["diffuse".to_string()],
                                         };
                                         match export_anim(&anim, &output_path, &export_cfg) {
                                             Ok(result) => println!(
@@ -1692,6 +1774,19 @@ fn main() -> Result<()> {
     match cli.command {
         // ------------------------------------------------------------------
         Commands::Extract { target } => {
+            // --validate-only: open archive, count files, print first 5, then exit.
+            if cli.validate_only {
+                let storage = open_casc_storage(cli.install_path.as_deref())?;
+                let files = storage
+                    .list_files()
+                    .map_err(|e| anyhow::anyhow!("list_files failed: {}", e))?;
+                println!("Archive opened successfully. {} files found.", files.len());
+                for f in files.iter().take(5) {
+                    println!("  {}", f);
+                }
+                return Ok(());
+            }
+
             let archive = open_casc_archive(cli.install_path.as_deref())?;
             match target {
                 ExtractCommands::Anim {
@@ -1700,6 +1795,7 @@ fn main() -> Result<()> {
                     convert_to_png,
                     team_color_mask,
                     name_map,
+                    layers,
                 } => {
                     cmd_extract_anim(
                         &archive,
@@ -1710,6 +1806,7 @@ fn main() -> Result<()> {
                         team_color_mask,
                         name_map,
                         &config,
+                        layers,
                     )?;
                 }
                 ExtractCommands::Tileset {
