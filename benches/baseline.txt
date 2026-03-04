@@ -1,0 +1,12 @@
+# Benchmark Baseline — 2026-03-03 (aarch64-apple-darwin, release build)
+# Run: DYLD_LIBRARY_PATH=lib DYLD_FRAMEWORK_PATH=lib cargo bench --bench extraction
+
+grp_parse/32x32_1frame          957 ns  (range: 949–967 ns)
+grp_parse/128x128_10frames       53 µs  (range: 52.2–53.4 µs)
+
+grp_to_rgba/32x32               603 ns  (range: 599–609 ns)
+grp_to_rgba/128x128             9.7 µs  (range: 9.6–9.7 µs)
+grp_to_rgba/256x256              37 µs  (range: 36.8–37.2 µs)
+
+# filter_passes and png_write results available in target/criterion/ HTML reports
+# Run `open target/criterion/report/index.html` to view full results

@@ -7,6 +7,8 @@
 /output/
 *.png
 *.txt
+!benches/baseline.txt
+!lib/README.md
 *.json
 
 # Build artifacts
