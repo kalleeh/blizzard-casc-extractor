@@ -15,6 +15,7 @@ use casc_extractor::anim::HdAnimFile;
 use casc_extractor::casc::casclib_ffi::CascArchive;
 use casc_extractor::casc::discovery::locate_starcraft;
 use casc_extractor::config::{ExtractionConfig, OverwriteBehavior};
+use casc_extractor::filter::FormatFilterOption;
 use casc_extractor::validation::regression_suite::KnownGoodExtraction;
 use casc_extractor::validation::regression_suite::SpriteMetadata as RegressionSpriteMetadata;
 use rayon::prelude::*;
@@ -314,6 +315,10 @@ enum ExtractCommands {
         /// Valid: diffuse,teamcolor,normal,specular,emissive,ao  (default: diffuse)
         #[arg(long, value_delimiter = ',', default_values = ["diffuse"])]
         layers: Vec<String>,
+
+        /// Write the raw diffuse DDS file alongside the PNG
+        #[arg(long)]
+        save_dds: bool,
     },
 
     /// Extract HD tilesets
@@ -351,6 +356,19 @@ enum ExtractCommands {
         /// Convert extracted ANIM files to PNG (only applies to hd4/hd2 quality)
         #[arg(long)]
         convert_to_png: bool,
+
+        /// Export team-color mask alongside diffuse PNG (requires --convert-to-png, hd4/hd2 only)
+        #[arg(long)]
+        team_color_mask: bool,
+
+        /// Comma-separated list of ANIM layers to export (requires --convert-to-png, hd4/hd2 only).
+        /// Valid: diffuse,teamcolor,normal,specular,emissive,ao  (default: diffuse)
+        #[arg(long, value_delimiter = ',', default_values = ["diffuse"])]
+        layers: Vec<String>,
+
+        /// Write the raw diffuse DDS file alongside the PNG (hd4/hd2 only)
+        #[arg(long)]
+        save_dds: bool,
     },
 }
 
@@ -562,6 +580,7 @@ fn cmd_extract_anim(
     name_map: Option<PathBuf>,
     config: &ExtractionConfig,
     layers: Vec<String>,
+    save_dds: bool,
 ) -> Result<()> {
     let session_start = std::time::SystemTime::now();
 
@@ -597,7 +616,7 @@ fn cmd_extract_anim(
                                     let export_cfg = ExportConfig {
                                         convert_to_png,
                                         team_color_mask,
-                                        save_dds: false,
+                                        save_dds,
                                         generate_metadata: gen_meta,
                                         pixels_per_unit,
                                         layers: layers.clone(),
@@ -797,7 +816,7 @@ fn cmd_extract_anim(
                         let export_cfg = ExportConfig {
                             convert_to_png: true,
                             team_color_mask,
-                            save_dds: false,
+                            save_dds,
                             generate_metadata: gen_meta,
                             pixels_per_unit,
                             layers: layers_ref.clone(),
@@ -904,7 +923,7 @@ fn cmd_extract_tileset(
     archive: &CascArchive,
     output: &Path,
     quality: QualityLevel,
-    _convert_to_png: bool,
+    convert_to_png: bool,
     config: &ExtractionConfig,
 ) -> Result<()> {
     let session_start = std::time::SystemTime::now();
@@ -942,7 +961,21 @@ fn cmd_extract_tileset(
         .par_iter()
         .map(|(output_name, output_path, data)| -> anyhow::Result<()> {
             File::create(output_path)?.write_all(data)?;
-            println!("  {} ({:.1} MB)", output_name, data.len() as f64 / 1_000_000.0);
+            let mut note = String::new();
+            if convert_to_png {
+                // .dds.vr4 files have a 20-byte VR4 header before the DDS data.
+                // Search within the first 64 bytes for the DDS magic.
+                let dds_offset = data.windows(4).take(64)
+                    .position(|w| w == b"DDS ");
+                if let Some(offset) = dds_offset {
+                    let png_path = output_path.with_extension("png");
+                    match casc_extractor::dds_converter::save_dds_as_png(&data[offset..], &png_path) {
+                        Ok(()) => note = " → PNG".to_string(),
+                        Err(e) => note = format!(" (PNG failed: {})", e),
+                    }
+                }
+            }
+            println!("  {} ({:.1} MB){}", output_name, data.len() as f64 / 1_000_000.0, note);
             Ok(())
         })
         .collect();
@@ -961,7 +994,7 @@ fn cmd_extract_effect(
     archive: &CascArchive,
     output: &Path,
     quality: QualityLevel,
-    _convert_to_png: bool,
+    convert_to_png: bool,
     config: &ExtractionConfig,
 ) -> Result<()> {
     let session_start = std::time::SystemTime::now();
@@ -990,12 +1023,29 @@ fn cmd_extract_effect(
         }
     }
 
+    let compression = png_compression(config.quality_settings.png_compression_level);
+
     // Phase 2 — Parallel: write files to disk (I/O-bound, no archive access).
     let results: Vec<anyhow::Result<()>> = extracted
         .par_iter()
         .map(|(output_name, output_path, data)| -> anyhow::Result<()> {
             File::create(output_path)?.write_all(data)?;
-            println!("  {} ({:.1} MB)", output_name, data.len() as f64 / 1_000_000.0);
+            let mut note = String::new();
+            if convert_to_png {
+                let png_path = output_path.with_extension("png");
+                if data.starts_with(b"DDS ") {
+                    match casc_extractor::dds_converter::save_dds_as_png(data, &png_path) {
+                        Ok(()) => note = " → PNG".to_string(),
+                        Err(e) => note = format!(" (PNG failed: {})", e),
+                    }
+                } else if let Ok(grp) = GrpFile::parse(data) {
+                    match build_spritesheet(&grp, &png_path, compression) {
+                        Ok(()) => note = format!(" → PNG spritesheet ({} frames)", grp.frame_count),
+                        Err(e) => note = format!(" (PNG failed: {})", e),
+                    }
+                }
+            }
+            println!("  {} ({:.1} MB){}", output_name, data.len() as f64 / 1_000_000.0, note);
             Ok(())
         })
         .collect();
@@ -1109,12 +1159,16 @@ fn write_json_metadata(grp: &GrpFile, path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_extract_organized(
     archive: &CascArchive,
     output: &Path,
     mapping_file: &Path,
     quality: QualityLevel,
     convert_to_png: bool,
+    team_color_mask: bool,
+    layers: Vec<String>,
+    save_dds: bool,
     config: &ExtractionConfig,
 ) -> Result<()> {
     let session_start = std::time::SystemTime::now();
@@ -1213,11 +1267,11 @@ fn cmd_extract_organized(
                                     Ok(anim) => {
                                         let export_cfg = ExportConfig {
                                             convert_to_png: true,
-                                            team_color_mask: false,
-                                            save_dds: false,
+                                            team_color_mask,
+                                            save_dds,
                                             generate_metadata: gen_meta,
                                             pixels_per_unit,
-                                            layers: vec!["diffuse".to_string()],
+                                            layers: layers.clone(),
                                         };
                                         match export_anim(&anim, &output_path, &export_cfg) {
                                             Ok(result) => println!(
@@ -1810,7 +1864,13 @@ fn main() -> Result<()> {
                     team_color_mask,
                     name_map,
                     layers,
+                    save_dds,
                 } => {
+                    let convert_to_png = convert_to_png
+                        || matches!(
+                            config.quality_settings.format_filter,
+                            FormatFilterOption::Png | FormatFilterOption::Images
+                        );
                     cmd_extract_anim(
                         &archive,
                         &output,
@@ -1821,22 +1881,38 @@ fn main() -> Result<()> {
                         name_map,
                         &config,
                         layers,
+                        save_dds,
                     )?;
                 }
                 ExtractCommands::Tileset {
                     quality,
                     convert_to_png,
                 } => {
+                    let convert_to_png = convert_to_png
+                        || matches!(
+                            config.quality_settings.format_filter,
+                            FormatFilterOption::Png | FormatFilterOption::Images
+                        );
                     cmd_extract_tileset(&archive, &output, quality, convert_to_png, &config)?;
                 }
                 ExtractCommands::Effect {
                     quality,
                     convert_to_png,
                 } => {
+                    let convert_to_png = convert_to_png
+                        || matches!(
+                            config.quality_settings.format_filter,
+                            FormatFilterOption::Png | FormatFilterOption::Images
+                        );
                     cmd_extract_effect(&archive, &output, quality, convert_to_png, &config)?;
                 }
-                ExtractCommands::Organized { mapping, quality, convert_to_png } => {
-                    cmd_extract_organized(&archive, &output, &mapping, quality, convert_to_png, &config)?;
+                ExtractCommands::Organized { mapping, quality, convert_to_png, team_color_mask, layers, save_dds } => {
+                    let convert_to_png = convert_to_png
+                        || matches!(
+                            config.quality_settings.format_filter,
+                            FormatFilterOption::Png | FormatFilterOption::Images
+                        );
+                    cmd_extract_organized(&archive, &output, &mapping, quality, convert_to_png, team_color_mask, layers, save_dds, &config)?;
                 }
             }
         }

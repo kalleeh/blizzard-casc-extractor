@@ -3,6 +3,9 @@
 use ddsfile::Dds;
 use image::{ImageBuffer, RgbaImage};
 use std::io;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Decode DDS bytes to raw RGBA pixels via ImageMagick, returning (pixels, width, height).
 ///
@@ -12,9 +15,12 @@ use std::io;
 ///
 /// Falls back to the ddsfile crate for uncompressed RGBA textures.
 pub fn dds_to_rgba_pixels(dds_data: &[u8]) -> io::Result<(Vec<u8>, u32, u32)> {
-    // Write to a temp file so ImageMagick can read it
+    // Write to a temp file so ImageMagick can read it.
+    // Use a per-call counter combined with the process ID so concurrent
+    // rayon threads don't collide on the same temp path.
     use std::io::Write;
-    let tmp = std::env::temp_dir().join(format!("sc_dds_{}.dds", std::process::id()));
+    let uid = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp = std::env::temp_dir().join(format!("sc_dds_{}_{}.dds", std::process::id(), uid));
     {
         let mut f = std::fs::File::create(&tmp)?;
         f.write_all(dds_data)?;

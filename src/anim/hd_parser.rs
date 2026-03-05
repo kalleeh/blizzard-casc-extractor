@@ -108,16 +108,17 @@ impl HdAnimFile {
         let layers = cursor.read_u16::<LittleEndian>()?;
         let entries = cursor.read_u16::<LittleEndian>()?;
         
-        let mut layer_names = Vec::new();
+        // Store ALL 10 name slots by physical position (including empty strings).
+        // This preserves the direct mapping: layer_names[i] corresponds to layer_data[i],
+        // which is required for correct name→index lookup in get_team_color_layer().
+        let mut layer_names = Vec::with_capacity(10);
         for _ in 0..10 {
             let mut name_bytes = [0u8; 32];
             cursor.read_exact(&mut name_bytes)?;
             let name = String::from_utf8_lossy(&name_bytes)
                 .trim_end_matches('\0')
                 .to_string();
-            if !name.is_empty() {
-                layer_names.push(name);
-            }
+            layer_names.push(name);
         }
         
         Ok(HdAnimHeader {
@@ -175,14 +176,34 @@ impl HdAnimFile {
         })
     }
     
+    /// Layer 0 — `diffuse` (DXT5).  Full-colour base texture.
+    /// In team-colour regions the pixels are neutral grey (saturation 0.06–0.14);
+    /// the visible unit colour (e.g. Protoss gold) lives in the non-TC pixels.
     pub fn get_diffuse_layer(&self) -> Option<&[u8]> {
         self.layer_data.first().filter(|d| !d.is_empty()).map(|d| d.as_slice())
     }
 
+    /// Layer 2 — `teamcolor` (DXT1).  **Binary** mask: white = team-colour pixel,
+    /// transparent = not team-coloured.  Empty for neutral/effect sprites.
+    ///
+    /// Correct compositing formula (matches Blizzard's D3D11 shader):
+    ///   `output.rgb = diffuse.rgb * (player_color.rgb / 255)`  for masked pixels
+    ///   `output      = diffuse`                                 for unmasked pixels
+    ///
+    /// See `docs/team-color.md` for full algorithm and SC1 player colour table.
+    ///
+    /// NOTE: this method previously returned layer_data[1] (`bright`) by mistake.
+    /// The correct teamcolor layer is at index 2 (by name lookup in the header).
     pub fn get_team_color_layer(&self) -> Option<&[u8]> {
-        self.layer_data.get(1).filter(|d| !d.is_empty()).map(|d| d.as_slice())
+        // Find the layer named "teamcolor" in the header to get the correct index.
+        let idx = self.header.layer_names
+            .iter()
+            .position(|n| n.eq_ignore_ascii_case("teamcolor"))
+            .unwrap_or(2);
+        self.layer_data.get(idx).filter(|d| !d.is_empty()).map(|d| d.as_slice())
     }
 
+    /// Return the raw DDS bytes for any layer by index.
     pub fn get_layer(&self, index: usize) -> Option<&[u8]> {
         self.layer_data.get(index).filter(|d| !d.is_empty()).map(|d| d.as_slice())
     }

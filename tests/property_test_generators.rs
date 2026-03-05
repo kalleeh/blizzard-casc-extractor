@@ -7,66 +7,93 @@ use proptest::strategy::ValueTree;
 use byteorder::{LittleEndian, WriteBytesExt};
 use std::io::Write;
 
-/// Generate valid GRP file data with specified parameters
-/// 
+/// Generate valid GRP file data with specified parameters.
+///
 /// Creates a minimal but valid GRP file structure that can be parsed
 /// by the GRP parser. The generated data includes:
 /// - Valid GRP header with frame count and dimensions
-/// - Frame offset table
-/// - RLE-encoded frame data
+/// - Frame entry table (8 bytes per frame: xOffset, yOffset, unknown, fileOffset)
+/// - Per-frame line offset table (2 bytes per line)
+/// - RLE-encoded line data (repeat-encoded, 2 bytes per line)
 pub fn generate_valid_grp_data(
     frame_count: u16,
     width: u16,
     height: u16,
 ) -> Vec<u8> {
     let mut data = Vec::new();
-    
-    // GRP header
+
+    // GRP header (6 bytes)
     data.write_u16::<LittleEndian>(frame_count).unwrap();
     data.write_u16::<LittleEndian>(width).unwrap();
     data.write_u16::<LittleEndian>(height).unwrap();
-    
-    // Generate RLE-encoded frame data for each frame FIRST
-    let pixel_count = (width as usize) * (height as usize);
-    let mut all_frame_data = Vec::new();
-    
+
+    // Build each frame's binary blob ahead of time so we know sizes for the
+    // file-offset table.
+    //
+    // Frame data layout (relative to frame start):
+    //   [0 .. height*2)  line offset table: height u16 entries
+    //   [height*2 ..)    RLE line data, one entry per line
+    //
+    // The parser derives line_count = frame_data[0..2] / 2, so the first
+    // entry of the line offset table must equal height * 2.
+    let mut all_frame_data: Vec<Vec<u8>> = Vec::new();
+
     for frame_idx in 0..frame_count {
-        let pixel_value = (frame_idx % 256) as u8; // Vary pixel values per frame
-        let mut frame_rle = Vec::new();
-        
-        // Simple RLE encoding: encode all pixels with the same value
-        let mut remaining_pixels = pixel_count;
-        while remaining_pixels > 0 {
-            let run_length = remaining_pixels.min(255); // Max run length is 255
-            frame_rle.push(run_length as u8);
-            frame_rle.push(pixel_value);
-            remaining_pixels -= run_length;
+        let pixel_value = (frame_idx % 256) as u8;
+        let line_table_size = (height as usize) * 2; // bytes consumed by line offset table
+
+        // Build each RLE line: use the repeat opcode (byte > 0x40, count = byte - 0x40)
+        // to encode `width` pixels of the same value.  Max repeat per opcode: 191.
+        let mut line_blobs: Vec<Vec<u8>> = Vec::new();
+        for _ in 0..height {
+            let mut line = Vec::new();
+            let mut remaining = width as usize;
+            while remaining > 0 {
+                let run = remaining.min(191); // repeat opcode: byte = run + 0x40
+                line.push((run + 0x40) as u8);
+                line.push(pixel_value);
+                remaining -= run;
+            }
+            line_blobs.push(line);
         }
-        
-        all_frame_data.push(frame_rle);
+
+        // Write line offset table then line data
+        let mut frame_data = Vec::new();
+        let mut line_offset = line_table_size; // first line's data starts after the table
+        for (i, blob) in line_blobs.iter().enumerate() {
+            frame_data.write_u16::<LittleEndian>(line_offset as u16).unwrap();
+            if i + 1 < line_blobs.len() {
+                line_offset += blob.len();
+            }
+        }
+        for blob in &line_blobs {
+            frame_data.write_all(blob).unwrap();
+        }
+
+        all_frame_data.push(frame_data);
     }
-    
-    // Calculate frame offsets based on ACTUAL frame sizes
-    let header_size = 6; // 6 bytes for header
-    let offset_table_size = (frame_count as usize) * 4; // 4 bytes per offset
-    let mut frame_offsets = Vec::new();
-    let mut current_offset = header_size + offset_table_size;
-    
+
+    // Frame entry table: 8 bytes per frame
+    //   xOffset  u8
+    //   yOffset  u8
+    //   unknown  u16
+    //   fileOffset u32  (absolute offset from start of file)
+    let entry_table_size = (frame_count as usize) * 8;
+    let mut file_offset = 6 + entry_table_size; // first frame data follows the table
+
     for frame_data in &all_frame_data {
-        frame_offsets.push(current_offset);
-        current_offset += frame_data.len();
+        data.write_u8(0).unwrap();                                   // xOffset
+        data.write_u8(0).unwrap();                                   // yOffset
+        data.write_u16::<LittleEndian>(0).unwrap();                  // unknown
+        data.write_u32::<LittleEndian>(file_offset as u32).unwrap(); // fileOffset
+        file_offset += frame_data.len();
     }
-    
-    // Write frame offset table
-    for offset in &frame_offsets {
-        data.write_u32::<LittleEndian>(*offset as u32).unwrap();
-    }
-    
-    // Write the actual frame data
+
+    // Write frame data blobs
     for frame_data in &all_frame_data {
         data.write_all(frame_data).unwrap();
     }
-    
+
     data
 }
 

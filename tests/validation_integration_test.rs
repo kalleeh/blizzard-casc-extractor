@@ -225,8 +225,9 @@ fn test_regression_suite_detects_changes() {
     let original_file = temp_dir.path().join("original.png");
     let modified_file = temp_dir.path().join("modified.png");
 
-    // Create original file
-    File::create(&original_file).unwrap().write_all(b"original data").unwrap();
+    // Create original file as a valid 1x1 red PNG
+    image::RgbaImage::from_pixel(1, 1, image::Rgba([255, 0, 0, 255]))
+        .save(&original_file).unwrap();
 
     // Add to regression suite
     let mut suite = RegressionTestSuite::new(db_path).unwrap();
@@ -238,8 +239,9 @@ fn test_regression_suite_detects_changes() {
         common::sprite_metadata_64(),
     ).unwrap();
 
-    // Create modified file
-    File::create(&modified_file).unwrap().write_all(b"modified data").unwrap();
+    // Create modified file as a valid 1x1 green PNG (different from original)
+    image::RgbaImage::from_pixel(1, 1, image::Rgba([0, 255, 0, 255]))
+        .save(&modified_file).unwrap();
 
     // Validate against modified file (should fail)
     let result = suite.validate_no_regression("test_sprite", &modified_file).unwrap();

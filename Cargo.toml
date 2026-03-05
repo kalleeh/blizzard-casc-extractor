@@ -53,10 +53,6 @@ lz4_flex = "0.11"  # LZ4 compression for ANIM texture decompression
 # Cryptographic hashing for validation
 sha2 = "0.10"  # SHA256 hashing for byte-level comparison
 
-# BLTE decryption for StarCraft: Remastered CASC files
-blte = "0.3"  # BLTE decompression library for Blizzard's NGDP/CASC system
-ngdp-crypto = "0.3"  # Required for encrypted BLTE content
-
 # Parallelism
 rayon = "1.10"
 
