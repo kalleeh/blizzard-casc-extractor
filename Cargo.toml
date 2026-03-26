@@ -30,6 +30,7 @@ indicatif = "0.17"
 # Image processing
 image = "0.24"
 ddsfile = "0.5"
+texture2ddecoder = "0.1"
 png = "0.17"
 
 # Serialization
@@ -45,6 +46,9 @@ anyhow = "1.0"
 
 # Binary data handling
 byteorder = "1.5"
+
+# MPQ archive reading (for .scm/.scx map files)
+mpq = "0.8.1"
 
 # Compression libraries for BLTE decompression
 flate2 = "1.0"  # ZLIB/DEFLATE compression

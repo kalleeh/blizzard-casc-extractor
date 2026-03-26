@@ -10,7 +10,8 @@
 //!   casc-extractor inspect sprites
 //!   casc-extractor inspect archive
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
+use texture2ddecoder;
 use casc_extractor::anim::HdAnimFile;
 use casc_extractor::casc::casclib_ffi::CascArchive;
 use casc_extractor::casc::discovery::locate_starcraft;
@@ -289,15 +290,28 @@ enum ValidateCommands {
 
 #[derive(Subcommand)]
 enum ExtractCommands {
-    /// Extract HD animations to ANIM (optionally converted to PNG + JSON metadata)
+    /// Extract HD animations to ANIM (optionally converted to PNG + JSON metadata).
+    /// By default uses the built-in YAML mapping to produce named output
+    /// (e.g. terran/marine.anim).  Pass --raw to get numbered filenames instead.
     Anim {
         /// Quality level
         #[arg(long, value_enum, default_value = "hd4")]
         quality: QualityLevel,
 
-        /// Specific animation IDs to extract, comma-separated (e.g. 0,1,7)
+        /// Specific animation IDs to extract, comma-separated (e.g. 0,1,7).
+        /// Without --ids, all known IDs in the built-in mapping are extracted.
         #[arg(long, value_delimiter = ',')]
         ids: Option<Vec<u16>>,
+
+        /// Output raw numbered filenames (main_NNN.anim) instead of mapped names.
+        /// Without --raw, the built-in mapping produces named subdirectory output.
+        #[arg(long)]
+        raw: bool,
+
+        /// Override the built-in name mapping with a custom JSON file
+        /// (format: {"239": "terran/marine", "228": "protoss/zealot"})
+        #[arg(long)]
+        name_map: Option<PathBuf>,
 
         /// Convert ANIM to PNG (extracts diffuse layer)
         #[arg(long)]
@@ -306,10 +320,6 @@ enum ExtractCommands {
         /// Export team-color mask alongside diffuse PNG (requires --convert-to-png)
         #[arg(long)]
         team_color_mask: bool,
-
-        /// JSON file mapping anim IDs to unit names (e.g. {"0": "marine", "1": "ghost"})
-        #[arg(long)]
-        name_map: Option<PathBuf>,
 
         /// Comma-separated list of ANIM layers to export (requires --convert-to-png).
         /// Valid: diffuse,teamcolor,normal,specular,emissive,ao  (default: diffuse)
@@ -321,7 +331,7 @@ enum ExtractCommands {
         save_dds: bool,
     },
 
-    /// Extract HD tilesets
+    /// Extract HD tilesets to `<output>/tilesets/`
     Tileset {
         /// Quality level
         #[arg(long, value_enum, default_value = "hd4")]
@@ -332,7 +342,7 @@ enum ExtractCommands {
         convert_to_png: bool,
     },
 
-    /// Extract HD effects
+    /// Extract HD effects to `<output>/effects/`
     Effect {
         /// Quality level
         #[arg(long, value_enum, default_value = "hd4")]
@@ -343,61 +353,172 @@ enum ExtractCommands {
         convert_to_png: bool,
     },
 
-    /// Extract sprites via YAML mapping file
-    Organized {
-        /// Path to the YAML sprite mapping file
-        #[arg(long, default_value = "mappings/starcraft-remastered.yaml")]
-        mapping: PathBuf,
+    /// Extract VR4 tileset as a PNG sprite atlas (tiles arranged in a grid)
+    TilesetAtlas {
+        /// Which tileset to extract
+        #[arg(long, default_value = "jungle")]
+        tileset: String,
 
-        /// Quality level: sd extracts GRP spritesheets, hd4/hd2 extract raw ANIM files
-        #[arg(long, value_enum, default_value = "sd")]
+        /// Quality level
+        #[arg(long, value_enum, default_value = "hd2")]
         quality: QualityLevel,
 
-        /// Convert extracted ANIM files to PNG (only applies to hd4/hd2 quality)
-        #[arg(long)]
-        convert_to_png: bool,
+        /// Number of tiles per row in the output atlas
+        #[arg(long, default_value_t = 32)]
+        cols: u32,
 
-        /// Export team-color mask alongside diffuse PNG (requires --convert-to-png, hd4/hd2 only)
-        #[arg(long)]
-        team_color_mask: bool,
+        /// Max tiles to extract (0 = all)
+        #[arg(long, default_value_t = 512)]
+        max_tiles: u32,
 
-        /// Comma-separated list of ANIM layers to export (requires --convert-to-png, hd4/hd2 only).
-        /// Valid: diffuse,teamcolor,normal,specular,emissive,ao  (default: diffuse)
-        #[arg(long, value_delimiter = ',', default_values = ["diffuse"])]
-        layers: Vec<String>,
+        /// Output tile size in pixels (tiles are scaled to this size)
+        #[arg(long, default_value_t = 32)]
+        tile_size: u32,
 
-        /// Write the raw diffuse DDS file alongside the PNG (hd4/hd2 only)
+        /// Output directory
         #[arg(long)]
-        save_dds: bool,
+        output: Option<PathBuf>,
     },
+
+    /// Build a megatile atlas from VX4EX + VR4 data (game-ready terrain tiles)
+    TilesetMegatile {
+        /// Which tileset to extract
+        #[arg(long, default_value = "jungle")]
+        tileset: String,
+
+        /// Quality level (hd2 recommended; hd4 may not have vr4)
+        #[arg(long, value_enum, default_value = "hd2")]
+        quality: QualityLevel,
+
+        /// Max megatiles to extract (0 = all; typical map uses ~2000 unique megatiles)
+        #[arg(long, default_value_t = 1024)]
+        max_tiles: u32,
+
+        /// Output tile size per megatile in atlas (32 = game tile size)
+        #[arg(long, default_value_t = 32)]
+        tile_size: u32,
+
+        /// Atlas columns
+        #[arg(long, default_value_t = 32)]
+        cols: u32,
+
+        /// Output directory
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+
+    /// Extract the exact terrain tiles used by a specific BW map (.scm/.scx).
+    /// Output: `<output>/map-terrain/` by default.
+    MapTerrain {
+        /// Path to the .scm or .scx map file
+        #[arg(long)]
+        scm: PathBuf,
+
+        /// Columns in output atlas
+        #[arg(long, default_value_t = 32)]
+        cols: u32,
+
+        /// Tile size in output atlas (pixels per megatile)
+        #[arg(long, default_value_t = 32)]
+        tile_size: u32,
+
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+
+    /// Extract dual-layer terrain atlas (diffuse + base) from a BW map (.scm/.scx).
+    /// Output: `<output>/map-terrain/` by default.
+    MapTerrainDual {
+        /// Path to the .scm or .scx map file
+        #[arg(long)]
+        scm: PathBuf,
+
+        /// Columns in output atlas
+        #[arg(long, default_value_t = 32)]
+        cols: u32,
+
+        /// Tile size in output atlas (pixels per megatile)
+        #[arg(long, default_value_t = 32)]
+        tile_size: u32,
+
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+
+
+
+    /// Extract main-menu UI assets (backgrounds, logos, button videos, music, SFX).
+    /// DDS images are automatically converted to PNG.
+    Mainmenu {
+        /// Output directory (default: ./output/ui/mainmenu)
+        #[arg(long)]
+        output: Option<PathBuf>,
+
+        /// Convert DDS textures to PNG (default: true; pass --no-convert-dds to skip)
+        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+        convert_dds: bool,
+    },
+
+    /// Extract BW data tables: units.dat, upgrades.dat, images.dat, orders.dat, techdata.dat.
+    Dat {
+        /// Output directory (default: ./output/dat)
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+    /// Extract and colour-tint the command-card icon atlas (unit\cmdicons\cmdicons.dds.grp).
+    ///
+    /// Produces a 2176×2944 RGBA PNG atlas (17 cols × 23 rows, 128×128 px per cell)
+    /// with a yellow BW-style tint applied.  The 390 frames map directly to
+    /// cmdicons.grp slot indices: 0-227 = unit wireframe portraits, 228-389 = command buttons.
+    Cmdicons {
+        /// Output directory
+        #[arg(long)]
+        output: Option<PathBuf>,
+
+        /// Yellow tint colour as R,G,B (0-255).  Defaults to BW yellow (255,254,84).
+        #[arg(long, value_delimiter = ',', default_values = ["255","254","84"])]
+        tint: Vec<u8>,
+
+        /// Write raw untinted greyscale atlas alongside the tinted version
+        #[arg(long)]
+        save_raw: bool,
+    },
+
 }
+
 
 #[derive(Subcommand)]
 enum SoundsCommands {
     /// Extract known unit and UI sounds from the archive
     Extract {
-        /// Output directory for extracted sounds (overrides global --output)
+        /// Output directory for extracted sounds (overrides global --output).
+        /// Default: `<output>/sounds/`
         #[arg(long)]
         sounds_output: Option<PathBuf>,
 
-        /// Path to a JSON targets file produced by `sounds export-targets`.
-        /// When supplied, replaces the built-in target list.
+        /// Path to a custom JSON targets file (produced by export-targets)
         #[arg(long)]
         targets: Option<PathBuf>,
     },
 
-    /// List available audio files in the archive (Zerg + UI).
+    /// List available audio files in the archive.
     /// Use --search to filter all archive paths by a pattern.
     List {
-        /// Case-insensitive substring to filter archive paths (e.g. "zergling").
-        /// When provided, all matches are printed and the 30-result cap is lifted.
+        /// Filter: only show paths containing this string (case-insensitive)
         #[arg(long)]
         search: Option<String>,
     },
 
+    /// Probe known unit sound paths and report which ones resolve in the archive.
+    /// Useful for verifying path conventions before adding new sounds.
+    Probe {
+        /// Only probe paths containing this string (case-insensitive)
+        #[arg(long)]
+        filter: Option<String>,
+    },
+
     /// Write the built-in sound targets to a JSON file for customisation
     ExportTargets {
-        /// Path to write the JSON targets file
         #[arg(long, default_value = "sound-targets.json")]
         output: PathBuf,
     },
@@ -418,6 +539,19 @@ enum InspectCommands {
 
     /// Print basic archive information
     Archive,
+
+    /// List or search all files in the CASC archive.
+    Files {
+        /// Filter: only show paths containing this string (case-insensitive).
+        /// Without --search, lists all files.
+        #[arg(long)]
+        search: Option<String>,
+
+        /// Show file sizes alongside paths
+        #[arg(long)]
+        sizes: bool,
+    },
+
 }
 
 // ---------------------------------------------------------------------------
@@ -575,9 +709,10 @@ fn cmd_extract_anim(
     output: &Path,
     quality: QualityLevel,
     ids: Option<Vec<u16>>,
+    raw: bool,
+    name_map: Option<PathBuf>,
     convert_to_png: bool,
     team_color_mask: bool,
-    name_map: Option<PathBuf>,
     config: &ExtractionConfig,
     layers: Vec<String>,
     save_dds: bool,
@@ -732,15 +867,42 @@ fn cmd_extract_anim(
 
     let prefix = quality.path_prefix();
 
-    // Load optional name map (ID -> unit name).
-    let id_to_name: HashMap<String, String> = match name_map {
-        Some(ref p) => {
-            let raw = fs::read_to_string(p)
-                .map_err(|e| anyhow::anyhow!("Failed to read name map {:?}: {}", p, e))?;
-            serde_json::from_str::<HashMap<String, String>>(&raw)
-                .map_err(|e| anyhow::anyhow!("Failed to parse name map {:?}: {}", p, e))?
+    // Build ID → output name map.
+    // Priority: explicit --name-map JSON > built-in YAML mapping > raw numbered names.
+    let id_to_name: HashMap<String, String> = if raw {
+        HashMap::new()
+    } else if let Some(ref p) = name_map {
+        let json = fs::read_to_string(p)
+            .map_err(|e| anyhow::anyhow!("Failed to read name map {:?}: {}", p, e))?;
+        serde_json::from_str::<HashMap<String, String>>(&json)
+            .map_err(|e| anyhow::anyhow!("Failed to parse name map {:?}: {}", p, e))?
+    } else {
+        // Default: parse built-in YAML mapping (animations/category/name: anim/main_NNN.anim)
+        // and invert it to produce NNN → category/name.
+        let yaml = include_str!("../mappings/starcraft-remastered.yaml");
+        let mut map = HashMap::new();
+        for line in yaml.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') { continue; }
+            if let Some((key, value)) = line.split_once(':') {
+                let key = key.trim();
+                let value = value.split('#').next().unwrap_or("").trim();
+                // Only animation entries: key = "animations/category/name"
+                // value = "anim/main_NNN.anim" (possibly with HD2/ prefix)
+                if key.starts_with("animations/") {
+                    let name = key.trim_start_matches("animations/");
+                    // Extract the numeric ID from the CASC path
+                    let casc = value.trim_start_matches("HD2/").trim_start_matches("SD/");
+                    if let Some(stem) = casc.strip_prefix("anim/main_").and_then(|s| s.strip_suffix(".anim")) {
+                        if let Ok(id) = stem.trim_start_matches('0').parse::<u16>().or_else(|_| stem.parse::<u16>()) {
+                            map.insert(id.to_string(), name.to_string());
+                        }
+                    }
+                }
+            }
         }
-        None => HashMap::new(),
+        println!("  Using built-in mapping ({} named entries). Pass --raw for numbered output.", map.len());
+        map
     };
 
     // Build id list, then cap to max_files if set.
@@ -801,13 +963,23 @@ fn cmd_extract_anim(
         let results: Vec<anyhow::Result<()>> = extracted
             .par_iter()
             .map(|(id, output_path, data)| -> anyhow::Result<()> {
-                let output_name = format!("main_{:03}.anim", id);
                 let mapped_name = id_to_name_ref.get(&id.to_string()).cloned();
-
+                // When a mapping exists, the named path IS the primary output.
+                // Create subdirectories as needed (e.g. terran/marine.anim).
                 if let Some(ref name) = mapped_name {
                     let named_path = output_ref.join(format!("{}.anim", name));
-                    if let Err(e) = fs::copy(output_path, &named_path) {
-                        eprintln!("Warning: could not write named copy {:?}: {}", named_path, e);
+                    if let Some(parent) = named_path.parent() {
+                        let _ = fs::create_dir_all(parent);
+                    }
+                    if named_path != *output_path {
+                        if let Err(e) = fs::rename(output_path, &named_path) {
+                            // rename may fail across filesystems; fall back to copy+delete
+                            if fs::copy(output_path, &named_path).is_ok() {
+                                let _ = fs::remove_file(output_path);
+                            } else {
+                                eprintln!("Warning: could not move to named path {:?}: {}", named_path, e);
+                            }
+                        }
                     }
                 }
 
@@ -827,7 +999,7 @@ fn cmd_extract_anim(
                                     println!(
                                         "  {}.anim ({}, {} frames, {:.1} MB) tc={}",
                                         name,
-                                        output_name,
+                                        output_path.display(),
                                         result.frame_count,
                                         data.len() as f64 / 1_000_000.0,
                                         result.tc_mask_written
@@ -835,7 +1007,7 @@ fn cmd_extract_anim(
                                 } else {
                                     println!(
                                         "  {} ({} frames, {:.1} MB) tc={}",
-                                        output_name,
+                                        output_path.display(),
                                         result.frame_count,
                                         data.len() as f64 / 1_000_000.0,
                                         result.tc_mask_written
@@ -846,7 +1018,7 @@ fn cmd_extract_anim(
                             Err(e) => Err(anyhow::anyhow!("  Export failed: {}", e)),
                         }
                     }
-                    Err(e) => Err(anyhow::anyhow!("  {} - Parse error: {}", output_name, e)),
+                    Err(e) => Err(anyhow::anyhow!("  {} - Parse error: {}", output_path.display(), e)),
                 }
             })
             .collect();
@@ -895,13 +1067,13 @@ fn cmd_extract_anim(
                     println!(
                         "  {}.anim ({}, {:.1} MB)",
                         name,
-                        output_name,
+                        output_path.display(),
                         data.len() as f64 / 1_000_000.0
                     );
                 } else {
                     println!(
                         "  {} ({:.1} MB)",
-                        output_name,
+                        output_path.display(),
                         data.len() as f64 / 1_000_000.0
                     );
                 }
@@ -946,12 +1118,12 @@ fn cmd_extract_tileset(
         let output_name = format!("{}.dds.vr4", tileset);
         let output_path = output.join(&output_name);
         if should_skip(&output_path, overwrite, session_start) {
-            println!("  {} (skipped)", output_name);
+            println!("  {} (skipped)", output_path.display());
             continue;
         }
         let path = format!("{}tileset/{}.dds.vr4", prefix, tileset);
         match archive.extract_file(&path) {
-            Ok(data) => extracted.push((output_name, output_path, data)),
+            Ok(data) => extracted.push((output_name.clone(), output_path, data)),
             Err(e) => println!("  {} - {}", tileset, e),
         }
     }
@@ -975,7 +1147,7 @@ fn cmd_extract_tileset(
                     }
                 }
             }
-            println!("  {} ({:.1} MB){}", output_name, data.len() as f64 / 1_000_000.0, note);
+            println!("  {} ({:.1} MB){}", output_path.display(), data.len() as f64 / 1_000_000.0, note);
             Ok(())
         })
         .collect();
@@ -1045,7 +1217,7 @@ fn cmd_extract_effect(
                     }
                 }
             }
-            println!("  {} ({:.1} MB){}", output_name, data.len() as f64 / 1_000_000.0, note);
+            println!("  {} ({:.1} MB){}", output_path.display(), data.len() as f64 / 1_000_000.0, note);
             Ok(())
         })
         .collect();
@@ -1160,161 +1332,6 @@ fn write_json_metadata(grp: &GrpFile, path: &Path) -> Result<()> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn cmd_extract_organized(
-    archive: &CascArchive,
-    output: &Path,
-    mapping_file: &Path,
-    quality: QualityLevel,
-    convert_to_png: bool,
-    team_color_mask: bool,
-    layers: Vec<String>,
-    save_dds: bool,
-    config: &ExtractionConfig,
-) -> Result<()> {
-    let session_start = std::time::SystemTime::now();
-
-    let mapping = SpriteMapping::load(mapping_file).map_err(|e| {
-        anyhow::anyhow!("Failed to load mapping file '{:?}': {}", mapping_file, e)
-    })?;
-
-    println!("StarCraft Sprite Extraction (Organized)");
-    println!("Quality:  {}", quality.description());
-    println!("Using mapping: {:?}", mapping_file);
-    println!("--------------------------------------------------------\n");
-
-    let overwrite   = config.output_settings.overwrite_behavior;
-    let gen_meta    = config.output_settings.metadata_options.generate_json;
-    let compression = png_compression(config.quality_settings.png_compression_level);
-    let pixels_per_unit = config.output_settings.unity_settings.pixels_per_unit;
-    let include     = compile_patterns(&config.filter_settings.include_patterns);
-    let exclude     = compile_patterns(&config.filter_settings.exclude_patterns);
-
-    let mut stats: HashMap<String, usize> = HashMap::new();
-    let mut total_success = 0usize;
-    let mut total_failed = 0usize;
-
-    let mut progress = casc_extractor::ProgressReporter::new(
-        mapping.entries.len() as u64,
-        config.feedback_settings.verbose_logging,
-    );
-
-    for (category_path, file_path) in &mapping.entries {
-        progress.update_current_file(category_path);
-
-        if !passes_filter(category_path, &include, &exclude) {
-            progress.increment();
-            continue;
-        }
-
-        let output_path = output.join(category_path);
-        if let Some(parent) = output_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        match quality {
-            QualityLevel::Sd => {
-                if should_skip(&output_path.with_extension("png"), overwrite, session_start) {
-                    progress.increment();
-                    continue;
-                }
-
-                match archive.extract_file(file_path) {
-                    Ok(data) => match GrpFile::parse(&data) {
-                        Ok(grp) => {
-                            build_spritesheet(&grp, &output_path.with_extension("png"), compression)?;
-                            if gen_meta {
-                                write_text_metadata(&grp, &output_path.with_extension("txt"))?;
-                                write_json_metadata(&grp, &output_path.with_extension("json"))?;
-                            }
-
-                            println!("  {}", category_path);
-                            let category = category_path
-                                .split('/')
-                                .next()
-                                .unwrap_or(category_path)
-                                .to_string();
-                            *stats.entry(category).or_insert(0) += 1;
-                            total_success += 1;
-                        }
-                        Err(e) => {
-                            println!("  {}: Parse error - {}", category_path, e);
-                            total_failed += 1;
-                        }
-                    },
-                    Err(_) => {
-                        total_failed += 1;
-                    }
-                }
-            }
-
-            QualityLevel::Hd4 | QualityLevel::Hd2 => {
-                let anim_path = output_path.with_extension("anim");
-                if should_skip(&anim_path, overwrite, session_start) {
-                    progress.increment();
-                    continue;
-                }
-
-                match archive.extract_file(file_path) {
-                    Ok(data) => {
-                        if let Err(e) = File::create(&anim_path).and_then(|mut f| f.write_all(&data)) {
-                            eprintln!("Warning: could not write {:?}: {}", anim_path, e);
-                            total_failed += 1;
-                        } else {
-                            println!("  {} ({:.1} MB)", category_path, data.len() as f64 / 1_000_000.0);
-
-                            if convert_to_png {
-                                match HdAnimFile::parse(&data) {
-                                    Ok(anim) => {
-                                        let export_cfg = ExportConfig {
-                                            convert_to_png: true,
-                                            team_color_mask,
-                                            save_dds,
-                                            generate_metadata: gen_meta,
-                                            pixels_per_unit,
-                                            layers: layers.clone(),
-                                        };
-                                        match export_anim(&anim, &output_path, &export_cfg) {
-                                            Ok(result) => println!(
-                                                "    -> {} frames exported as PNG",
-                                                result.frame_count
-                                            ),
-                                            Err(e) => println!("    -> ANIM export failed: {}", e),
-                                        }
-                                    }
-                                    Err(e) => println!("    -> ANIM parse failed: {}", e),
-                                }
-                            }
-
-                            let category = category_path
-                                .split('/')
-                                .next()
-                                .unwrap_or(category_path)
-                                .to_string();
-                            *stats.entry(category).or_insert(0) += 1;
-                            total_success += 1;
-                        }
-                    }
-                    Err(_) => {
-                        total_failed += 1;
-                    }
-                }
-            }
-        }
-
-        progress.increment();
-    }
-
-    progress.finish(total_success as u64, total_failed as u64);
-
-    println!("\n--------------------------------------------------------");
-    println!("Statistics:");
-    for (category, count) in &stats {
-        println!("   {}: {} sprites", category, count);
-    }
-    println!("\nSuccess: {} | Failed: {}", total_success, total_failed);
-    println!("Output: {:?}", output);
-    Ok(())
-}
 
 /// Scan the archive file listing for an audio entry whose name contains all
 /// words in `stem_hint` (case-insensitive), and try to extract the first match.
@@ -1814,6 +1831,714 @@ fn cmd_validate_run(dir: &Path, suite_path: &Path, json_output: bool) -> Result<
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+fn cmd_extract_tileset_megatile(
+    archive: &CascArchive,
+    tileset: &str,
+    quality: QualityLevel,
+    max_tiles: u32,
+    tile_size: u32,
+    cols: u32,
+    output: &Path,
+) -> Result<()> {
+    use image::{ImageBuffer, RgbaImage};
+
+    let prefix = quality.path_prefix();
+
+    // 1. Load VR4 pixel data — always use HD4 (no prefix) because VX4EX
+    //    stores indices into the full HD4 tile array (up to 14316 tiles).
+    //    Using HD2 (~3759 tiles) would leave most indices out of range.
+    let vr4_path = format!("tileset/{}.dds.vr4", tileset);
+    let vr4_raw = archive.extract_file(&vr4_path)
+        .with_context(|| format!("VR4 not found: {}", vr4_path))?;
+
+    // DDS header: 128×128 DXT1 tiles, 8192 bytes each. Each VR4 entry IS a full megatile.
+    const VR4_HEADER: usize = 148;
+    const TILE_STRIDE: usize = 8192;
+    const TILE_W: u32 = 128;
+    const TILE_H: u32 = 128;
+    let vr4_data = &vr4_raw[VR4_HEADER..];
+    let vr4_tile_count = vr4_data.len() / TILE_STRIDE;
+    println!("VR4 tiles: {}", vr4_tile_count);
+
+    // 2. Load VX4EX — 1 entry per megatile (4 bytes): vr4_idx = entry>>1, flip_x = entry&1
+    let vx4_path = format!("tileset/{}.vx4ex", tileset);
+    let vx4_raw = archive.extract_file(&vx4_path)
+        .with_context(|| format!("VX4EX not found: {}", vx4_path))?;
+
+    let n_megatiles_vx4 = vx4_raw.len() / 4; // 4 bytes per megatile entry
+    println!("VX4EX megatiles: {}", n_megatiles_vx4);
+
+    let n_megatiles = if max_tiles == 0 {
+        n_megatiles_vx4 as u32
+    } else {
+        max_tiles.min(n_megatiles_vx4 as u32)
+    };
+
+    let rows = (n_megatiles + cols - 1) / cols;
+    let atlas_w = cols * tile_size;
+    let atlas_h = rows * tile_size;
+    let mut atlas: RgbaImage = ImageBuffer::new(atlas_w, atlas_h);
+
+    println!("Building megatile atlas: {}×{} ({} megatiles)", atlas_w, atlas_h, n_megatiles);
+
+    for mega_idx in 0..n_megatiles as usize {
+        let vx4_offset = mega_idx * 4;
+        if vx4_offset + 4 > vx4_raw.len() { continue; }
+        let entry = u32::from_le_bytes([
+            vx4_raw[vx4_offset], vx4_raw[vx4_offset+1],
+            vx4_raw[vx4_offset+2], vx4_raw[vx4_offset+3],
+        ]);
+        let vr4_idx = (entry >> 1) as usize;
+        let flip_x  = (entry & 1) == 1;
+
+        if vr4_idx >= vr4_tile_count { continue; }
+
+        let tile_bytes = &vr4_data[vr4_idx * TILE_STRIDE .. vr4_idx * TILE_STRIDE + TILE_STRIDE];
+        let decoded = decode_dxt1_nxn(tile_bytes, TILE_W as usize, TILE_H as usize);
+
+        let mut mini: RgbaImage = ImageBuffer::from_raw(TILE_W, TILE_H, decoded)
+            .unwrap_or_else(|| ImageBuffer::new(TILE_W, TILE_H));
+        if flip_x { mini = image::imageops::flip_horizontal(&mini); }
+
+        // Scale 128×128 → tile_size×tile_size for the final atlas
+        let mega_scaled = if tile_size == TILE_W {
+            mini
+        } else {
+            image::imageops::resize(&mini, tile_size, tile_size, image::imageops::FilterType::Lanczos3)
+        };
+
+        let ax = ((mega_idx as u32 % cols) * tile_size) as i64;
+        let ay = ((mega_idx as u32 / cols) * tile_size) as i64;
+        image::imageops::overlay(&mut atlas, &mega_scaled, ax, ay);
+    }
+
+    fs::create_dir_all(output)?;
+    let png_name = format!("{}_megatile_{}.png", tileset, tile_size);
+    let png_path = output.join(&png_name);
+    atlas.save(&png_path)?;
+    println!("Saved: {:?}", png_path);
+
+    let meta = serde_json::json!({
+        "tileset": tileset,
+        "tile_size": tile_size,
+        "cols": cols,
+        "rows": rows,
+        "n_megatiles": n_megatiles,
+        "atlas_width": atlas_w,
+        "atlas_height": atlas_h,
+    });
+    let json_path = output.join(format!("{}_megatile_{}.json", tileset, tile_size));
+    std::fs::write(&json_path, serde_json::to_string_pretty(&meta)?)?;
+
+    Ok(())
+}
+
+/// Decode a 64×64 DXT1 (BC1) compressed tile to raw RGBA pixels.
+/// Layer 0 of each VR4 stride slot = DXT1 diffuse color data.
+fn decode_dxt1_nxn(data: &[u8], w: usize, h: usize) -> Vec<u8> {
+    let mut pixels = vec![0u8; w * h * 4];
+    let mut block_idx = 0usize;
+    for by in (0..h).step_by(4) {
+        for bx in (0..w).step_by(4) {
+            let base = block_idx * 8;
+            if base + 8 > data.len() { break; }
+            let c0_raw = u16::from_le_bytes([data[base], data[base+1]]);
+            let c1_raw = u16::from_le_bytes([data[base+2], data[base+3]]);
+            let bits = u32::from_le_bytes([data[base+4], data[base+5], data[base+6], data[base+7]]);
+            let c0 = rgb565_to_rgba(c0_raw);
+            let c1 = rgb565_to_rgba(c1_raw);
+            let colors: [[u8;4]; 4] = if c0_raw > c1_raw {
+                [c0, c1, lerp_color(c0, c1, 1, 3), lerp_color(c0, c1, 2, 3)]
+            } else {
+                [c0, c1, lerp_color(c0, c1, 1, 2), [0, 0, 0, 0]]
+            };
+            for py in 0..4 {
+                for px in 0..4 {
+                    let bit_shift = (py * 4 + px) * 2;
+                    let color_idx = ((bits >> bit_shift) & 0x3) as usize;
+                    let dst = ((by + py) * w + (bx + px)) * 4;
+                    if dst + 4 <= pixels.len() {
+                        pixels[dst..dst+4].copy_from_slice(&colors[color_idx]);
+                    }
+                }
+            }
+            block_idx += 1;
+        }
+    }
+    pixels
+}
+
+#[inline]
+fn rgb565_to_rgba(c: u16) -> [u8; 4] {
+    let r = ((c >> 11) & 0x1f) as u8;
+    let g = ((c >> 5)  & 0x3f) as u8;
+    let b = ( c        & 0x1f) as u8;
+    [(r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2), 255]
+}
+
+#[inline]
+fn lerp_color(a: [u8;4], b: [u8;4], num: u32, den: u32) -> [u8;4] {
+    [
+        ((a[0] as u32 * (den-num) + b[0] as u32 * num) / den) as u8,
+        ((a[1] as u32 * (den-num) + b[1] as u32 * num) / den) as u8,
+        ((a[2] as u32 * (den-num) + b[2] as u32 * num) / den) as u8,
+        255,
+    ]
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cmd_extract_tileset_atlas(
+    archive: &CascArchive,
+    tileset: &str,
+    quality: QualityLevel,
+    cols: u32,
+    max_tiles: u32,
+    tile_size: u32,
+    output: &Path,
+) -> Result<()> {
+    use image::{ImageBuffer, RgbaImage};
+
+    let prefix = quality.path_prefix();
+    let path = format!("{}tileset/{}.dds.vr4", prefix, tileset);
+    let data = archive.extract_file(&path)
+        .with_context(|| format!("Failed to extract {}", path))?;
+
+    // 20-byte VR4 header + 128-byte DDS header = 148 bytes to skip
+    if data.len() < 148 {
+        anyhow::bail!("VR4 file too small: {} bytes", data.len());
+    }
+    let pixel_data = &data[148..];
+
+    // DDS header: 128×128 DXT1 tiles, 8192 bytes each
+    const TILE_STRIDE: usize = 8192;
+    const TILE_W: u32 = 128;
+    const TILE_H: u32 = 128;
+
+    let total_tiles = (pixel_data.len() / TILE_STRIDE) as u32;
+    let n_tiles = if max_tiles == 0 { total_tiles } else { max_tiles.min(total_tiles) };
+
+    println!("Tileset: {} ({} total tiles, extracting {})", tileset, total_tiles, n_tiles);
+
+    let rows = (n_tiles + cols - 1) / cols;
+    let atlas_w = cols * tile_size;
+    let atlas_h = rows * tile_size;
+
+    let mut atlas: RgbaImage = ImageBuffer::new(atlas_w, atlas_h);
+
+    for i in 0..n_tiles {
+        let offset = i as usize * TILE_STRIDE;
+        if offset + TILE_STRIDE > pixel_data.len() { break; }
+        let tile_bytes = &pixel_data[offset..offset + TILE_STRIDE];
+
+        let decoded = decode_dxt1_nxn(tile_bytes, TILE_W as usize, TILE_H as usize);
+
+        let tile_img: RgbaImage = if tile_size == TILE_W {
+            ImageBuffer::from_raw(TILE_W, TILE_H, decoded)
+                .ok_or_else(|| anyhow::anyhow!("Failed to create tile image"))?
+        } else {
+            let src: RgbaImage = ImageBuffer::from_raw(TILE_W, TILE_H, decoded)
+                .ok_or_else(|| anyhow::anyhow!("Failed to create tile image"))?;
+            image::imageops::resize(&src, tile_size, tile_size, image::imageops::FilterType::Lanczos3)
+        };
+
+        let ax = (i % cols) * tile_size;
+        let ay = (i / cols) * tile_size;
+        image::imageops::overlay(&mut atlas, &tile_img, ax as i64, ay as i64);
+    }
+
+    fs::create_dir_all(output)?;
+
+    let filename = format!("{}_{}_atlas.png", tileset, tile_size);
+    let out_path = output.join(&filename);
+    atlas.save(&out_path)?;
+    println!("Saved: {:?} ({}x{}, {} tiles)", out_path, atlas_w, atlas_h, n_tiles);
+
+    let meta = serde_json::json!({
+        "tileset": tileset,
+        "tile_size": tile_size,
+        "cols": cols,
+        "rows": rows,
+        "total_tiles": n_tiles,
+        "atlas_width": atlas_w,
+        "atlas_height": atlas_h,
+    });
+    let meta_path = output.join(format!("{}_{}_atlas.json", tileset, tile_size));
+    fs::write(&meta_path, serde_json::to_string_pretty(&meta)?)?;
+
+    Ok(())
+}
+
+fn cmd_extract_map_terrain(
+    archive: &CascArchive,
+    scm_path: &Path,
+    cols: u32,
+    tile_size: u32,
+    output: &Path,
+) -> Result<()> {
+    use image::{ImageBuffer, RgbaImage};
+    use mpq::Archive;
+
+    fs::create_dir_all(output)?;
+
+    // 1. Parse SCM to get ERA (tileset) and MTXM (megatile IDs)
+    let mut archive_mpq = Archive::open(scm_path)
+        .with_context(|| format!("Failed to open MPQ: {:?}", scm_path))?;
+
+    // Try each path variant; open_file returns File which requires archive to read.
+    let chk_file = archive_mpq.open_file("staredit\\scenario.chk")
+        .or_else(|_| archive_mpq.open_file("staredit/scenario.chk"))
+        .or_else(|_| archive_mpq.open_file("scenario.chk"))
+        .with_context(|| "CHK not found in MPQ")?;
+
+    let chk_size = chk_file.size() as usize;
+    let mut chk_bytes = vec![0u8; chk_size];
+    chk_file.read(&mut archive_mpq, &mut chk_bytes)
+        .context("Failed to read CHK")?;
+
+    // Parse CHK chunks
+    let mut era: u16 = 3; // default jungle
+    let mut dim_w: u16 = 128;
+    let mut dim_h: u16 = 128;
+    let mut mtxm: Vec<u16> = Vec::new();
+
+    let mut pos = 0;
+    while pos + 8 <= chk_bytes.len() {
+        let tag = &chk_bytes[pos..pos+4];
+        let size = u32::from_le_bytes(chk_bytes[pos+4..pos+8].try_into().unwrap()) as usize;
+        pos += 8;
+        if pos + size > chk_bytes.len() { break; }
+        let data = &chk_bytes[pos..pos+size];
+
+        match tag {
+            b"ERA " if size >= 2 => {
+                era = u16::from_le_bytes(data[0..2].try_into().unwrap()) & 7;
+            }
+            b"DIM " if size >= 4 => {
+                dim_w = u16::from_le_bytes(data[0..2].try_into().unwrap());
+                dim_h = u16::from_le_bytes(data[2..4].try_into().unwrap());
+            }
+            b"MTXM" => {
+                for i in (0..size).step_by(2) {
+                    if i+2 <= size {
+                        mtxm.push(u16::from_le_bytes(data[i..i+2].try_into().unwrap()));
+                    }
+                }
+            }
+            _ => {}
+        }
+        pos += size;
+    }
+
+    println!("Map: {}×{} tiles, ERA={} (tileset), {} MTXM entries", dim_w, dim_h, era, mtxm.len());
+
+    // Tileset name from ERA
+    let tileset_name = match era {
+        0 => "badlands",
+        1 => "platform",
+        2 => "ashworld",
+        3 => "jungle",
+        4 => "jungle",
+        5 => "desert",
+        6 => "ice",
+        7 => "twilight",
+        _ => "jungle",
+    };
+
+    // 2. Collect all unique megatile IDs. No cap needed — we use a single atlas PNG,
+    // not a GPU texture array, so there is no hardware layer limit.
+    let mut unique_ids: Vec<u16> = mtxm.iter().copied()
+        .collect::<std::collections::HashSet<u16>>()
+        .into_iter()
+        .collect();
+    unique_ids.sort_unstable(); // stable atlas order
+    let n_tiles = unique_ids.len() as u32;
+    println!("Unique megatile IDs: {}", n_tiles);
+
+    // 3. Load CV5, VX4EX, classic VR4 (8×8 palette tiles) + WPE palette from CASC
+    // CV5: 52 bytes/group. MTXM → (group=id>>4, tile=id&0xf) → CV5[group].tiles[tile] = vx4_idx
+    let cv5_data = archive.extract_file(&format!("tileset/{}.cv5", tileset_name))
+        .with_context(|| format!("CV5 not found for tileset {}", tileset_name))?;
+    const CV5_ENTRY_BYTES: usize = 52;
+    const CV5_TILES_OFFSET: usize = 20;
+    println!("CV5 groups: {}", cv5_data.len() / CV5_ENTRY_BYTES);
+
+    let mtxm_to_vx4 = |mega_id: u16| -> Option<usize> {
+        let group = (mega_id >> 4) as usize;
+        let tile  = (mega_id & 0xf) as usize;
+        let off = group * CV5_ENTRY_BYTES + CV5_TILES_OFFSET + tile * 2;
+        if off + 2 > cv5_data.len() { return None; }
+        Some(u16::from_le_bytes(cv5_data[off..off+2].try_into().unwrap()) as usize)
+    };
+
+    let vx4_data = archive.extract_file(&format!("tileset/{}.vx4ex", tileset_name))
+        .with_context(|| format!("VX4EX not found for tileset {}", tileset_name))?;
+
+    // Classic VR4: 64 bytes/tile = 8×8 palette index pixels. WPE: 256×4 bytes BGR0 palette.
+    let classic_vr4 = archive.extract_file(&format!("tileset/{}.vr4", tileset_name))
+        .with_context(|| format!("Classic VR4 not found for tileset {}", tileset_name))?;
+    let wpe_data = archive.extract_file(&format!("tileset/{}.wpe", tileset_name))
+        .with_context(|| format!("WPE palette not found for tileset {}", tileset_name))?;
+
+    // Build RGBA palette lookup from WPE (BGR0 format)
+    let palette: Vec<[u8;4]> = (0..256usize).map(|i| {
+        let base = i * 4;
+        if base + 4 <= wpe_data.len() {
+            [wpe_data[base+2], wpe_data[base+1], wpe_data[base], 255] // BGR→RGB
+        } else { [0, 0, 0, 255] }
+    }).collect();
+    let classic_tile_count = classic_vr4.len() / 64;
+    println!("Classic VR4: {} tiles. WPE: {} palette entries.", classic_tile_count, wpe_data.len()/4);
+
+    // Decode one 8×8 classic VR4 tile → 32-byte RGBA pixels
+    let decode_mini = |vr4_idx: usize| -> Vec<u8> {
+        let mut out = vec![0u8; 8 * 8 * 4];
+        let base = vr4_idx * 64;
+        if base + 64 > classic_vr4.len() { return out; }
+        for i in 0..64 {
+            let c = palette[classic_vr4[base + i] as usize];
+            out[i*4..i*4+4].copy_from_slice(&c);
+        }
+        out
+    };
+
+    // Load VF4 (walkability flags): 16 × u16 per megatile, bit 0x0001 = walkable mini-tile.
+    // A megatile is walkable if ANY of its 16 mini-tiles has bit 0x0001 set.
+    let vf4_data = archive.extract_file(&format!("tileset/{}.vf4", tileset_name))
+        .with_context(|| format!("VF4 not found for tileset {}", tileset_name))?;
+    const VF4_ENTRY_BYTES: usize = 32; // 16 × u16
+
+    let is_walkable = |mega_id: u16| -> bool {
+        let vx4_idx = match mtxm_to_vx4(mega_id) {
+            Some(idx) => idx,
+            None => return false,
+        };
+        let vf4_off = vx4_idx * VF4_ENTRY_BYTES;
+        if vf4_off + VF4_ENTRY_BYTES > vf4_data.len() { return false; }
+        // Any mini-tile walkable (bit 0x0001) → megatile is walkable
+        for i in 0..16 {
+            let flags = u16::from_le_bytes(vf4_data[vf4_off + i*2 .. vf4_off + i*2 + 2].try_into().unwrap());
+            if flags & 0x0001 != 0 { return true; }
+        }
+        false
+    };
+
+    // Build walkable set for all MTXM values in this map
+    let walkable_ids: Vec<u32> = mtxm.iter().copied()
+        .collect::<std::collections::HashSet<u16>>()
+        .into_iter()
+        .filter(|&id| is_walkable(id))
+        .map(|id| id as u32)
+        .collect();
+    println!("Walkable megatile IDs: {}/{}", walkable_ids.len(), mtxm.iter().collect::<std::collections::HashSet<_>>().len());
+
+    // Pipeline: MTXM → CV5 → VX4EX → 16 classic VR4 mini-tiles (8×8) → 32×32 megatile.
+    const VR4_HEADER: usize = 148;
+    // 4. Build atlas: 4×4 classic 8×8 mini-tiles → 32×32 megatile → scaled to tile_size
+    const MEGA_W: u32 = 32; // 4 mini-tiles × 8px = 32px megatile
+    const MEGA_H: u32 = 32;
+
+    let rows = (n_tiles + cols - 1) / cols;
+    let atlas_w = cols * tile_size;
+    let atlas_h = rows * tile_size;
+    let mut atlas: RgbaImage = ImageBuffer::new(atlas_w, atlas_h);
+
+    let max_id = *unique_ids.iter().max().unwrap_or(&0) as usize;
+    let mut id_to_atlas = vec![u32::MAX; max_id + 1];
+
+    for (atlas_idx, &mega_id) in unique_ids.iter().enumerate() {
+        id_to_atlas[mega_id as usize] = atlas_idx as u32;
+
+        let vx4_idx = match mtxm_to_vx4(mega_id) {
+            Some(idx) => idx,
+            None => continue,
+        };
+        let vx4_offset = vx4_idx * 64; // 16 × 4-byte entries
+        let mut mega_img: RgbaImage = ImageBuffer::new(MEGA_W, MEGA_H);
+
+        for mini_row in 0..4usize {
+            for mini_col in 0..4usize {
+                let entry_offset = vx4_offset + (mini_row * 4 + mini_col) * 4;
+                if entry_offset + 4 > vx4_data.len() { continue; }
+                let entry = u32::from_le_bytes(vx4_data[entry_offset..entry_offset+4].try_into().unwrap());
+                let vr4_idx = (entry >> 1) as usize;
+                let flip_x  = (entry & 1) == 1;
+                if vr4_idx >= classic_tile_count { continue; }
+
+                let pixels = decode_mini(vr4_idx);
+                let mut mini: RgbaImage = ImageBuffer::from_raw(8, 8, pixels)
+                    .unwrap_or_else(|| ImageBuffer::new(8, 8));
+                if flip_x { mini = image::imageops::flip_horizontal(&mini); }
+                // Place at correct 8×8 position within the 32×32 megatile
+                image::imageops::overlay(&mut mega_img, &mini, (mini_col * 8) as i64, (mini_row * 8) as i64);
+            }
+        }
+
+        let scaled = if tile_size == MEGA_W {
+            mega_img
+        } else {
+            image::imageops::resize(&mega_img, tile_size, tile_size, image::imageops::FilterType::Nearest)
+        };
+
+        let ax = (atlas_idx as u32 % cols) * tile_size;
+        let ay = (atlas_idx as u32 / cols) * tile_size;
+        image::imageops::overlay(&mut atlas, &scaled, ax as i64, ay as i64);
+    }
+
+    // 5. Save atlas and mapping
+    let map_stem = scm_path.file_stem().unwrap_or_default().to_string_lossy();
+    let safe_name: String = map_stem.chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect();
+
+    let png_path = output.join(format!("{}_terrain.png", safe_name));
+    atlas.save(&png_path)?;
+
+    // 6. Generate minimap thumbnail: 1 pixel per tile, sampled from the atlas.
+    // This matches BW's minimap which shows terrain colors at low resolution.
+    let walkable_set_u16: std::collections::HashSet<u16> = walkable_ids.iter().map(|&x| x as u16).collect();
+    let mut minimap: RgbaImage = ImageBuffer::new(dim_w as u32, dim_h as u32);
+    for ty in 0..dim_h as u32 {
+        for tx in 0..dim_w as u32 {
+            let mega_id = mtxm[(ty * dim_w as u32 + tx) as usize];
+            let pixel = if let Some(&atlas_idx) = id_to_atlas.get(mega_id as usize).filter(|&&v| v != u32::MAX) {
+                let ac = atlas_idx % cols;
+                let ar = atlas_idx / cols;
+                // Sample centre pixel of the atlas tile
+                let px = ac * tile_size + tile_size / 2;
+                let py = ar * tile_size + tile_size / 2;
+                *atlas.get_pixel(px.min(atlas_w - 1), py.min(atlas_h - 1))
+            } else if walkable_set_u16.contains(&mega_id) {
+                image::Rgba([30u8, 60, 30, 255])  // walkable fallback: dark green
+            } else {
+                image::Rgba([40u8, 35, 30, 255])  // cliff fallback: dark brown
+            };
+            minimap.put_pixel(tx, ty, pixel);
+        }
+    }
+    let mm_path = output.join(format!("{}_minimap.png", safe_name));
+    minimap.save(&mm_path)?;
+
+    let meta = serde_json::json!({
+        "map": map_stem.as_ref(),
+        "tileset": tileset_name,
+        "era": era,
+        "tile_size": tile_size,
+        "cols": cols,
+        "atlas_width": atlas_w,
+        "atlas_height": atlas_h,
+        "map_width": dim_w,
+        "map_height": dim_h,
+        "n_unique_tiles": n_tiles,
+        "id_map": unique_ids.iter().enumerate().map(|(i, &id)| [id as u32, i as u32]).collect::<Vec<_>>(),
+        "walkable_ids": walkable_ids,
+    });
+    let json_path = output.join(format!("{}_terrain.json", safe_name));
+    fs::write(&json_path, serde_json::to_string_pretty(&meta)?)?;
+
+    println!("Saved: {:?} ({}×{}, {} tiles)", png_path, atlas_w, atlas_h, n_tiles);
+    println!("Saved minimap: {:?} ({}×{})", mm_path, dim_w, dim_h);
+    println!("Saved: {:?}", json_path);
+    Ok(())
+}
+
+fn cmd_extract_map_terrain_dual(
+    archive: &CascArchive,
+    scm_path: &Path,
+    cols: u32,
+    tile_size: u32,
+    output: &Path,
+) -> Result<()> {
+    use image::{ImageBuffer, RgbaImage};
+    use mpq::Archive;
+
+    fs::create_dir_all(output)?;
+
+    // 1. Parse SCM to get ERA (tileset) and MTXM (megatile IDs)
+    let mut archive_mpq = Archive::open(scm_path)
+        .with_context(|| format!("Failed to open MPQ: {:?}", scm_path))?;
+
+    let chk_file = archive_mpq.open_file("staredit\\scenario.chk")
+        .or_else(|_| archive_mpq.open_file("staredit/scenario.chk"))
+        .or_else(|_| archive_mpq.open_file("scenario.chk"))
+        .with_context(|| "CHK not found in MPQ")?;
+
+    let chk_size = chk_file.size() as usize;
+    let mut chk_bytes = vec![0u8; chk_size];
+    chk_file.read(&mut archive_mpq, &mut chk_bytes)
+        .context("Failed to read CHK")?;
+
+    let mut era: u16 = 3;
+    let mut dim_w: u16 = 128;
+    let mut dim_h: u16 = 128;
+    let mut mtxm: Vec<u16> = Vec::new();
+
+    let mut pos = 0;
+    while pos + 8 <= chk_bytes.len() {
+        let tag = &chk_bytes[pos..pos+4];
+        let size = u32::from_le_bytes(chk_bytes[pos+4..pos+8].try_into().unwrap()) as usize;
+        pos += 8;
+        if pos + size > chk_bytes.len() { break; }
+        let data = &chk_bytes[pos..pos+size];
+
+        match tag {
+            b"ERA " if size >= 2 => {
+                era = u16::from_le_bytes(data[0..2].try_into().unwrap()) & 7;
+            }
+            b"DIM " if size >= 4 => {
+                dim_w = u16::from_le_bytes(data[0..2].try_into().unwrap());
+                dim_h = u16::from_le_bytes(data[2..4].try_into().unwrap());
+            }
+            b"MTXM" => {
+                for i in (0..size).step_by(2) {
+                    if i+2 <= size {
+                        mtxm.push(u16::from_le_bytes(data[i..i+2].try_into().unwrap()));
+                    }
+                }
+            }
+            _ => {}
+        }
+        pos += size;
+    }
+
+    println!("Map: {}×{} tiles, ERA={} (tileset), {} MTXM entries", dim_w, dim_h, era, mtxm.len());
+
+    let tileset_name = match era {
+        0 => "badlands",
+        1 => "platform",
+        2 => "ashworld",
+        3 => "jungle",
+        4 => "jungle",
+        5 => "desert",
+        6 => "ice",
+        7 => "twilight",
+        _ => "jungle",
+    };
+
+    // 2. Collect unique megatile IDs
+    let mut unique_ids: Vec<u16> = mtxm.iter().copied()
+        .collect::<std::collections::HashSet<u16>>()
+        .into_iter()
+        .collect();
+    unique_ids.sort_unstable();
+    let n_tiles = unique_ids.len() as u32;
+    println!("Unique megatile IDs: {}", n_tiles);
+
+    // 3. Load VX4EX and VR4 from CASC
+    let vx4_data = archive.extract_file(&format!("tileset/{}.vx4ex", tileset_name))
+        .with_context(|| format!("VX4EX not found for tileset {}", tileset_name))?;
+
+    let vr4_raw = archive.extract_file(&format!("tileset/{}.dds.vr4", tileset_name))
+        .with_context(|| format!("VR4 not found for tileset {}", tileset_name))?;
+
+    // VR4: 128×128 DXT1 (8192 bytes/tile). VX4EX: 16×u32 = 64 bytes/record. MTXM = VX4EX index.
+    const VR4_HEADER: usize = 148;
+    const VR4_STRIDE: usize = 8192;
+    const VR4_W: u32 = 128;
+    const VR4_H: u32 = 128;
+    const MINI_W: u32 = 32;
+    const MINI_H: u32 = 32;
+    const MEGA_W: u32 = 128;
+    const MEGA_H: u32 = 128;
+    let vr4_data = &vr4_raw[VR4_HEADER..];
+    let vr4_tile_count = vr4_data.len() / VR4_STRIDE;
+    println!("VR4 tiles: {}", vr4_tile_count);
+
+    // 4. Build atlas
+    let rows = (n_tiles + cols - 1) / cols;
+    let atlas_w = cols * tile_size;
+    let atlas_h = rows * tile_size;
+    let mut atlas_diffuse: RgbaImage = ImageBuffer::new(atlas_w, atlas_h);
+    let mut atlas_base: RgbaImage = ImageBuffer::new(atlas_w, atlas_h);
+
+    let max_id = *unique_ids.iter().max().unwrap_or(&0) as usize;
+    let mut id_to_atlas = vec![u32::MAX; max_id + 1];
+
+    for (atlas_idx, &mega_id) in unique_ids.iter().enumerate() {
+        id_to_atlas[mega_id as usize] = atlas_idx as u32;
+
+        let vx4_offset = mega_id as usize * 64;
+        let mut mega_img: RgbaImage = ImageBuffer::new(MEGA_W, MEGA_H);
+
+        for mini_row in 0..4usize {
+            for mini_col in 0..4usize {
+                let entry_offset = vx4_offset + (mini_row * 4 + mini_col) * 4;
+                if entry_offset + 4 > vx4_data.len() { continue; }
+                let entry = u32::from_le_bytes(vx4_data[entry_offset..entry_offset+4].try_into().unwrap());
+                let vr4_idx = (entry >> 1) as usize;
+                let flip_x  = (entry & 1) == 1;
+                if vr4_idx >= vr4_tile_count { continue; }
+
+                let tile_bytes = &vr4_data[vr4_idx * VR4_STRIDE .. vr4_idx * VR4_STRIDE + VR4_STRIDE];
+                let decoded = decode_dxt1_nxn(tile_bytes, VR4_W as usize, VR4_H as usize);
+                let mut mini: RgbaImage = ImageBuffer::from_raw(VR4_W, VR4_H, decoded)
+                    .unwrap_or_else(|| ImageBuffer::new(VR4_W, VR4_H));
+                if flip_x { mini = image::imageops::flip_horizontal(&mini); }
+                let mini_s = image::imageops::resize(&mini, MINI_W, MINI_H, image::imageops::FilterType::Lanczos3);
+                image::imageops::overlay(&mut mega_img, &mini_s, (mini_col as i64) * MINI_W as i64, (mini_row as i64) * MINI_H as i64);
+            }
+        }
+
+        let scaled = if tile_size == MEGA_W {
+            mega_img.clone()
+        } else {
+            image::imageops::resize(&mega_img, tile_size, tile_size, image::imageops::FilterType::Lanczos3)
+        };
+        let mut base = scaled.clone();
+        for px in base.pixels_mut() { px[3] = 255; }
+
+        let ax = (atlas_idx as u32 % cols) * tile_size;
+        let ay = (atlas_idx as u32 / cols) * tile_size;
+        image::imageops::overlay(&mut atlas_diffuse, &scaled, ax as i64, ay as i64);
+        image::imageops::overlay(&mut atlas_base, &base, ax as i64, ay as i64);
+    }
+
+    // 5. Compute alpha stats for diffuse
+    let total_pixels = (atlas_w * atlas_h) as u64;
+    let transparent_pixels = atlas_diffuse.pixels().filter(|p| p[3] == 0).count() as u64;
+    let semi_pixels = atlas_diffuse.pixels().filter(|p| p[3] > 0 && p[3] < 255).count() as u64;
+
+    // 6. Save outputs
+    let map_stem = scm_path.file_stem().unwrap_or_default().to_string_lossy();
+    let safe_name: String = map_stem.chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect();
+
+    let diffuse_path = output.join(format!("{}_diffuse.png", safe_name));
+    let base_path = output.join(format!("{}_base.png", safe_name));
+    let json_path = output.join(format!("{}_terrain_dual.json", safe_name));
+
+    atlas_diffuse.save(&diffuse_path)?;
+    atlas_base.save(&base_path)?;
+
+    let meta = serde_json::json!({
+        "map": map_stem.as_ref(),
+        "tileset": tileset_name,
+        "era": era,
+        "tile_size": tile_size,
+        "cols": cols,
+        "atlas_width": atlas_w,
+        "atlas_height": atlas_h,
+        "n_unique_tiles": n_tiles,
+        "has_dual": true,
+        "diffuse_alpha_stats": {
+            "total_pixels": total_pixels,
+            "transparent_pixels": transparent_pixels,
+            "semi_transparent_pixels": semi_pixels,
+            "opaque_pixels": total_pixels - transparent_pixels - semi_pixels,
+        },
+        "id_map": unique_ids.iter().enumerate().map(|(i, &id)| [id as u32, i as u32]).collect::<Vec<_>>(),
+    });
+    fs::write(&json_path, serde_json::to_string_pretty(&meta)?)?;
+
+    println!("Saved diffuse: {:?} ({}×{}, {} tiles)", diffuse_path, atlas_w, atlas_h, n_tiles);
+    println!("Saved base:    {:?}", base_path);
+    println!("Saved JSON:    {:?}", json_path);
+    println!("Diffuse alpha: {} transparent, {} semi, {} opaque (of {} total pixels)",
+        transparent_pixels, semi_pixels, total_pixels - transparent_pixels - semi_pixels, total_pixels);
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -1860,9 +2585,10 @@ fn main() -> Result<()> {
                 ExtractCommands::Anim {
                     quality,
                     ids,
+                    raw,
+                    name_map,
                     convert_to_png,
                     team_color_mask,
-                    name_map,
                     layers,
                     save_dds,
                 } => {
@@ -1876,9 +2602,10 @@ fn main() -> Result<()> {
                         &output,
                         quality,
                         ids,
+                        raw,
+                        name_map,
                         convert_to_png,
                         team_color_mask,
-                        name_map,
                         &config,
                         layers,
                         save_dds,
@@ -1893,7 +2620,7 @@ fn main() -> Result<()> {
                             config.quality_settings.format_filter,
                             FormatFilterOption::Png | FormatFilterOption::Images
                         );
-                    cmd_extract_tileset(&archive, &output, quality, convert_to_png, &config)?;
+                    cmd_extract_tileset(&archive, &output.join("tilesets"), quality, convert_to_png, &config)?;
                 }
                 ExtractCommands::Effect {
                     quality,
@@ -1904,15 +2631,54 @@ fn main() -> Result<()> {
                             config.quality_settings.format_filter,
                             FormatFilterOption::Png | FormatFilterOption::Images
                         );
-                    cmd_extract_effect(&archive, &output, quality, convert_to_png, &config)?;
+                    cmd_extract_effect(&archive, &output.join("effects"), quality, convert_to_png, &config)?;
                 }
-                ExtractCommands::Organized { mapping, quality, convert_to_png, team_color_mask, layers, save_dds } => {
-                    let convert_to_png = convert_to_png
-                        || matches!(
-                            config.quality_settings.format_filter,
-                            FormatFilterOption::Png | FormatFilterOption::Images
-                        );
-                    cmd_extract_organized(&archive, &output, &mapping, quality, convert_to_png, team_color_mask, layers, save_dds, &config)?;
+                ExtractCommands::TilesetAtlas {
+                    tileset,
+                    quality,
+                    cols,
+                    max_tiles,
+                    tile_size,
+                    output: atlas_output,
+                } => {
+                    let out = atlas_output.unwrap_or_else(|| output.join("tileset-atlas"));
+                    cmd_extract_tileset_atlas(&archive, &tileset, quality, cols, max_tiles, tile_size, &out)?;
+                }
+                ExtractCommands::TilesetMegatile {
+                    tileset,
+                    quality,
+                    max_tiles,
+                    tile_size,
+                    cols,
+                    output: mega_output,
+                } => {
+                    let out = mega_output.unwrap_or_else(|| output.join("tileset-megatile"));
+                    cmd_extract_tileset_megatile(&archive, &tileset, quality, max_tiles, tile_size, cols, &out)?;
+                }
+                ExtractCommands::MapTerrain { scm, cols, tile_size, output: terrain_output } => {
+                    let out = terrain_output.unwrap_or_else(|| output.join("map-terrain"));
+                    cmd_extract_map_terrain(&archive, &scm, cols, tile_size, &out)?;
+                }
+                ExtractCommands::MapTerrainDual { scm, cols, tile_size, output: terrain_output } => {
+                    let out = terrain_output.unwrap_or_else(|| output.join("map-terrain"));
+                    cmd_extract_map_terrain_dual(&archive, &scm, cols, tile_size, &out)?;
+                }
+
+
+                ExtractCommands::Mainmenu { output: mm_output, convert_dds } => {
+                    let out = mm_output.unwrap_or_else(|| output.join("ui/mainmenu"));
+                    cmd_extract_mainmenu(&archive, &out, convert_dds)?;
+                }
+                ExtractCommands::Dat { output: dat_output } => {
+                    let out = dat_output.unwrap_or_else(|| output.join("dat"));
+                    cmd_extract_dat(&archive, &out)?;
+                }
+                ExtractCommands::Cmdicons { output: cmd_output, tint, save_raw } => {
+                    let out = cmd_output.unwrap_or_else(|| output.join("ui/cmdicons"));
+                    let tint_rgb = [tint.get(0).copied().unwrap_or(255),
+                                    tint.get(1).copied().unwrap_or(254),
+                                    tint.get(2).copied().unwrap_or(84)];
+                    cmd_extract_cmdicons(&archive, &out, tint_rgb, save_raw)?;
                 }
             }
         }
@@ -1920,13 +2686,17 @@ fn main() -> Result<()> {
         // ------------------------------------------------------------------
         Commands::Sounds { action } => match action {
             SoundsCommands::Extract { sounds_output, targets } => {
-                let out = sounds_output.unwrap_or(output);
+                let out = sounds_output.unwrap_or_else(|| output.join("sounds"));
                 let archive = open_casc_archive(cli.install_path.as_deref())?;
                 let storage = open_casc_storage(cli.install_path.as_deref())?;
                 cmd_sounds_extract(&archive, &storage, &out, targets.as_deref())?;
             }
             SoundsCommands::List { search } => {
                 cmd_sounds_list(cli.install_path.as_deref(), search)?;
+            }
+            
+            SoundsCommands::Probe { filter } => {
+                cmd_sounds_probe(cli.install_path.as_deref(), filter.as_deref())?;
             }
             SoundsCommands::ExportTargets { output: targets_output } => {
                 cmd_sounds_export_targets(&targets_output)?;
@@ -1939,7 +2709,11 @@ fn main() -> Result<()> {
                 let archive = open_casc_archive(cli.install_path.as_deref())?;
                 cmd_inspect_sprites(&archive, quality, max_id)?;
             }
-            InspectCommands::Archive => {
+            
+                InspectCommands::Files { search, sizes } => {
+                    cmd_inspect_files(cli.install_path.as_deref(), search.as_deref(), sizes)?;
+                }
+                InspectCommands::Archive => {
                 cmd_inspect_archive(cli.install_path.as_deref())?;
             }
         },
@@ -2122,4 +2896,361 @@ mod tests {
         let t = std::time::SystemTime::now();
         assert!(should_skip(&path, OverwriteBehavior::Never, t));
     }
+}
+
+// ─── extract cmdicons ──────────────────────────────────────────────────────
+
+/// Extract `unit\cmdicons\cmdicons.dds.grp` and write a colour-tinted PNG atlas.
+///
+/// ## File format (discovered by analysis)
+/// The dds.grp starts with a 20-byte pre-header:
+///   u32 total_file_size | u16 frame_count (390) | u16 flags | u32 zero |
+///   u16 max_width (128) | u16 max_height (128) | u32 frame_alloc (8332)
+///
+/// Each of the 390 frames is a standalone DDS file prefixed by its own `DDS ` magic.
+/// Frame sizes vary (128×128 = 8332 bytes most common; blank/portrait frames smaller).
+/// Blank/placeholder frames use reduced dimensions (e.g. 116×36 for BLANK text).
+///
+/// ## Slot layout
+/// Frames are in units.dat unit-ID order for the portrait section, then command buttons:
+///   Slots   0–227: unit wireframe portraits  (frame == units.dat unit ID)
+///   Slots 228–389: command button icons      (Move=228, Stop=229, …)
+///
+/// ## Tinting
+/// Icons are stored as greyscale DXT1 (disabled/neutral state).  The game tints them
+/// at runtime using the player colour.  We apply a static yellow tint:
+///   out.rgb = tint_rgb * (grey / 255)
+fn cmd_extract_cmdicons(
+    archive: &casc_extractor::casc::casclib_ffi::CascArchive,
+    output: &std::path::Path,
+    tint: [u8; 3],
+    save_raw: bool,
+) -> anyhow::Result<()> {
+    use texture2ddecoder::decode_bc1;
+
+    let raw = archive.extract_file("unit\\cmdicons\\cmdicons.dds.grp")
+        .map_err(|e| anyhow::anyhow!("cmdicons.dds.grp not found: {}", e))?;
+
+    let total    = u16::from_le_bytes([raw[4], raw[5]]) as usize;
+    let max_w    = u16::from_le_bytes([raw[12], raw[13]]) as usize;
+    let max_h    = u16::from_le_bytes([raw[14], raw[15]]) as usize;
+
+    // Find all DDS frame start positions
+    let mut positions: Vec<usize> = Vec::new();
+    let mut i = 0usize;
+    while let Some(rel) = raw[i..].windows(4).position(|w| w == b"DDS ") {
+        positions.push(rel + i);
+        i = rel + i + 1;
+    }
+    if positions.len() != total {
+        println!("  Warning: found {} DDS frames, expected {}", positions.len(), total);
+    }
+    println!("  {} frames, max {}x{}, tint {:?}", positions.len(), max_w, max_h, tint);
+
+    let cols  = 17usize;
+    let rows  = (total + cols - 1) / cols;
+    let sw    = max_w * cols;
+    let sh    = max_h * rows;
+    let blank = vec![0u8; sw * sh * 4];
+
+    let mut tinted_sheet = blank.clone();
+    let mut raw_sheet    = if save_raw { blank.clone() } else { Vec::new() };
+
+    for (slot, &pos) in positions.iter().enumerate() {
+        if slot >= total { break; }
+        let end = positions.get(slot + 1).copied().unwrap_or(raw.len());
+        let frame_data = &raw[pos..end];
+
+        if frame_data.len() < 128 { continue; }
+        let fw = u32::from_le_bytes([frame_data[16],frame_data[17],frame_data[18],frame_data[19]]) as usize;
+        let fh = u32::from_le_bytes([frame_data[12],frame_data[13],frame_data[14],frame_data[15]]) as usize;
+        if fw == 0 || fh == 0 { continue; }
+
+        let expected = ((fw+3)/4) * ((fh+3)/4) * 8;
+        if frame_data.len() < 128 + expected { continue; }
+
+        let mut px = vec![0u32; fw * fh];
+        if decode_bc1(&frame_data[128..128+expected], fw, fh, &mut px).is_err() { continue; }
+
+        // Centre the (possibly smaller) frame in the max_w × max_h cell
+        let col = slot % cols; let row = slot / cols;
+        let xo  = col * max_w + (max_w - fw) / 2;
+        let yo  = row * max_h + (max_h - fh) / 2;
+
+        for y in 0..fh { for x in 0..fw {
+            let p   = px[y * fw + x];
+            let r   = (p & 0xFF) as u8;
+            let g   = ((p >> 8)  & 0xFF) as u8;
+            let b   = ((p >> 16) & 0xFF) as u8;
+            let a   = ((p >> 24) & 0xFF) as u8;
+            let lum = (r as u32 + g as u32 + b as u32) / 3;
+            let di  = ((yo + y) * sw + xo + x) * 4;
+            if di + 4 > tinted_sheet.len() { continue; }
+            // Tinted
+            tinted_sheet[di]   = (tint[0] as u32 * lum / 255) as u8;
+            tinted_sheet[di+1] = (tint[1] as u32 * lum / 255) as u8;
+            tinted_sheet[di+2] = (tint[2] as u32 * lum / 255) as u8;
+            tinted_sheet[di+3] = a;
+            // Raw greyscale
+            if save_raw && di + 4 <= raw_sheet.len() {
+                raw_sheet[di] = r; raw_sheet[di+1] = g; raw_sheet[di+2] = b; raw_sheet[di+3] = a;
+            }
+        }}
+    }
+
+    std::fs::create_dir_all(output)?;
+    let write_png = |path: &std::path::Path, data: &[u8]| -> anyhow::Result<()> {
+        let f = std::fs::File::create(path)?;
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(f), sw as u32, sh as u32);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header()?.write_image_data(data)?;
+        Ok(())
+    };
+
+    let tinted_path = output.join("cmdicons.png");
+    write_png(&tinted_path, &tinted_sheet)?;
+    println!("  Saved {}  ({}×{}, {} slots, tint {:?})", tinted_path.display(), sw, sh, total, tint);
+
+    if save_raw {
+        let raw_path = output.join("cmdicons_raw.png");
+        write_png(&raw_path, &raw_sheet)?;
+        println!("  Saved {} (greyscale)", raw_path.display());
+    }
+
+    // Write metadata JSON
+    let meta = serde_json::json!({
+        "frameCount": total, "frameWidth": max_w, "frameHeight": max_h,
+        "framesPerRow": cols, "rows": rows, "sheetWidth": sw, "sheetHeight": sh,
+        "layout": "slots 0-227 = unit portraits (frame == units.dat unit ID); slots 228-389 = command buttons",
+        "commandButtons": {
+            "Move":228,"Stop":229,"HoldPosition":230,"Patrol":231,"AttackMove":232,
+            "Cancel":236,"StimPack":237,"U238Shells":238,"Lockdown":240,"EMP":241,
+            "Irradiate":242,"SpiderMines":243,"SiegeTech":245,"SciVesselEnergy":248,
+            "OcularImplants":249,"YamatoGun":251,"PersonnelCloak":252,"MoebiusReactor":256,
+            "ColossusReactor":285,"IonThrusters":287,"InfantryWeapons":288,"VehicleWeapons":289,
+            "ShipWeapons":290,"ShipPlating":291,"InfantryArmor":292,"VehiclePlating":293,
+            "Restoration":366,"OpticFlare":373,"CharonBoosters":380,"CaduceusReactor":384
+        },
+        "frames": (0..total).map(|i| serde_json::json!({
+            "index": i,
+            "x": (i % cols) * max_w,
+            "y": (i / cols) * max_h,
+            "width": max_w, "height": max_h
+        })).collect::<Vec<_>>()
+    });
+    std::fs::write(output.join("cmdicons.json"), serde_json::to_string_pretty(&meta)?)?;
+    println!("  Saved {}", output.join("cmdicons.json").display());
+    Ok(())
+}
+
+// ─── extract mainmenu ──────────────────────────────────────────────────────
+
+/// Extract SC:R main-menu assets (backgrounds, logos, music, SFX, button webms).
+fn cmd_extract_mainmenu(
+    archive: &casc_extractor::casc::casclib_ffi::CascArchive,
+    output: &std::path::Path,
+    convert_dds: bool,
+) -> anyhow::Result<()> {
+    use casc_extractor::dds_converter::save_dds_as_png;
+
+    std::fs::create_dir_all(output)?;
+
+    let assets: &[(&str, &str)] = &[
+        ("HD2\\glue\\title\\title.DDS",                 "title.dds"),
+        ("HD2\\glue\\mainmenu\\titleframe_bg.DDS",      "titleframe_bg.dds"),
+        ("HD2\\glue\\mainmenu\\titleframe_overlay.DDS", "titleframe_overlay.dds"),
+        ("HD2\\glue\\mainmenu\\etail.DDS",              "etail.dds"),
+        ("HD2\\glue\\mainmenu\\pintro.DDS",             "pintro.dds"),
+        ("HD2\\glue\\mainmenu\\pcredit.DDS",            "pcredit.dds"),
+        ("HD2\\glue\\mainmenu\\Lock.DDS",               "lock.dds"),
+        ("HD2\\glue\\mainmenu\\single.webm",            "single.webm"),
+        ("HD2\\glue\\mainmenu\\singleon.webm",          "singleon.webm"),
+        ("HD2\\glue\\mainmenu\\multi.webm",             "multi.webm"),
+        ("HD2\\glue\\mainmenu\\multion.webm",           "multion.webm"),
+        ("HD2\\glue\\mainmenu\\exit.webm",              "exit.webm"),
+        ("HD2\\glue\\mainmenu\\exiton.webm",            "exiton.webm"),
+        ("HD2\\glue\\mainmenu\\editor.webm",            "editor.webm"),
+        ("HD2\\glue\\mainmenu\\editoron.webm",          "editoron.webm"),
+        ("sound\\glue\\mouseover.wav",                  "sfx_mouseover.wav"),
+        ("sound\\glue\\mousedown2.wav",                 "sfx_click.wav"),
+        ("sound\\glue\\swishin.wav",                    "sfx_swishin.wav"),
+        ("sound\\glue\\swishout.wav",                   "sfx_swishout.wav"),
+        ("sound\\glue\\swishlock.wav",                  "sfx_swishlock.wav"),
+        ("sound\\glue\\bnetclick.wav",                  "sfx_bnetclick.wav"),
+        ("sound\\glue\\countdown.wav",                  "sfx_countdown.wav"),
+        ("Music\\terran1.ogg",                          "music_terran.ogg"),
+        ("Music\\zerg1.ogg",                            "music_zerg.ogg"),
+        ("Music\\protoss1.ogg",                         "music_protoss.ogg"),
+    ];
+
+    let (mut ok, mut fail) = (0usize, 0usize);
+    for (casc_path, out_name) in assets {
+        match archive.extract_file(casc_path) {
+            Ok(data) if !data.is_empty() => {
+                if convert_dds && out_name.ends_with(".dds") {
+                    let png_name = out_name.replace(".dds", ".png");
+                    let png_path = output.join(&png_name);
+                    match save_dds_as_png(&data, &png_path) {
+                        Ok(()) => { println!("  ✓ {} → {}", casc_path, png_name); ok += 1; }
+                        Err(e) => {
+                            std::fs::write(output.join(out_name), &data)?;
+                            println!("  ⚠ {} → {} (PNG failed: {}, saved raw DDS)", casc_path, out_name, e);
+                            ok += 1;
+                        }
+                    }
+                } else {
+                    std::fs::write(output.join(out_name), &data)?;
+                    println!("  ✓ {} → {} ({} bytes)", casc_path, out_name, data.len());
+                    ok += 1;
+                }
+            }
+            Ok(_) => { println!("  ⚠ empty: {}", casc_path); fail += 1; }
+            Err(_) => { println!("  ✗ not found: {}", casc_path); fail += 1; }
+        }
+    }
+    println!("  {} extracted, {} not found → {:?}", ok, fail, output);
+    Ok(())
+}
+
+// ─── extract dat ───────────────────────────────────────────────────────────
+
+/// Extract BW data tables (units.dat, upgrades.dat, images.dat, orders.dat, techdata.dat).
+fn cmd_extract_dat(
+    archive: &casc_extractor::casc::casclib_ffi::CascArchive,
+    output: &std::path::Path,
+) -> anyhow::Result<()> {
+    std::fs::create_dir_all(output)?;
+
+    let files: &[(&str, &[&str])] = &[
+        ("units.dat",    &["arr\\units.dat",    "arr/units.dat"]),
+        ("upgrades.dat", &["arr\\upgrades.dat", "arr/upgrades.dat"]),
+        ("images.dat",   &["arr\\images.dat",   "arr/images.dat"]),
+        ("orders.dat",   &["arr\\orders.dat",   "arr/orders.dat"]),
+        ("techdata.dat", &["arr\\techdata.dat", "arr/techdata.dat"]),
+        ("weapons.dat",  &["arr\\weapons.dat",  "arr/weapons.dat"]),
+        ("flingy.dat",   &["arr\\flingy.dat",   "arr/flingy.dat"]),
+        ("sprites.dat",  &["arr\\sprites.dat",  "arr/sprites.dat"]),
+    ];
+
+    let (mut ok, mut fail) = (0usize, 0usize);
+    for (name, paths) in files {
+        let mut found = false;
+        for p in *paths {
+            if let Ok(d) = archive.extract_file(p) {
+                if !d.is_empty() {
+                    std::fs::write(output.join(name), &d)?;
+                    println!("  ✓ {} → {} ({} bytes)", p, name, d.len());
+                    ok += 1; found = true; break;
+                }
+            }
+        }
+        if !found { println!("  ✗ not found: {}", name); fail += 1; }
+    }
+    println!("  {} extracted, {} not found → {:?}", ok, fail, output);
+    Ok(())
+}
+
+// ─── inspect files ─────────────────────────────────────────────────────────
+
+/// List or search all files in the CASC archive.
+fn cmd_inspect_files(
+    install_path: Option<&std::path::Path>,
+    search: Option<&str>,
+    sizes: bool,
+) -> anyhow::Result<()> {
+    let storage = open_casc_storage(install_path)?;
+    let files = storage.list_files()
+        .map_err(|e| anyhow::anyhow!("list_files failed: {}", e))?;
+
+    let pattern = search.map(|s| s.to_lowercase());
+    let mut count = 0usize;
+    for f in &files {
+        let fl = f.to_lowercase();
+        if pattern.as_deref().map_or(true, |p| fl.contains(p)) {
+            if sizes {
+                // Try to get file size via a quick extract probe — skip for speed
+                println!("{}", f);
+            } else {
+                println!("{}", f);
+            }
+            count += 1;
+        }
+    }
+    eprintln!("({} matches / {} total files)", count, files.len());
+    Ok(())
+}
+
+// ─── sounds probe ──────────────────────────────────────────────────────────
+
+/// Probe known unit sound paths to verify which ones resolve in the archive.
+fn cmd_sounds_probe(
+    install_path: Option<&std::path::Path>,
+    filter: Option<&str>,
+) -> anyhow::Result<()> {
+    let archive = open_casc_archive(install_path)?;
+
+    let candidates: &[(&str, &str)] = &[
+        ("hydralisk_attack",  "sound\\Zerg\\Hydralisk\\HydAtt00.wav"),
+        ("hydralisk_die",     "sound\\Zerg\\Hydralisk\\HydDth00.wav"),
+        ("hydralisk_yes",     "sound\\Zerg\\Hydralisk\\HydYes00.wav"),
+        ("hydralisk_what",    "sound\\Zerg\\Hydralisk\\HydWht00.wav"),
+        ("zealot_attack",     "sound\\Protoss\\Zealot\\ZeaAtt00.wav"),
+        ("zealot_die",        "sound\\Protoss\\Zealot\\ZeaDth00.wav"),
+        ("zealot_yes",        "sound\\Protoss\\Zealot\\ZeaYes00.wav"),
+        ("zealot_what",       "sound\\Protoss\\Zealot\\ZeaWht00.wav"),
+        ("ghost_attack",      "sound\\Terran\\Ghost\\TghAtt00.wav"),
+        ("ghost_die",         "sound\\Terran\\Ghost\\TghDth00.wav"),
+        ("ghost_yes",         "sound\\Terran\\Ghost\\TghYes00.wav"),
+        ("ghost_what",        "sound\\Terran\\Ghost\\TghWht00.wav"),
+        ("siege_attack",      "sound\\Terran\\Vehicle\\TvhAtt00.wav"),
+        ("siege_die",         "sound\\Terran\\Vehicle\\TvhDth00.wav"),
+        ("vulture_attack",    "sound\\Terran\\Vulture\\TVuAtt00.wav"),
+        ("vulture_yes",       "sound\\Terran\\Vulture\\TVuYes00.wav"),
+        ("dragoon_attack",    "sound\\Protoss\\Dragoon\\PDrAtt00.wav"),
+        ("dragoon_die",       "sound\\Protoss\\Dragoon\\PDrDth00.wav"),
+        ("dragoon_yes",       "sound\\Protoss\\Dragoon\\PDrYes00.wav"),
+        ("scv_yes",           "sound\\Terran\\SCV\\TSCYes00.wav"),
+        ("scv_attack",        "sound\\Terran\\SCV\\TSCAtt00.wav"),
+        ("medic_yes",         "sound\\Terran\\Medic\\TMEYes00.wav"),
+        ("medic_what",        "sound\\Terran\\Medic\\TMEWht00.wav"),
+        ("mutalisk_attack",   "sound\\Zerg\\Mutalisk\\MutAtt00.wav"),
+        ("mutalisk_die",      "sound\\Zerg\\Mutalisk\\MutDth00.wav"),
+        ("ultralisk_attack",  "sound\\Zerg\\Ultralisk\\UltAtt00.wav"),
+        ("ultralisk_die",     "sound\\Zerg\\Ultralisk\\UltDth00.wav"),
+        ("ultralisk_yes",     "sound\\Zerg\\Ultralisk\\UltYes00.wav"),
+        ("probe_yes",         "sound\\Protoss\\Probe\\PrbYes00.wav"),
+        ("probe_attack",      "sound\\Protoss\\Probe\\PrbAtt00.wav"),
+        ("weapon_gauss",      "sound\\Weapons\\Terran\\tgun.wav"),
+        ("weapon_tank",       "sound\\Weapons\\Terran\\tTankVulcan.wav"),
+        ("weapon_tank2",      "sound\\Weapons\\Terran\\tTankShot.wav"),
+        ("weapon_needle",     "sound\\Weapons\\Zerg\\zNeedleSpine.wav"),
+        ("weapon_zealot",     "sound\\Weapons\\Protoss\\pZealotHit.wav"),
+        ("weapon_phaser",     "sound\\Weapons\\Protoss\\pPhaserCannon.wav"),
+    ];
+
+    let filter_lc = filter.map(|s| s.to_lowercase());
+    let (mut found, mut checked) = (0usize, 0usize);
+    for (name, path) in candidates {
+        if let Some(ref f) = filter_lc {
+            if !name.contains(f.as_str()) && !path.to_lowercase().contains(f.as_str()) { continue; }
+        }
+        checked += 1;
+        let variants = [
+            path.to_string(),
+            path.to_lowercase(),
+            path.replace('\\', "/"),
+            path.to_lowercase().replace('\\', "/"),
+        ];
+        let mut hit = false;
+        for v in &variants {
+            if archive.extract_file(v).map(|d| !d.is_empty()).unwrap_or(false) {
+                println!("  ✓ {:<25} {}", name, v);
+                found += 1; hit = true; break;
+            }
+        }
+        if !hit { println!("  ✗ {:<25} {}", name, path); }
+    }
+    println!("  {}/{} found", found, checked);
+    Ok(())
 }
