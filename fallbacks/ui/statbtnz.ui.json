@@ -1,0 +1,80 @@
+﻿{
+  "type": "DIALOG",
+  "name": "StatBtn",
+  "rect": [496,354,144,126],
+  "style": [],
+  "children": [
+    {
+      "type": "PUSHBUTTON",
+      "content": "statbtnz-1",
+      "id": 1,
+      "rect": [4,7,36,34],
+      "flags": ["WS_VISIBLE","WS_TABSTOP"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statbtnz-2",
+      "id": 2,
+      "rect": [50,7,36,34],
+      "flags": ["WS_VISIBLE","WS_TABSTOP"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statbtnz-3",
+      "id": 3,
+      "rect": [96,7,36,34],
+      "flags": ["WS_VISIBLE","WS_TABSTOP"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statbtnz-4",
+      "id": 4,
+      "rect": [4,47,36,34],
+      "flags": ["WS_VISIBLE","WS_TABSTOP"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statbtnz-5",
+      "id": 5,
+      "rect": [50,47,36,34],
+      "flags": ["WS_VISIBLE","WS_TABSTOP"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statbtnz-6",
+      "id": 6,
+      "rect": [96,47,36,34],
+      "flags": ["WS_VISIBLE","WS_TABSTOP"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statbtnz-7",
+      "id": 7,
+      "rect": [4,87,36,34],
+      "flags": ["WS_VISIBLE","WS_TABSTOP"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statbtnz-8",
+      "id": 8,
+      "rect": [50,87,36,34],
+      "flags": ["WS_VISIBLE","WS_TABSTOP"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statbtnz-9",
+      "id": 9,
+      "rect": [96,87,36,34],
+      "flags": ["WS_VISIBLE","WS_TABSTOP"],
+      "children": null
+    }
+  ]
+}

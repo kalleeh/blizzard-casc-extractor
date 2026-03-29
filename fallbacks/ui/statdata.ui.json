@@ -1,0 +1,464 @@
+﻿{
+  "type": "DIALOG",
+  "name": "StatData",
+  "rect": [138,388,270,92],
+  "style": [],
+  "children": [
+    {
+      "type": "LTEXT",
+      "content": "statdata-1",
+      "id": 1,
+      "rect": [30,0,64,64],
+      "flags": [],
+      "children": null
+    },
+    {
+      "type": "CTEXT",
+      "content": "statdata-2",
+      "id": -5,
+      "rect": [102,0,152,14],
+      "flags": ["RC_NO_TEXTKERN"],
+      "children": null
+    },
+    {
+      "type": "CTEXT",
+      "content": "statdata-3",
+      "id": -7,
+      "rect": [10,64,100,12],
+      "flags": ["RC_SMALLTEXT","RC_NO_TEXTKERN"],
+      "children": null
+    },
+    {
+      "type": "CTEXT",
+      "content": "statdata-4",
+      "id": -8,
+      "rect": [10,76,100,12],
+      "flags": ["RC_SMALLTEXT","RC_NO_TEXTKERN"],
+      "children": null
+    },
+    {
+      "type": "CTEXT",
+      "content": "statdata-5",
+      "id": -15,
+      "rect": [142,21,108,14],
+      "flags": ["RC_NO_TEXTKERN"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-6",
+      "id": 2,
+      "rect": [104,14,39,36],
+      "flags": ["RC_SMALLTEXT","WS_TABSTOP"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-7",
+      "id": 3,
+      "rect": [104,53,39,36],
+      "flags": ["RC_SMALLTEXT","WS_TABSTOP"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-8",
+      "id": 4,
+      "rect": [143,53,39,36],
+      "flags": ["RC_SMALLTEXT","WS_TABSTOP"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-9",
+      "id": 5,
+      "rect": [182,53,39,36],
+      "flags": ["RC_SMALLTEXT","WS_TABSTOP"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-10",
+      "id": 6,
+      "rect": [221,53,39,36],
+      "flags": ["RC_SMALLTEXT","WS_TABSTOP"],
+      "children": null
+    },
+    {
+      "type": "LTEXT",
+      "content": "statdata-11",
+      "id": 7,
+      "rect": [144,39,107,9],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "LTEXT",
+      "content": "statdata-12",
+      "id": 8,
+      "rect": [104,50,39,3],
+      "flags": [],
+      "children": null
+    },
+    {
+      "type": "CTEXT",
+      "content": "statdata-13",
+      "id": -35,
+      "rect": [142,21,108,14],
+      "flags": ["RC_NO_TEXTKERN"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-14",
+      "id": 15,
+      "rect": [104,14,39,36],
+      "flags": ["RC_SMALLTEXT","WS_TABSTOP"],
+      "children": null
+    },
+    {
+      "type": "LTEXT",
+      "content": "statdata-15",
+      "id": 14,
+      "rect": [144,39,107,9],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "CTEXT",
+      "content": "statdata-16",
+      "id": -10,
+      "rect": [143,30,111,14],
+      "flags": ["RC_SMALLTEXT","RC_NO_TEXTKERN"],
+      "children": null
+    },
+    {
+      "type": "CTEXT",
+      "content": "statdata-17",
+      "id": -11,
+      "rect": [143,44,111,14],
+      "flags": ["RC_SMALLTEXT","RC_NO_TEXTKERN"],
+      "children": null
+    },
+    {
+      "type": "CTEXT",
+      "content": "statdata-18",
+      "id": -12,
+      "rect": [143,58,111,14],
+      "flags": ["RC_SMALLTEXT","RC_NO_TEXTKERN"],
+      "children": null
+    },
+    {
+      "type": "CTEXT",
+      "content": "statdata-19",
+      "id": -13,
+      "rect": [143,72,111,14],
+      "flags": ["RC_SMALLTEXT","RC_NO_TEXTKERN"],
+      "children": null
+    },
+    {
+      "type": "CTEXT",
+      "content": "statdata-20",
+      "id": -20,
+      "rect": [106,16,144,14],
+      "flags": ["RC_NO_TEXTKERN"],
+      "children": null
+    },
+    {
+      "type": "CTEXT",
+      "content": "statdata-21",
+      "id": -21,
+      "rect": [106,30,144,14],
+      "flags": ["RC_NO_TEXTKERN"],
+      "children": null
+    },
+    {
+      "type": "LTEXT",
+      "content": "statdata-22",
+      "id": 9,
+      "rect": [104,51,36,36],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "LTEXT",
+      "content": "statdata-23",
+      "id": 10,
+      "rect": [143,51,36,36],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "LTEXT",
+      "content": "statdata-24",
+      "id": 11,
+      "rect": [182,51,36,36],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "LTEXT",
+      "content": "statdata-25",
+      "id": 12,
+      "rect": [221,51,36,36],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "CTEXT",
+      "content": "statdata-26",
+      "id": -30,
+      "rect": [102,21,152,14],
+      "flags": ["RC_NO_TEXTKERN"],
+      "children": null
+    },
+    {
+      "type": "LTEXT",
+      "content": "statdata-27",
+      "id": 13,
+      "rect": [125,39,107,9],
+      "flags": [],
+      "children": null
+    },
+    {
+      "type": "CTEXT",
+      "content": "statdata-28",
+      "id": -40,
+      "rect": [142,21,108,14],
+      "flags": ["RC_NO_TEXTKERN"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-29",
+      "id": 17,
+      "rect": [104,14,39,36],
+      "flags": ["RC_SMALLTEXT","WS_TABSTOP"],
+      "children": null
+    },
+    {
+      "type": "LTEXT",
+      "content": "statdata-30",
+      "id": 16,
+      "rect": [144,39,107,9],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-31",
+      "id": 18,
+      "rect": [104,14,69,71],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-32",
+      "id": 19,
+      "rect": [176,14,69,71],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-33",
+      "id": 20,
+      "rect": [140,14,69,71],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-34",
+      "id": 21,
+      "rect": [104,14,33,71],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-35",
+      "id": 22,
+      "rect": [140,14,33,71],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-36",
+      "id": 23,
+      "rect": [176,14,33,71],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-37",
+      "id": 24,
+      "rect": [212,14,33,71],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-38",
+      "id": 25,
+      "rect": [104,14,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-39",
+      "id": 26,
+      "rect": [104,51,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-40",
+      "id": 27,
+      "rect": [140,14,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-41",
+      "id": 28,
+      "rect": [140,51,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-42",
+      "id": 29,
+      "rect": [176,14,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-43",
+      "id": 30,
+      "rect": [176,51,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-44",
+      "id": 31,
+      "rect": [212,14,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-45",
+      "id": 32,
+      "rect": [212,51,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-46",
+      "id": 33,
+      "rect": [30,8,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-47",
+      "id": 34,
+      "rect": [30,45,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-48",
+      "id": 35,
+      "rect": [66,8,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-49",
+      "id": 36,
+      "rect": [66,45,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-50",
+      "id": 37,
+      "rect": [102,8,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-51",
+      "id": 38,
+      "rect": [102,45,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-52",
+      "id": 39,
+      "rect": [138,8,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-53",
+      "id": 40,
+      "rect": [138,45,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-54",
+      "id": 41,
+      "rect": [174,8,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-55",
+      "id": 42,
+      "rect": [174,45,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-56",
+      "id": 43,
+      "rect": [210,8,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    },
+    {
+      "type": "PUSHBUTTON",
+      "content": "statdata-57",
+      "id": 44,
+      "rect": [210,45,33,34],
+      "flags": ["RC_SMALLTEXT"],
+      "children": null
+    }
+  ]
+}

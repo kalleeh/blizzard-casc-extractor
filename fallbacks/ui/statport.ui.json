@@ -1,0 +1,24 @@
+﻿{
+  "type": "DIALOG",
+  "name": "StatPort",
+  "rect": [408,408,88,72],
+  "style": [],
+  "children": [
+    {
+      "type": "PUSHBUTTON",
+      "content": "statport-1",
+      "id": 1,
+      "rect": [5,2,60,56],
+      "flags": ["WS_TABSTOP","WS_VISIBLE"],
+      "children": null
+    },
+    {
+      "type": "LTEXT",
+      "content": "statport-2",
+      "id": -10,
+      "rect": [0,0,1,1],
+      "flags": [],
+      "children": null
+    }
+  ]
+}
