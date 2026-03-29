@@ -1,11 +1,11 @@
-/// Embedded fallback data for known SC:R files that may not be present in
-/// a local install or CDN fetch.
-///
-/// Keys are canonical CASC paths (locale-prefixed, backslash-separated).
-/// These files are compiled directly into the binary via `include_bytes!`.
-///
-/// The fallback is only consulted after a live extraction attempt fails —
-/// CDN / local-install data always takes priority.
+//! Embedded fallback data for known SC:R files that may not be present in
+//! a local install or CDN fetch.
+//!
+//! Keys are canonical CASC paths (locale-prefixed, backslash-separated).
+//! These files are compiled directly into the binary via `include_bytes!`.
+//!
+//! The fallback is only consulted after a live extraction attempt fails —
+//! CDN / local-install data always takes priority.
 
 /// A single fallback entry: (casc_path, bytes).
 type FallbackEntry = (&'static str, &'static [u8]);

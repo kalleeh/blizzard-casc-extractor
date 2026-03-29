@@ -13,7 +13,6 @@
 mod fallbacks;
 
 use anyhow::{Context as _, Result};
-use texture2ddecoder;
 use casc_extractor::anim::HdAnimFile;
 use casc_extractor::casc::casclib_ffi::CascArchive;
 use casc_extractor::casc::discovery::locate_starcraft;
@@ -446,8 +445,6 @@ enum ExtractCommands {
         #[arg(long)]
         output: Option<PathBuf>,
     },
-
-
 
     /// Extract main-menu UI assets (backgrounds, logos, button videos, music, SFX).
     /// DDS images are automatically converted to PNG.
@@ -1181,7 +1178,7 @@ fn cmd_extract_tileset(
     // Phase 2 — Parallel: write files to disk (I/O-bound, no archive access).
     let results: Vec<anyhow::Result<()>> = extracted
         .par_iter()
-        .map(|(output_name, output_path, data)| -> anyhow::Result<()> {
+        .map(|(_output_name, output_path, data)| -> anyhow::Result<()> {
             File::create(output_path)?.write_all(data)?;
             let mut note = String::new();
             if convert_to_png {
@@ -1250,7 +1247,7 @@ fn cmd_extract_effect(
     // Phase 2 — Parallel: write files to disk (I/O-bound, no archive access).
     let results: Vec<anyhow::Result<()>> = extracted
         .par_iter()
-        .map(|(output_name, output_path, data)| -> anyhow::Result<()> {
+        .map(|(_output_name, output_path, data)| -> anyhow::Result<()> {
             File::create(output_path)?.write_all(data)?;
             let mut note = String::new();
             if convert_to_png {
@@ -1322,67 +1319,7 @@ fn build_spritesheet(grp: &GrpFile, output_path: &Path, compression: png::Compre
     Ok(())
 }
 
-/// Write .txt metadata for a GRP spritesheet.
-fn write_text_metadata(grp: &GrpFile, path: &Path) -> Result<()> {
-    let frames_per_row = 17usize;
-    let rows = (grp.frame_count as usize).div_ceil(frames_per_row);
-    let sheet_width = grp.width as u32 * frames_per_row as u32;
-    let sheet_height = grp.height as u32 * rows as u32;
-
-    let meta_txt = format!(
-        "frames: {}\nframe_size: {}x{}\nsheet_size: {}x{}\nlayout: {}x{}\n",
-        grp.frame_count, grp.width, grp.height, sheet_width, sheet_height, frames_per_row, rows
-    );
-    fs::write(path, meta_txt)?;
-    Ok(())
-}
-
-/// Write .json (Unity) metadata for a GRP spritesheet.
-fn write_json_metadata(grp: &GrpFile, path: &Path) -> Result<()> {
-    let frames_per_row = 17usize;
-    let rows = (grp.frame_count as usize).div_ceil(frames_per_row);
-    let sheet_width = grp.width as u32 * frames_per_row as u32;
-    let sheet_height = grp.height as u32 * rows as u32;
-
-    let unity_meta = format!(
-        r#"{{
-  "frameCount": {},
-  "frameWidth": {},
-  "frameHeight": {},
-  "framesPerRow": {},
-  "rows": {},
-  "sheetWidth": {},
-  "sheetHeight": {},
-  "frames": [{}
-  ]
-}}"#,
-        grp.frame_count,
-        grp.width,
-        grp.height,
-        frames_per_row,
-        rows,
-        sheet_width,
-        sheet_height,
-        (0..grp.frame_count)
-            .map(|i| {
-                let col = i as usize % frames_per_row;
-                let row_i = i as usize / frames_per_row;
-                let x = col * grp.width as usize;
-                let y = row_i * grp.height as usize;
-                format!(
-                    "\n    {{\"index\": {}, \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {}}}",
-                    i, x, y, grp.width, grp.height
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(",")
-    );
-    fs::write(path, unity_meta)?;
-    Ok(())
-}
-
 #[allow(clippy::too_many_arguments)]
-
 /// Scan the archive file listing for an audio entry whose name contains all
 /// words in `stem_hint` (case-insensitive), and try to extract the first match.
 fn discover_sound(archive: &CascArchive, storage: &CascStorage, stem_hint: &str) -> Option<Vec<u8>> {
@@ -1885,15 +1822,13 @@ fn cmd_validate_run(dir: &Path, suite_path: &Path, json_output: bool) -> Result<
 fn cmd_extract_tileset_megatile(
     archive: &CascArchive,
     tileset: &str,
-    quality: QualityLevel,
+    _quality: QualityLevel,
     max_tiles: u32,
     tile_size: u32,
     cols: u32,
     output: &Path,
 ) -> Result<()> {
     use image::{ImageBuffer, RgbaImage};
-
-    let prefix = quality.path_prefix();
 
     // 1. Load VR4 pixel data — always use HD4 (no prefix) because VX4EX
     //    stores indices into the full HD4 tile array (up to 14316 tiles).
@@ -1925,7 +1860,7 @@ fn cmd_extract_tileset_megatile(
         max_tiles.min(n_megatiles_vx4 as u32)
     };
 
-    let rows = (n_megatiles + cols - 1) / cols;
+    let rows = n_megatiles.div_ceil(cols);
     let atlas_w = cols * tile_size;
     let atlas_h = rows * tile_size;
     let mut atlas: RgbaImage = ImageBuffer::new(atlas_w, atlas_h);
@@ -2070,7 +2005,7 @@ fn cmd_extract_tileset_atlas(
 
     println!("Tileset: {} ({} total tiles, extracting {})", tileset, total_tiles, n_tiles);
 
-    let rows = (n_tiles + cols - 1) / cols;
+    let rows = n_tiles.div_ceil(cols);
     let atlas_w = cols * tile_size;
     let atlas_h = rows * tile_size;
 
@@ -2283,12 +2218,11 @@ fn cmd_extract_map_terrain(
     println!("Walkable megatile IDs: {}/{}", walkable_ids.len(), mtxm.iter().collect::<std::collections::HashSet<_>>().len());
 
     // Pipeline: MTXM → CV5 → VX4EX → 16 classic VR4 mini-tiles (8×8) → 32×32 megatile.
-    const VR4_HEADER: usize = 148;
     // 4. Build atlas: 4×4 classic 8×8 mini-tiles → 32×32 megatile → scaled to tile_size
     const MEGA_W: u32 = 32; // 4 mini-tiles × 8px = 32px megatile
     const MEGA_H: u32 = 32;
 
-    let rows = (n_tiles + cols - 1) / cols;
+    let rows = n_tiles.div_ceil(cols);
     let atlas_w = cols * tile_size;
     let atlas_h = rows * tile_size;
     let mut atlas: RgbaImage = ImageBuffer::new(atlas_w, atlas_h);
@@ -2495,7 +2429,7 @@ fn cmd_extract_map_terrain_dual(
     println!("VR4 tiles: {}", vr4_tile_count);
 
     // 4. Build atlas
-    let rows = (n_tiles + cols - 1) / cols;
+    let rows = n_tiles.div_ceil(cols);
     let atlas_w = cols * tile_size;
     let atlas_h = rows * tile_size;
     let mut atlas_diffuse: RgbaImage = ImageBuffer::new(atlas_w, atlas_h);
@@ -2597,6 +2531,7 @@ fn cmd_extract_map_terrain_dual(
 ///
 /// Returns `Ok(())` as long as at least one file was extracted successfully.
 /// Returns `Err` only when every requested file failed.
+#[allow(clippy::too_many_arguments)]
 fn cmd_extract_raw(
     archive: &CascArchive,
     install_path: Option<&Path>,
@@ -2605,7 +2540,7 @@ fn cmd_extract_raw(
     locale: &str,
     output: &Path,
     preserve_path: bool,
-    _online: bool,
+    online: bool,
 ) -> Result<()> {
     fs::create_dir_all(output)?;
 
@@ -2639,7 +2574,7 @@ fn cmd_extract_raw(
                     .collect()
             }
         }
-    } else if _online {
+    } else if online {
         // When fetching from the CDN, paths that lack a locale prefix won't resolve.
         // Automatically prepend `locales\<locale>\` to any path that doesn't already
         // start with that prefix.
@@ -2673,11 +2608,7 @@ fn cmd_extract_raw(
         let resolved: Option<(Vec<u8>, bool)> = match archive.extract_file(casc_path) {
             Ok(data) => Some((data, false)),
             Err(_) => {
-                if let Some(embedded) = fallbacks::get(casc_path) {
-                    Some((embedded.to_vec(), true))
-                } else {
-                    None
-                }
+                fallbacks::get(casc_path).map(|embedded| (embedded.to_vec(), true))
             }
         };
 
@@ -2693,7 +2624,7 @@ fn cmd_extract_raw(
                     output.join(rel)
                 } else {
                     let filename = casc_path
-                        .rsplit(|c| c == '\\' || c == '/')
+                        .rsplit(['\\', '/'])
                         .next()
                         .unwrap_or(casc_path);
                     output.join(filename)
@@ -2871,8 +2802,6 @@ fn main() -> Result<()> {
                     let out = terrain_output.unwrap_or_else(|| output.join("map-terrain"));
                     cmd_extract_map_terrain_dual(&archive, &scm, cols, tile_size, &out)?;
                 }
-
-
                 ExtractCommands::Mainmenu { output: mm_output, convert_dds } => {
                     let out = mm_output.unwrap_or_else(|| output.join("ui/mainmenu"));
                     cmd_extract_mainmenu(&archive, &out, convert_dds)?;
@@ -2883,7 +2812,7 @@ fn main() -> Result<()> {
                 }
                 ExtractCommands::Cmdicons { output: cmd_output, tint, save_raw } => {
                     let out = cmd_output.unwrap_or_else(|| output.join("ui/cmdicons"));
-                    let tint_rgb = [tint.get(0).copied().unwrap_or(255),
+                    let tint_rgb = [tint.first().copied().unwrap_or(255),
                                     tint.get(1).copied().unwrap_or(254),
                                     tint.get(2).copied().unwrap_or(84)];
                     cmd_extract_cmdicons(&archive, &out, tint_rgb, save_raw)?;
@@ -2940,7 +2869,6 @@ fn main() -> Result<()> {
             SoundsCommands::List { search } => {
                 cmd_sounds_list(cli.install_path.as_deref(), search)?;
             }
-            
             SoundsCommands::Probe { filter } => {
                 cmd_sounds_probe(cli.install_path.as_deref(), filter.as_deref())?;
             }
@@ -2955,11 +2883,10 @@ fn main() -> Result<()> {
                 let archive = open_casc_archive(cli.install_path.as_deref())?;
                 cmd_inspect_sprites(&archive, quality, max_id)?;
             }
-            
-                InspectCommands::Files { search, sizes } => {
-                    cmd_inspect_files(cli.install_path.as_deref(), search.as_deref(), sizes)?;
-                }
-                InspectCommands::Archive => {
+            InspectCommands::Files { search, sizes } => {
+                cmd_inspect_files(cli.install_path.as_deref(), search.as_deref(), sizes)?;
+            }
+            InspectCommands::Archive => {
                 cmd_inspect_archive(cli.install_path.as_deref())?;
             }
         },
@@ -3194,7 +3121,7 @@ fn cmd_extract_cmdicons(
     println!("  {} frames, max {}x{}, tint {:?}", positions.len(), max_w, max_h, tint);
 
     let cols  = 17usize;
-    let rows  = (total + cols - 1) / cols;
+    let rows  = total.div_ceil(cols);
     let sw    = max_w * cols;
     let sh    = max_h * rows;
     let blank = vec![0u8; sw * sh * 4];
@@ -3212,7 +3139,7 @@ fn cmd_extract_cmdicons(
         let fh = u32::from_le_bytes([frame_data[12],frame_data[13],frame_data[14],frame_data[15]]) as usize;
         if fw == 0 || fh == 0 { continue; }
 
-        let expected = ((fw+3)/4) * ((fh+3)/4) * 8;
+        let expected = fw.div_ceil(4) * fh.div_ceil(4) * 8;
         if frame_data.len() < 128 + expected { continue; }
 
         let mut px = vec![0u32; fw * fh];
@@ -3413,7 +3340,7 @@ fn cmd_inspect_files(
     let mut count = 0usize;
     for f in &files {
         let fl = f.to_lowercase();
-        if pattern.as_deref().map_or(true, |p| fl.contains(p)) {
+        if pattern.as_deref().is_none_or(|p| fl.contains(p)) {
             if sizes {
                 // Try to get file size via a quick extract probe — skip for speed
                 println!("{}", f);
