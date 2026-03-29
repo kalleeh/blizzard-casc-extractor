@@ -1109,3 +1109,25 @@ animations/acid_spores_2_3_overlay_large: anim/main_995.anim  # Acid Spores (2-3
 animations/acid_spores_4_5_overlay_large: anim/main_996.anim  # Acid Spores (4-5) Overlay (Large)
 animations/acid_spores_6_9_overlay_large: anim/main_997.anim  # Acid Spores (6-9) Overlay (Large)
 animations/maelstrom_hit: anim/main_998.anim  # Maelstrom Hit
+
+# ============================================================================
+# UI LAYOUT FILES - Require --online flag (CDN-only, not in local install)
+# ============================================================================
+# Extract with:
+#   casc-extractor extract raw --search "statbtn" --locale enUS --output <dir> --online
+#
+# Coordinate system: BW 640x480 space.
+# Scale to 1920x1080: multiply x by 3.0, y by 2.25.
+# Console height in SC:R at 1080p: 243px (= 108 BW units x 2.25).
+#
+# Note: These keys are for documentation only — `extract organized` does not
+# process .ui.json files. Use `extract raw` to fetch them directly.
+
+ui/command_card_neutral: locales\enUS\Assets\rez\statbtnn.ui.json   # 3x3 buttons, dialog [496,354,144,126]
+ui/command_card_terran:  locales\enUS\Assets\rez\statbtnt.ui.json
+ui/command_card_protoss: locales\enUS\Assets\rez\statbtnp.ui.json
+ui/command_card_zerg:    locales\enUS\Assets\rez\statbtnz.ui.json   # buttons offset: x=4,50,96 y=7,47,87
+ui/unit_data_panel:      locales\enUS\Assets\rez\statdata.ui.json   # dialog [138,388,270,92]
+ui/portrait_panel:       locales\enUS\Assets\rez\statport.ui.json   # dialog [408,408,88,72]
+ui/resource_display:     locales\enUS\Assets\rez\statres.ui.json
+ui/console_decorations:  locales\enUS\Assets\rez\statfluf.ui.json

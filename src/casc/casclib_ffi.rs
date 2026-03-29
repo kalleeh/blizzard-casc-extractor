@@ -74,6 +74,20 @@ impl CascArchive {
         }
     }
 
+    pub fn open_online(path: &str) -> Result<Self, CascLibError> {
+        const CASC_FEATURE_ONLINE: u32 = 0x00000040;
+        let c_path = CString::new(path).map_err(|e| CascLibError::InvalidPath { reason: e.to_string() })?;
+        let mut handle: Handle = ptr::null_mut();
+
+        unsafe {
+            if CascOpenStorage(c_path.as_ptr(), CASC_FEATURE_ONLINE, &mut handle) {
+                Ok(Self { handle })
+            } else {
+                Err(CascLibError::OpenFailed { path: path.to_string() })
+            }
+        }
+    }
+
     pub fn extract_file(&self, filename: &str) -> Result<Vec<u8>, CascLibError> {
         let c_filename = CString::new(filename).map_err(|e| CascLibError::InvalidPath { reason: e.to_string() })?;
         let mut file_handle: Handle = ptr::null_mut();

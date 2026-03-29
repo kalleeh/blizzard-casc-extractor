@@ -484,6 +484,48 @@ enum ExtractCommands {
         save_raw: bool,
     },
 
+    /// Extract raw bytes from one or more CASC archive paths without any processing.
+    ///
+    /// Files that are CDN-only (not present in the local install) will be skipped
+    /// with a `skipped (not in local install): <path>` message rather than an error.
+    /// Exit code is non-zero only when ALL requested files failed.
+    /// Use --online to fetch files that are CDN-only (not in local install).
+    ///
+    /// LOCALE PREFIX: Many SC:R files live under a locale prefix in the archive
+    /// (e.g. `locales\enUS\Assets\rez\statbtnn.ui.json`). When --online is used and
+    /// a positional path does not already start with `locales\` or `locales/`, the
+    /// prefix `locales\<locale>\` is prepended automatically. UI layout files
+    /// (.ui.json) are CDN-only and always require --online.
+    Raw {
+        /// One or more exact CASC archive paths to extract.
+        /// Example: `locales\enUS\Assets\rez\statbtnn.ui.json`
+        /// When --online is active and the path does not start with `locales\`,
+        /// the locale prefix (`locales\<locale>\`) is added automatically.
+        /// Mutually exclusive with --search.
+        #[arg(conflicts_with = "search")]
+        file_paths: Vec<String>,
+
+        /// Extract all archive files whose path contains this substring (case-insensitive).
+        /// Mutually exclusive with positional FILE_PATH arguments.
+        #[arg(long, conflicts_with = "file_paths")]
+        search: Option<String>,
+
+        /// Locale used when constructing the locale prefix for --online paths and
+        /// when filtering --search results (default: enUS).
+        #[arg(long, default_value = "enUS")]
+        locale: String,
+
+        /// Keep the full archive path as the output sub-path (default: filename only).
+        #[arg(long, short = 'p')]
+        preserve_path: bool,
+
+        /// Attempt to fetch CDN-only files over the network (requires internet access).
+        /// When set, positional paths that lack a `locales\` prefix will have
+        /// `locales\<locale>\` prepended automatically.
+        #[arg(long)]
+        online: bool,
+    },
+
 }
 
 
@@ -2540,6 +2582,128 @@ fn cmd_extract_map_terrain_dual(
 }
 
 // ---------------------------------------------------------------------------
+// extract raw
+// ---------------------------------------------------------------------------
+
+/// Extract raw bytes from the CASC archive without any format conversion.
+///
+/// Returns `Ok(())` as long as at least one file was extracted successfully.
+/// Returns `Err` only when every requested file failed.
+fn cmd_extract_raw(
+    archive: &CascArchive,
+    install_path: Option<&Path>,
+    file_paths: Vec<String>,
+    search: Option<String>,
+    locale: &str,
+    output: &Path,
+    preserve_path: bool,
+    _online: bool,
+) -> Result<()> {
+    fs::create_dir_all(output)?;
+
+    // Collect the list of CASC paths to attempt.
+    let paths: Vec<String> = if let Some(pattern) = search {
+        // Use CascStorage to enumerate all archive paths, then filter by pattern + locale.
+        let storage = open_casc_storage(install_path)?;
+        let all_files = storage
+            .list_files()
+            .map_err(|e| anyhow::anyhow!("list_files failed: {}", e))?;
+
+        let pattern_lower = pattern.to_lowercase();
+        let locale_lower = locale.to_lowercase();
+
+        all_files
+            .into_iter()
+            .filter(|f| {
+                let fl = f.to_lowercase();
+                fl.contains(&pattern_lower) && fl.contains(&locale_lower)
+            })
+            .collect()
+    } else if _online {
+        // When fetching from the CDN, paths that lack a locale prefix won't resolve.
+        // Automatically prepend `locales\<locale>\` to any path that doesn't already
+        // start with that prefix.
+        file_paths
+            .into_iter()
+            .map(|p| {
+                let pl = p.to_lowercase();
+                if pl.starts_with("locales/") || pl.starts_with("locales\\") {
+                    p
+                } else {
+                    // Use backslash convention (matches SC:R CASC paths).
+                    format!("locales\\{}\\{}", locale, p)
+                }
+            })
+            .collect()
+    } else {
+        file_paths
+    };
+
+    if paths.is_empty() {
+        println!("No files matched the request.");
+        return Ok(());
+    }
+
+    let mut extracted = 0usize;
+    let mut skipped = 0usize;
+
+    for casc_path in &paths {
+        match archive.extract_file(casc_path) {
+            Ok(data) => {
+                // Determine the local output path.
+                let local_path = if preserve_path {
+                    // Normalise CASC backslashes to the OS separator, then join.
+                    let normalised = casc_path.replace('\\', std::path::MAIN_SEPARATOR_STR);
+                    let rel = PathBuf::from(normalised);
+                    // Strip a leading separator if present (makes join work correctly).
+                    let rel = rel.strip_prefix(std::path::MAIN_SEPARATOR_STR).unwrap_or(&rel).to_path_buf();
+                    output.join(rel)
+                } else {
+                    let filename = casc_path
+                        .rsplit(|c| c == '\\' || c == '/')
+                        .next()
+                        .unwrap_or(casc_path);
+                    output.join(filename)
+                };
+
+                // Create any intermediate directories when --preserve-path is set.
+                if let Some(parent) = local_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+
+                fs::write(&local_path, &data)
+                    .with_context(|| format!("Failed to write {:?}", local_path))?;
+
+                println!(
+                    "extracted: {} -> {} ({} bytes)",
+                    casc_path,
+                    local_path.display(),
+                    data.len()
+                );
+                extracted += 1;
+            }
+            Err(_) => {
+                println!("skipped (not in local install): {}", casc_path);
+                skipped += 1;
+            }
+        }
+    }
+
+    println!(
+        "\n{} extracted, {} skipped (of {} requested).",
+        extracted,
+        skipped,
+        paths.len()
+    );
+
+    if extracted == 0 && skipped > 0 {
+        anyhow::bail!("All {} requested file(s) were skipped — none present in local install.", skipped);
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
 
@@ -2679,6 +2843,44 @@ fn main() -> Result<()> {
                                     tint.get(1).copied().unwrap_or(254),
                                     tint.get(2).copied().unwrap_or(84)];
                     cmd_extract_cmdicons(&archive, &out, tint_rgb, save_raw)?;
+                }
+                ExtractCommands::Raw {
+                    file_paths,
+                    search,
+                    locale,
+                    preserve_path,
+                    online,
+                } => {
+                    if online {
+                        let install_path = locate_starcraft(cli.install_path.as_deref())
+                            .map_err(|e| anyhow::anyhow!("Could not locate StarCraft install path: {}\n{}", e, INSTALL_PATH_HINT))?
+                            .into_os_string()
+                            .into_string()
+                            .map_err(|p| anyhow::anyhow!("Install path is not valid UTF-8: {:?}", p))?;
+                        let online_archive = CascArchive::open_online(&install_path)
+                            .map_err(|e| anyhow::anyhow!("Failed to open CASC archive in online mode: {}", e))?;
+                        cmd_extract_raw(
+                            &online_archive,
+                            cli.install_path.as_deref(),
+                            file_paths,
+                            search,
+                            &locale,
+                            &output,
+                            preserve_path,
+                            online,
+                        )?;
+                    } else {
+                        cmd_extract_raw(
+                            &archive,
+                            cli.install_path.as_deref(),
+                            file_paths,
+                            search,
+                            &locale,
+                            &output,
+                            preserve_path,
+                            online,
+                        )?;
+                    }
                 }
             }
         }

@@ -136,6 +136,63 @@ casc-extractor sounds export-targets              # write built-in target list t
 casc-extractor sounds extract --targets my.json  # use custom target list
 ```
 
+### `extract raw` — raw file extraction
+
+Extracts one or more files from the CASC archive without any format conversion.
+Useful for UI layout files (`.ui.json`), data tables, and any other file type
+not covered by the other subcommands.
+
+```bash
+# List all .ui.json files in the archive
+casc-extractor inspect files --search ".ui.json"
+
+# Extract SC:R UI layout files — requires internet/CDN access (--online)
+casc-extractor extract raw --search "statbtn" --locale enUS --output /tmp/scr_ui --online
+
+# Extract a single file by exact path (locale prefix added automatically with --online)
+casc-extractor extract raw "Assets\rez\statbtnn.ui.json" --output /tmp --online
+
+# Supply the full locale-prefixed path explicitly
+casc-extractor extract raw "locales\enUS\Assets\rez\statbtnn.ui.json" --output /tmp --online
+
+# Extract without --online (only works for files present in the local install package)
+casc-extractor extract raw --search "cmdicons" --output /tmp/icons
+```
+
+`extract raw` flags:
+
+| Flag | Description |
+|------|-------------|
+| `FILE_PATH …` | One or more exact CASC archive paths. Mutually exclusive with `--search`. |
+| `--search <pattern>` | Extract all files whose path contains this substring (case-insensitive). |
+| `--locale <code>` | Locale used for `--search` filtering and the automatic locale prefix (default: `enUS`). |
+| `--online` | Open the CDN-backed archive to reach files not present in the local install. |
+| `--preserve-path` / `-p` | Write output to the full archive sub-path instead of filename-only. |
+
+#### CDN-only files and the locale prefix
+
+Some SC:R files — notably all `.ui.json` UI layout files — are not included in
+the local installation package and can only be fetched from Blizzard's CDN.
+These require `--online`.
+
+Inside the CASC archive these files live under a locale prefix:
+
+```
+locales\enUS\Assets\rez\statbtnn.ui.json
+```
+
+When `--online` is set and a positional path does **not** already start with
+`locales\`, the tool prepends `locales\<locale>\` automatically.  So both of
+these are equivalent:
+
+```bash
+casc-extractor extract raw "Assets\rez\statbtnn.ui.json" --online
+casc-extractor extract raw "locales\enUS\Assets\rez\statbtnn.ui.json" --online
+```
+
+When using `--search`, the locale string is matched as a substring, so
+`--locale enUS` already restricts results to the `enUS` tree.
+
 ### `inspect`
 
 ```bash
