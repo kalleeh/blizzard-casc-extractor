@@ -193,6 +193,32 @@ casc-extractor extract raw "locales\enUS\Assets\rez\statbtnn.ui.json" --online
 When using `--search`, the locale string is matched as a substring, so
 `--locale enUS` already restricts results to the `enUS` tree.
 
+#### Embedded fallbacks
+
+A set of known SC:R UI layout files is compiled directly into the binary.
+When a live extraction attempt fails (file not in local install, no `--online`),
+the tool checks this embedded table before reporting the file as skipped.
+This means the six core command-card layout files are always available offline:
+
+| CASC path | File |
+|-----------|------|
+| `locales\enUS\Assets\rez\statbtnn.ui.json` | Normal button layout |
+| `locales\enUS\Assets\rez\statbtnp.ui.json` | Protoss button layout |
+| `locales\enUS\Assets\rez\statbtnt.ui.json` | Terran button layout |
+| `locales\enUS\Assets\rez\statbtnz.ui.json` | Zerg button layout |
+| `locales\enUS\Assets\rez\statdata.ui.json` | Unit stat data layout |
+| `locales\enUS\Assets\rez\statport.ui.json` | Portrait stat layout |
+
+```bash
+# Works without --online or a local install:
+casc-extractor extract raw --search statbtn --locale enUS --output /tmp/scr_ui
+```
+
+Output summary distinguishes live vs embedded extractions:
+```
+0 extracted, 4 from embedded fallback, 4 skipped (of 8 requested).
+```
+
 ### `inspect`
 
 ```bash

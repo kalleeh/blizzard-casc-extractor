@@ -10,6 +10,8 @@
 //!   casc-extractor inspect sprites
 //!   casc-extractor inspect archive
 
+mod fallbacks;
+
 use anyhow::{Context as _, Result};
 use texture2ddecoder;
 use casc_extractor::anim::HdAnimFile;
@@ -486,16 +488,22 @@ enum ExtractCommands {
 
     /// Extract raw bytes from one or more CASC archive paths without any processing.
     ///
-    /// Files that are CDN-only (not present in the local install) will be skipped
-    /// with a `skipped (not in local install): <path>` message rather than an error.
+    /// Files that are CDN-only (not present in the local install) will be checked
+    /// against built-in embedded fallbacks before being skipped.  If a matching
+    /// embedded copy exists it is written to the output directory and counts as a
+    /// successful extraction.  Only files that cannot be resolved by any means are
+    /// reported as skipped.
     /// Exit code is non-zero only when ALL requested files failed.
     /// Use --online to fetch files that are CDN-only (not in local install).
+    ///
+    /// EMBEDDED FALLBACKS: Known SC:R UI layout files (.ui.json) are embedded in
+    /// the binary and will be served even without --online or a local install.
+    /// Currently embedded: statbtnn, statbtnp, statbtnt, statbtnz, statdata, statport.
     ///
     /// LOCALE PREFIX: Many SC:R files live under a locale prefix in the archive
     /// (e.g. `locales\enUS\Assets\rez\statbtnn.ui.json`). When --online is used and
     /// a positional path does not already start with `locales\` or `locales/`, the
-    /// prefix `locales\<locale>\` is prepended automatically. UI layout files
-    /// (.ui.json) are CDN-only and always require --online.
+    /// prefix `locales\<locale>\` is prepended automatically.
     Raw {
         /// One or more exact CASC archive paths to extract.
         /// Example: `locales\enUS\Assets\rez\statbtnn.ui.json`
@@ -2604,21 +2612,33 @@ fn cmd_extract_raw(
     // Collect the list of CASC paths to attempt.
     let paths: Vec<String> = if let Some(pattern) = search {
         // Use CascStorage to enumerate all archive paths, then filter by pattern + locale.
-        let storage = open_casc_storage(install_path)?;
-        let all_files = storage
-            .list_files()
-            .map_err(|e| anyhow::anyhow!("list_files failed: {}", e))?;
+        // If the storage cannot be opened (no local install), fall back to searching
+        // the embedded fallback table.
+        match open_casc_storage(install_path) {
+            Ok(storage) => {
+                let all_files = storage
+                    .list_files()
+                    .map_err(|e| anyhow::anyhow!("list_files failed: {}", e))?;
 
-        let pattern_lower = pattern.to_lowercase();
-        let locale_lower = locale.to_lowercase();
+                let pattern_lower = pattern.to_lowercase();
+                let locale_lower = locale.to_lowercase();
 
-        all_files
-            .into_iter()
-            .filter(|f| {
-                let fl = f.to_lowercase();
-                fl.contains(&pattern_lower) && fl.contains(&locale_lower)
-            })
-            .collect()
+                all_files
+                    .into_iter()
+                    .filter(|f| {
+                        let fl = f.to_lowercase();
+                        fl.contains(&pattern_lower) && fl.contains(&locale_lower)
+                    })
+                    .collect()
+            }
+            Err(_) => {
+                // No local install — search embedded fallbacks only.
+                fallbacks::search(&pattern, locale)
+                    .into_iter()
+                    .map(|s| s.to_owned())
+                    .collect()
+            }
+        }
     } else if _online {
         // When fetching from the CDN, paths that lack a locale prefix won't resolve.
         // Automatically prepend `locales\<locale>\` to any path that doesn't already
@@ -2645,11 +2665,24 @@ fn cmd_extract_raw(
     }
 
     let mut extracted = 0usize;
+    let mut from_fallback = 0usize;
     let mut skipped = 0usize;
 
     for casc_path in &paths {
-        match archive.extract_file(casc_path) {
-            Ok(data) => {
+        // Resolve data: live archive first, then embedded fallback.
+        let resolved: Option<(Vec<u8>, bool)> = match archive.extract_file(casc_path) {
+            Ok(data) => Some((data, false)),
+            Err(_) => {
+                if let Some(embedded) = fallbacks::get(casc_path) {
+                    Some((embedded.to_vec(), true))
+                } else {
+                    None
+                }
+            }
+        };
+
+        match resolved {
+            Some((data, is_fallback)) => {
                 // Determine the local output path.
                 let local_path = if preserve_path {
                     // Normalise CASC backslashes to the OS separator, then join.
@@ -2674,15 +2707,25 @@ fn cmd_extract_raw(
                 fs::write(&local_path, &data)
                     .with_context(|| format!("Failed to write {:?}", local_path))?;
 
-                println!(
-                    "extracted: {} -> {} ({} bytes)",
-                    casc_path,
-                    local_path.display(),
-                    data.len()
-                );
-                extracted += 1;
+                if is_fallback {
+                    println!(
+                        "fallback: {} -> {} ({} bytes) [embedded]",
+                        casc_path,
+                        local_path.display(),
+                        data.len()
+                    );
+                    from_fallback += 1;
+                } else {
+                    println!(
+                        "extracted: {} -> {} ({} bytes)",
+                        casc_path,
+                        local_path.display(),
+                        data.len()
+                    );
+                    extracted += 1;
+                }
             }
-            Err(_) => {
+            None => {
                 println!("skipped (not in local install): {}", casc_path);
                 skipped += 1;
             }
@@ -2690,14 +2733,15 @@ fn cmd_extract_raw(
     }
 
     println!(
-        "\n{} extracted, {} skipped (of {} requested).",
+        "\n{} extracted, {} from embedded fallback, {} skipped (of {} requested).",
         extracted,
+        from_fallback,
         skipped,
         paths.len()
     );
 
-    if extracted == 0 && skipped > 0 {
-        anyhow::bail!("All {} requested file(s) were skipped — none present in local install.", skipped);
+    if extracted == 0 && from_fallback == 0 && skipped > 0 {
+        anyhow::bail!("All {} requested file(s) were skipped — none present in local install or embedded fallbacks.", skipped);
     }
 
     Ok(())
