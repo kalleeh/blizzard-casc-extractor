@@ -39,7 +39,17 @@ jobs:
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           cmake --build /tmp/CascLib/build --parallel
           mkdir -p lib
-          cp /tmp/CascLib/build/${{ matrix.lib_name }} lib/
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            # On macOS CascLib builds a framework (casc.framework/casc), not a flat
+            # dylib. Mirror the layout build.rs links against: the framework binary
+            # at the versioned path matching its @rpath install name, plus a
+            # libcasc.dylib symlink so `-lcasc` resolves at link time.
+            mkdir -p lib/casc.framework/Versions/1.0.0
+            cp /tmp/CascLib/build/casc.framework/casc lib/casc.framework/Versions/1.0.0/casc
+            ln -sf casc.framework/Versions/1.0.0/casc lib/libcasc.dylib
+          else
+            cp /tmp/CascLib/build/${{ matrix.lib_name }} lib/
+          fi
 
       - name: Build release binary
         env:
