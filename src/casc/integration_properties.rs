@@ -138,19 +138,18 @@ mod tests {
             
             let mut navigator1 = CascNavigator::new();
             let mut navigator2 = CascNavigator::new();
-            
-            // Set environment variable to include our test installation
-            std::env::set_var("STARCRAFT_PATH", installation.path.to_string_lossy().to_string());
-            
+
+            // Inject our test installation path explicitly rather than via the
+            // process-global STARCRAFT_PATH env var, which races across the
+            // concurrently running tests.
+            let custom_path = installation.path.clone();
+
             // First detection scan
-            let first_detection = navigator1.detect_installations();
-            
+            let first_detection = navigator1.detect_installations_with_path(Some(&custom_path));
+
             // Second detection scan (should be identical)
-            let second_detection = navigator2.detect_installations();
-            
-            // Clean up environment variable
-            std::env::remove_var("STARCRAFT_PATH");
-            
+            let second_detection = navigator2.detect_installations_with_path(Some(&custom_path));
+
             // Verify detection consistency
             match (first_detection, second_detection) {
                 (Ok(first_installs), Ok(second_installs)) => {
@@ -336,15 +335,11 @@ mod tests {
         fs::write(install_path.join("StarCraft.exe"), b"mock executable").unwrap();
         fs::write(install_path.join(".build.info"), "Branch!STRING:live|12345").unwrap();
         
-        // Set environment variable to include our test installation
-        std::env::set_var("STARCRAFT_PATH", install_path.to_string_lossy().to_string());
-        
+        // Inject the test installation path explicitly instead of mutating the
+        // process-global STARCRAFT_PATH env var (avoids cross-test races).
         let mut navigator = CascNavigator::new();
-        let detection_result = navigator.detect_installations();
-        
-        // Clean up environment variable
-        std::env::remove_var("STARCRAFT_PATH");
-        
+        let detection_result = navigator.detect_installations_with_path(Some(&install_path));
+
         match detection_result {
             Ok(installations) => {
                 // Should find at least our test installation

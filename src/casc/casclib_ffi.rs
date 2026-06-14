@@ -28,14 +28,30 @@ pub enum CascLibError {
 type Handle = *mut c_void;
 type Dword = u32;
 
+/// Mirror of CascLib's `CASC_FIND_DATA` (CascLib.h). Field order, types, and
+/// sizes MUST match the C struct exactly: `CascFindFirstFile` writes the full
+/// struct into this memory, so any layout mismatch overflows the buffer (SIGSEGV).
+/// `MAX_PATH` is 1024 in CascLib's CascPort.h on macOS/Linux (not the Windows 260).
+/// `bFileAvailable` is a `DWORD:1` bitfield, stored in a full 4-byte unit.
 #[repr(C)]
 struct CascFindData {
-    file_size: u64,
     file_name: [c_char; 1024],
     c_key: [u8; 16],
     e_key: [u8; 16],
-    file_available: c_int,
+    tag_bit_mask: u64,
+    file_size: u64,
+    plain_name: *mut c_char,
+    file_data_id: u32,
+    locale_flags: u32,
+    content_flags: u32,
+    span_count: u32,
+    file_available: u32,
+    name_type: c_int,
 }
+
+// Guard against layout drift: must match sizeof(CASC_FIND_DATA) on 64-bit
+// (1024 + 16 + 16 + 8 + 8 + 8 + 4*6, padded to 8-byte alignment = 1104).
+const _: () = assert!(std::mem::size_of::<CascFindData>() == 1104);
 
 #[link(name = "casc")]
 extern "C" {
@@ -158,11 +174,18 @@ impl CascStorage {
     pub fn list_files(&self) -> Result<Vec<String>, CascLibError> {
         let mask = CString::new("*").unwrap();
         let mut find_data = CascFindData {
-            file_size: 0,
             file_name: [0; 1024],
             c_key: [0; 16],
             e_key: [0; 16],
+            tag_bit_mask: 0,
+            file_size: 0,
+            plain_name: ptr::null_mut(),
+            file_data_id: 0,
+            locale_flags: 0,
+            content_flags: 0,
+            span_count: 0,
             file_available: 0,
+            name_type: 0,
         };
 
         unsafe {

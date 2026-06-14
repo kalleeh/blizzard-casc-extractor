@@ -6,7 +6,7 @@
 mod common;
 
 use casc_extractor::validation::{
-    ReferenceValidator, ByteComparison, VisualComparison, RegressionTestSuite,
+    ByteComparison, VisualComparison, RegressionTestSuite,
 };
 use std::fs::File;
 use std::io::Write;
@@ -247,17 +247,6 @@ fn test_regression_suite_detects_changes() {
     let result = suite.validate_no_regression("test_sprite", &modified_file).unwrap();
     assert!(!result.passed, "Validation should fail for modified file");
     assert!(result.regression_details.is_some(), "Regression should be detected");
-}
-
-#[test]
-fn test_reference_validator_creation() {
-    use casc_extractor::validation::reference_validator::ReferenceToolConfig;
-
-    let config = ReferenceToolConfig::default();
-    let _validator = ReferenceValidator::new(config);
-
-    // Validator should be created successfully
-    // Actual validation requires reference tools to be installed
 }
 
 #[test]

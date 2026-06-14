@@ -61,13 +61,18 @@ pub struct AnimFile {
     pub sprites: Vec<Sprite>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Sprite {
     pub frames: Vec<Frame>,
     pub textures: Vec<Texture>,
+    /// If this sprite is a reference to another sprite, the referenced
+    /// sprite's index. `None` for self-contained sprites. When the reference
+    /// can be resolved against an already-parsed sprite the `frames`/`textures`
+    /// are populated from it; this field records the original link.
+    pub reference: Option<u16>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Frame {
     #[cfg(test)]
     pub tex_x: u16,
@@ -83,7 +88,7 @@ pub struct Frame {
     pub timing: Option<u32>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Texture {
     pub format: TextureFormat,
     pub width: u16,
@@ -338,21 +343,36 @@ impl Texture {
         decoder.read_to_end(&mut decompressed)
             .map_err(|e| AnimError::DecompressionFailed(format!("ZLIB decompression failed: {}", e)))?;
         
-        log::debug!("ZLIB decompression successful: {} -> {} bytes", 
+        log::debug!("ZLIB decompression successful: {} -> {} bytes",
                    self.data.len(), decompressed.len());
-        
-        // Validate decompressed size if we have expected size
-        if let Some(expected_size) = self.uncompressed_size {
-            if decompressed.len() != expected_size {
-                return Err(AnimError::SizeMismatch {
-                    expected: expected_size,
-                    actual: decompressed.len(),
-                });
-            }
-        }
-        
-        // Convert to RGBA format based on pixel format
-        self.convert_to_rgba(&decompressed, pixel_format)
+
+        // Detect the true pixel format from the decompressed length. The format
+        // cannot be known before decompression, so the caller passes an
+        // assumed format; here we override it when the decompressed byte count
+        // matches one of the known per-pixel layouts.
+        let pixel_count = (self.width as usize) * (self.height as usize);
+        let expected_rgba_size = pixel_count * 4;
+        let expected_rgb_size = pixel_count * 3;
+        let expected_indexed_size = pixel_count;
+
+        let detected_format = if decompressed.len() == expected_rgba_size {
+            PixelFormat::RGBA32
+        } else if decompressed.len() == expected_rgb_size {
+            PixelFormat::RGB24
+        } else if decompressed.len() == expected_indexed_size {
+            PixelFormat::Indexed8
+        } else {
+            log::warn!(
+                "ZLIB texture {}x{}: decompressed length {} matches no known pixel format (RGBA32={}, RGB24={}, Indexed8={}); falling back to assumed format {:?}",
+                self.width, self.height, decompressed.len(),
+                expected_rgba_size, expected_rgb_size, expected_indexed_size,
+                pixel_format
+            );
+            pixel_format
+        };
+
+        // Convert to RGBA format using the detected pixel format
+        self.convert_to_rgba(&decompressed, detected_format)
     }
     
     /// Decode LZ4 compressed texture data
@@ -945,10 +965,30 @@ impl AnimFile {
         }
         
         // Parse sprites with error handling
-        let mut sprites = Vec::new();
+        let mut sprites: Vec<Sprite> = Vec::new();
         for sprite_idx in 0..sprite_count {
             match Self::parse_sprite(&mut cursor, data) {
-                Ok(sprite) => sprites.push(sprite),
+                Ok(mut sprite) => {
+                    // Resolve sprite references: a reference shares the image
+                    // data of an already-parsed sprite. References point
+                    // backwards into the sprite list, so the target is present
+                    // in `sprites` by the time we reach the reference.
+                    if let Some(ref_id) = sprite.reference {
+                        match sprites.get(ref_id as usize) {
+                            Some(target) => {
+                                sprite.frames = target.frames.clone();
+                                sprite.textures = target.textures.clone();
+                            }
+                            None => {
+                                log::warn!(
+                                    "Sprite {} references unresolved sprite {} (out of range or forward reference); keeping empty data with recorded reference",
+                                    sprite_idx, ref_id
+                                );
+                            }
+                        }
+                    }
+                    sprites.push(sprite);
+                }
                 Err(e) => {
                     log::warn!("Failed to parse sprite {}: {}", sprite_idx, e);
                     // Continue processing other sprites rather than failing completely
@@ -971,12 +1011,15 @@ impl AnimFile {
         let is_reference = cursor.read_u8()? != 0;
         
         if is_reference {
-            let _reference_id = cursor.read_u16::<LittleEndian>()?;
-            // For now, we'll return an empty sprite for references
-            // TODO: Handle sprite references properly
+            let reference_id = cursor.read_u16::<LittleEndian>()?;
+            // A reference sprite shares the image data of sprite #reference_id.
+            // This is a single-pass cursor parser, so it cannot re-seek to an
+            // arbitrary sprite's offset here; the reference is resolved by the
+            // caller (`parse`) against the already-parsed sprite collection.
             return Ok(Sprite {
                 frames: Vec::new(),
                 textures: Vec::new(),
+                reference: Some(reference_id),
             });
         }
         
@@ -1002,9 +1045,10 @@ impl AnimFile {
         Ok(Sprite {
             frames,
             textures,
+            reference: None,
         })
     }
-    
+
     /// Parse a single frame
     fn parse_frame(cursor: &mut Cursor<&[u8]>) -> Result<Frame, AnimError> {
         let _tex_x = cursor.read_u16::<LittleEndian>()?;
@@ -1091,15 +1135,12 @@ impl AnimFile {
         // Check for ZLIB compression signature
         if data.len() >= 2 && data[0] == 0x78 && (data[1] == 0x01 || data[1] == 0x9C || data[1] == 0xDA) {
             log::debug!("Detected ZLIB compressed texture data");
-            
-            // Try to determine pixel format from expected uncompressed size
+
+            // The true pixel format of ZLIB data cannot be known until the
+            // payload is decompressed; `decode_zlib_compressed` selects it from
+            // the decompressed length. RGBA32 is the assumed default here.
             let pixel_count = (width as usize) * (height as usize);
             let expected_rgba_size = pixel_count * 4;
-            let _expected_rgb_size = pixel_count * 3;
-            let _expected_indexed_size = pixel_count;
-            
-            // For now, assume RGBA format for ZLIB compressed data
-            // TODO: Add more sophisticated format detection
             return Ok((
                 TextureFormat::ZlibCompressedRGBA,
                 CompressionType::Zlib,
@@ -1934,6 +1975,7 @@ mod tests {
             sprites.push(Sprite {
                 frames,
                 textures: Vec::new(),
+                reference: None,
             });
             
             let anim_file = AnimFile {
@@ -1987,6 +2029,7 @@ mod tests {
             sprites.push(Sprite {
                 frames,
                 textures: Vec::new(),
+                reference: None,
             });
             
             let anim_file = AnimFile {
@@ -2052,6 +2095,7 @@ mod tests {
             sprites.push(Sprite {
                 frames,
                 textures: Vec::new(),
+                reference: None,
             });
             
             let anim_file = AnimFile {
@@ -3608,28 +3652,28 @@ impl SdAnimFile {
 
         if frame_count > 0 && frames_ptr > 0 {
             if file_len < frames_ptr.saturating_add(frame_entry_bytes) {
-                // TODO: frame table extends beyond EOF; return empty frames rather than erroring
-                for _ in 0..frame_count {
-                    frames.push(SdFrame { layers: Vec::new() });
-                }
-            } else {
-                let mut fc = Cursor::new(data);
-                fc.set_position(frames_ptr as u64);
+                return Err(AnimError::FrameDecodeError(format!(
+                    "SD ANIM frame table at offset {} extends beyond EOF ({} bytes)",
+                    frames_ptr, file_len
+                )));
+            }
 
-                for _ in 0..frame_count {
-                    let mut layers = Vec::with_capacity(sprite_layer_count);
-                    for _ in 0..sprite_layer_count {
-                        let tex_x    = fc.read_u16::<LittleEndian>()?;
-                        let tex_y    = fc.read_u16::<LittleEndian>()?;
-                        let x_offset = fc.read_i16::<LittleEndian>()?;
-                        let y_offset = fc.read_i16::<LittleEndian>()?;
-                        let fw       = fc.read_u16::<LittleEndian>()?;
-                        let fh       = fc.read_u16::<LittleEndian>()?;
-                        let _pad     = fc.read_u32::<LittleEndian>()?;
-                        layers.push(SdFrameLayer { tex_x, tex_y, x_offset, y_offset, width: fw, height: fh });
-                    }
-                    frames.push(SdFrame { layers });
+            let mut fc = Cursor::new(data);
+            fc.set_position(frames_ptr as u64);
+
+            for _ in 0..frame_count {
+                let mut layers = Vec::with_capacity(sprite_layer_count);
+                for _ in 0..sprite_layer_count {
+                    let tex_x    = fc.read_u16::<LittleEndian>()?;
+                    let tex_y    = fc.read_u16::<LittleEndian>()?;
+                    let x_offset = fc.read_i16::<LittleEndian>()?;
+                    let y_offset = fc.read_i16::<LittleEndian>()?;
+                    let fw       = fc.read_u16::<LittleEndian>()?;
+                    let fh       = fc.read_u16::<LittleEndian>()?;
+                    let _pad     = fc.read_u32::<LittleEndian>()?;
+                    layers.push(SdFrameLayer { tex_x, tex_y, x_offset, y_offset, width: fw, height: fh });
                 }
+                frames.push(SdFrame { layers });
             }
         }
 

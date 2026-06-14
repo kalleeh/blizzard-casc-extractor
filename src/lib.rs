@@ -25,5 +25,5 @@ pub use config::{ExtractionConfig, QualitySettings, OutputSettings, FeedbackSett
 pub use filter::{FileFilter, FilterStats, FilterResult, FormatFilter, FileInfo};
 pub use progress::ProgressReporter;
 pub use casc::casclib_ffi::CascStorage;
-pub use validation::{ReferenceValidator, ByteComparison, ByteComparisonResult, VisualComparison, VisualComparisonResult, UnityImportValidator, UnityImportResult, RegressionTestSuite, KnownGoodExtraction, ValidationError, ValidationResult};
+pub use validation::{ByteComparison, ByteComparisonResult, VisualComparison, VisualComparisonResult, RegressionTestSuite, KnownGoodExtraction, ValidationError, ValidationResult};
 pub mod dds_converter;

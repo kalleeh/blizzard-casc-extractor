@@ -274,7 +274,7 @@ enum ValidateCommands {
         suite: PathBuf,
     },
 
-    /// Run regression checks against a directory of extracted files
+    /// Run SHA256 regression checks only against a directory of extracted files
     Run {
         /// Directory of extracted files to validate
         dir: PathBuf,
@@ -546,6 +546,10 @@ enum SoundsCommands {
         /// Path to a custom JSON targets file (produced by export-targets)
         #[arg(long)]
         targets: Option<PathBuf>,
+
+        /// Exit with a non-zero status if not all sound targets were extracted
+        #[arg(long)]
+        fail_on_incomplete: bool,
     },
 
     /// List available audio files in the archive.
@@ -562,6 +566,10 @@ enum SoundsCommands {
         /// Only probe paths containing this string (case-insensitive)
         #[arg(long)]
         filter: Option<String>,
+
+        /// Exit with a non-zero status if not all probed sound paths resolved
+        #[arg(long)]
+        fail_on_incomplete: bool,
     },
 
     /// Write the built-in sound targets to a JSON file for customisation
@@ -1345,6 +1353,7 @@ fn cmd_sounds_extract(
     storage: &CascStorage,
     output: &Path,
     targets_path: Option<&Path>,
+    fail_on_incomplete: bool,
 ) -> Result<()> {
     println!("  StarCraft Sound Extractor");
     println!("==================================================");
@@ -1452,6 +1461,14 @@ fn cmd_sounds_extract(
         "\nIf any are missing, check exact paths with:\n  \
          casc-extractor sounds list"
     );
+
+    if fail_on_incomplete && extracted < total {
+        return Err(anyhow::anyhow!(
+            "sound extraction incomplete: {}/{} targets resolved",
+            extracted,
+            total
+        ));
+    }
     Ok(())
 }
 
@@ -1842,6 +1859,13 @@ fn cmd_extract_tileset_megatile(
     const TILE_STRIDE: usize = 8192;
     const TILE_W: u32 = 128;
     const TILE_H: u32 = 128;
+    if vr4_raw.len() < VR4_HEADER {
+        return Err(anyhow::anyhow!(
+            "VR4 too short: {} bytes, need at least {} for the DDS header",
+            vr4_raw.len(),
+            VR4_HEADER
+        ));
+    }
     let vr4_data = &vr4_raw[VR4_HEADER..];
     let vr4_tile_count = vr4_data.len() / TILE_STRIDE;
     println!("VR4 tiles: {}", vr4_tile_count);
@@ -2116,6 +2140,20 @@ fn cmd_extract_map_terrain(
     }
 
     println!("Map: {}×{} tiles, ERA={} (tileset), {} MTXM entries", dim_w, dim_h, era, mtxm.len());
+
+    // A truncated MTXM cannot describe the full dim_w×dim_h grid; the walk-map and
+    // minimap loops below index mtxm[ty*dim_w + tx] over that full grid, so bail out
+    // here rather than panic on a corrupt map.
+    let expected_tiles = dim_w as usize * dim_h as usize;
+    if mtxm.len() < expected_tiles {
+        return Err(anyhow::anyhow!(
+            "corrupt map: MTXM has {} entries, expected {} for {}×{} grid",
+            mtxm.len(),
+            expected_tiles,
+            dim_w,
+            dim_h
+        ));
+    }
 
     // Tileset name from ERA
     let tileset_name = match era {
@@ -2459,6 +2497,13 @@ fn cmd_extract_map_terrain_dual(
     const MINI_H: u32 = 32;
     const MEGA_W: u32 = 128;
     const MEGA_H: u32 = 128;
+    if vr4_raw.len() < VR4_HEADER {
+        return Err(anyhow::anyhow!(
+            "VR4 too short: {} bytes, need at least {} for the DDS header",
+            vr4_raw.len(),
+            VR4_HEADER
+        ));
+    }
     let vr4_data = &vr4_raw[VR4_HEADER..];
     let vr4_tile_count = vr4_data.len() / VR4_STRIDE;
     println!("VR4 tiles: {}", vr4_tile_count);
@@ -2895,17 +2940,17 @@ fn main() -> Result<()> {
 
         // ------------------------------------------------------------------
         Commands::Sounds { action } => match action {
-            SoundsCommands::Extract { sounds_output, targets } => {
+            SoundsCommands::Extract { sounds_output, targets, fail_on_incomplete } => {
                 let out = sounds_output.unwrap_or_else(|| output.join("sounds"));
                 let archive = open_casc_archive(cli.install_path.as_deref())?;
                 let storage = open_casc_storage(cli.install_path.as_deref())?;
-                cmd_sounds_extract(&archive, &storage, &out, targets.as_deref())?;
+                cmd_sounds_extract(&archive, &storage, &out, targets.as_deref(), fail_on_incomplete)?;
             }
             SoundsCommands::List { search } => {
                 cmd_sounds_list(cli.install_path.as_deref(), search)?;
             }
-            SoundsCommands::Probe { filter } => {
-                cmd_sounds_probe(cli.install_path.as_deref(), filter.as_deref())?;
+            SoundsCommands::Probe { filter, fail_on_incomplete } => {
+                cmd_sounds_probe(cli.install_path.as_deref(), filter.as_deref(), fail_on_incomplete)?;
             }
             SoundsCommands::ExportTargets { output: targets_output } => {
                 cmd_sounds_export_targets(&targets_output)?;
@@ -3239,6 +3284,7 @@ fn cmd_inspect_files(
 fn cmd_sounds_probe(
     install_path: Option<&std::path::Path>,
     filter: Option<&str>,
+    fail_on_incomplete: bool,
 ) -> anyhow::Result<()> {
     let archive = open_casc_archive(install_path)?;
 
@@ -3304,6 +3350,14 @@ fn cmd_sounds_probe(
         if !hit { println!("  ✗ {:<25} {}", name, path); }
     }
     println!("  {}/{} found", found, checked);
+
+    if fail_on_incomplete && found < checked {
+        return Err(anyhow::anyhow!(
+            "sound probe incomplete: {}/{} targets resolved",
+            found,
+            checked
+        ));
+    }
     Ok(())
 }
 
