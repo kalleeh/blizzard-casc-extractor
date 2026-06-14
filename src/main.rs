@@ -2217,6 +2217,38 @@ fn cmd_extract_map_terrain(
         .collect();
     println!("Walkable megatile IDs: {}/{}", walkable_ids.len(), mtxm.iter().collect::<std::collections::HashSet<_>>().len());
 
+    // Build per-mini-tile walk map at 4× tile resolution (WalkPosition grid).
+    // Each 32×32 tile is divided into 4×4 mini-tiles of 8×8px each.
+    // walk_map[(ty*4 + mini_row) * (dim_w*4) + (tx*4 + mini_col)] = 1 if walkable.
+    // VF4 entry layout: 16 × u16, indexed as mini_row*4 + mini_col (row-major, top-to-bottom).
+    let walk_w = dim_w as usize * 4;
+    let walk_h = dim_h as usize * 4;
+    let mut walk_map: Vec<u8> = vec![0u8; walk_w * walk_h];
+    for ty in 0..dim_h as usize {
+        for tx in 0..dim_w as usize {
+            let mega_id = mtxm[ty * dim_w as usize + tx];
+            let vx4_idx = match mtxm_to_vx4(mega_id) {
+                Some(idx) => idx,
+                None => continue,
+            };
+            let vf4_off = vx4_idx * VF4_ENTRY_BYTES;
+            if vf4_off + VF4_ENTRY_BYTES > vf4_data.len() { continue; }
+            for mini_row in 0..4usize {
+                for mini_col in 0..4usize {
+                    let i = mini_row * 4 + mini_col;
+                    let flags = u16::from_le_bytes(
+                        vf4_data[vf4_off + i*2 .. vf4_off + i*2 + 2].try_into().unwrap()
+                    );
+                    if flags & 0x0001 != 0 {
+                        let wx = tx * 4 + mini_col;
+                        let wy = ty * 4 + mini_row;
+                        walk_map[wy * walk_w + wx] = 1;
+                    }
+                }
+            }
+        }
+    }
+
     // Pipeline: MTXM → CV5 → VX4EX → 16 classic VR4 mini-tiles (8×8) → 32×32 megatile.
     // 4. Build atlas: 4×4 classic 8×8 mini-tiles → 32×32 megatile → scaled to tile_size
     const MEGA_W: u32 = 32; // 4 mini-tiles × 8px = 32px megatile
@@ -2316,6 +2348,9 @@ fn cmd_extract_map_terrain(
         "n_unique_tiles": n_tiles,
         "id_map": unique_ids.iter().enumerate().map(|(i, &id)| [id as u32, i as u32]).collect::<Vec<_>>(),
         "walkable_ids": walkable_ids,
+        "walk_map": walk_map,
+        "walk_map_width": walk_w,
+        "walk_map_height": walk_h,
     });
     let json_path = output.join(format!("{}_terrain.json", safe_name));
     fs::write(&json_path, serde_json::to_string_pretty(&meta)?)?;
@@ -2912,165 +2947,6 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // -----------------------------------------------------------------------
-    // passes_filter
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn passes_filter_empty_patterns_always_passes() {
-        assert!(passes_filter("anything/path.anim", &[], &[]));
-        assert!(passes_filter("", &[], &[]));
-    }
-
-    #[test]
-    fn passes_filter_include_match_passes() {
-        let include = compile_patterns(&Some(vec!["terran".to_string()]));
-        assert!(passes_filter("data/terran/unit.anim", &include, &[]));
-    }
-
-    #[test]
-    fn passes_filter_include_no_match_fails() {
-        let include = compile_patterns(&Some(vec!["terran".to_string()]));
-        assert!(!passes_filter("data/protoss/unit.anim", &include, &[]));
-    }
-
-    #[test]
-    fn passes_filter_exclude_match_blocks() {
-        let exclude = compile_patterns(&Some(vec!["ui".to_string()]));
-        assert!(!passes_filter("data/ui/button.anim", &[], &exclude));
-    }
-
-    #[test]
-    fn passes_filter_exclude_no_match_passes() {
-        let exclude = compile_patterns(&Some(vec!["ui".to_string()]));
-        assert!(passes_filter("data/terran/unit.anim", &[], &exclude));
-    }
-
-    #[test]
-    fn passes_filter_include_and_exclude_combined() {
-        let include = compile_patterns(&Some(vec!["anim".to_string()]));
-        let exclude = compile_patterns(&Some(vec!["ui".to_string()]));
-        // matches include, not excluded
-        assert!(passes_filter("data/terran/unit.anim", &include, &exclude));
-        // matches include but also excluded
-        assert!(!passes_filter("data/ui/button.anim", &include, &exclude));
-        // does not match include
-        assert!(!passes_filter("data/terran/unit.png", &include, &exclude));
-    }
-
-    // -----------------------------------------------------------------------
-    // png_compression
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn png_compression_level_0_is_fast() {
-        assert!(matches!(png_compression(0), png::Compression::Fast));
-    }
-
-    #[test]
-    fn png_compression_level_2_is_fast() {
-        assert!(matches!(png_compression(2), png::Compression::Fast));
-    }
-
-    #[test]
-    fn png_compression_level_5_is_default() {
-        assert!(matches!(png_compression(5), png::Compression::Default));
-    }
-
-    #[test]
-    fn png_compression_level_9_is_best() {
-        assert!(matches!(png_compression(9), png::Compression::Best));
-    }
-
-    #[test]
-    fn png_compression_level_7_is_best() {
-        assert!(matches!(png_compression(7), png::Compression::Best));
-    }
-
-    // -----------------------------------------------------------------------
-    // compile_patterns
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn compile_patterns_none_returns_empty() {
-        let result = compile_patterns(&None);
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn compile_patterns_some_empty_vec_returns_empty() {
-        let result = compile_patterns(&Some(vec![]));
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn compile_patterns_valid_patterns_compile() {
-        let result = compile_patterns(&Some(vec![
-            "terran".to_string(),
-            r".*\.anim$".to_string(),
-        ]));
-        assert_eq!(result.len(), 2);
-    }
-
-    #[test]
-    fn compile_patterns_invalid_pattern_silently_skipped() {
-        // "[invalid" is not a valid regex
-        let result = compile_patterns(&Some(vec![
-            "valid".to_string(),
-            "[invalid".to_string(),
-        ]));
-        // Only the valid one is compiled
-        assert_eq!(result.len(), 1);
-        assert!(result[0].is_match("valid_path"));
-    }
-
-    #[test]
-    fn compile_patterns_all_invalid_returns_empty() {
-        let result = compile_patterns(&Some(vec![
-            "[bad".to_string(),
-            "**broken**(".to_string(),
-        ]));
-        assert!(result.is_empty());
-    }
-
-    // -----------------------------------------------------------------------
-    // should_skip
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn should_skip_always_returns_false() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let existing = dir.path().join("file.txt");
-        std::fs::write(&existing, b"content").unwrap();
-        let t = std::time::SystemTime::now();
-        // Always behavior never skips, even for existing files
-        assert!(!should_skip(&existing, OverwriteBehavior::Always, t));
-        // Also false for non-existent paths
-        assert!(!should_skip(&dir.path().join("does_not_exist.txt"), OverwriteBehavior::Always, t));
-    }
-
-    #[test]
-    fn should_skip_never_with_nonexistent_path_is_false() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("nonexistent.txt");
-        let t = std::time::SystemTime::now();
-        assert!(!should_skip(&path, OverwriteBehavior::Never, t));
-    }
-
-    #[test]
-    fn should_skip_never_with_existing_file_is_true() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("existing.txt");
-        std::fs::write(&path, b"hello").unwrap();
-        let t = std::time::SystemTime::now();
-        assert!(should_skip(&path, OverwriteBehavior::Never, t));
-    }
-}
-
 // ─── extract cmdicons ──────────────────────────────────────────────────────
 
 /// Extract `unit\cmdicons\cmdicons.dds.grp` and write a colour-tinted PNG atlas.
@@ -3304,6 +3180,9 @@ fn cmd_extract_dat(
         ("weapons.dat",  &["arr\\weapons.dat",  "arr/weapons.dat"]),
         ("flingy.dat",   &["arr\\flingy.dat",   "arr/flingy.dat"]),
         ("sprites.dat",  &["arr\\sprites.dat",  "arr/sprites.dat"]),
+        ("iscript.bin",  &["scripts\\iscript.bin", "scripts/iscript.bin"]),
+        ("images.tbl",   &["arr\\images.tbl",   "arr/images.tbl"]),
+        ("stat_txt.tbl", &["rez\\stat_txt.tbl", "rez/stat_txt.tbl"]),
     ];
 
     let (mut ok, mut fail) = (0usize, 0usize);
@@ -3426,4 +3305,163 @@ fn cmd_sounds_probe(
     }
     println!("  {}/{} found", found, checked);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------------
+    // passes_filter
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn passes_filter_empty_patterns_always_passes() {
+        assert!(passes_filter("anything/path.anim", &[], &[]));
+        assert!(passes_filter("", &[], &[]));
+    }
+
+    #[test]
+    fn passes_filter_include_match_passes() {
+        let include = compile_patterns(&Some(vec!["terran".to_string()]));
+        assert!(passes_filter("data/terran/unit.anim", &include, &[]));
+    }
+
+    #[test]
+    fn passes_filter_include_no_match_fails() {
+        let include = compile_patterns(&Some(vec!["terran".to_string()]));
+        assert!(!passes_filter("data/protoss/unit.anim", &include, &[]));
+    }
+
+    #[test]
+    fn passes_filter_exclude_match_blocks() {
+        let exclude = compile_patterns(&Some(vec!["ui".to_string()]));
+        assert!(!passes_filter("data/ui/button.anim", &[], &exclude));
+    }
+
+    #[test]
+    fn passes_filter_exclude_no_match_passes() {
+        let exclude = compile_patterns(&Some(vec!["ui".to_string()]));
+        assert!(passes_filter("data/terran/unit.anim", &[], &exclude));
+    }
+
+    #[test]
+    fn passes_filter_include_and_exclude_combined() {
+        let include = compile_patterns(&Some(vec!["anim".to_string()]));
+        let exclude = compile_patterns(&Some(vec!["ui".to_string()]));
+        // matches include, not excluded
+        assert!(passes_filter("data/terran/unit.anim", &include, &exclude));
+        // matches include but also excluded
+        assert!(!passes_filter("data/ui/button.anim", &include, &exclude));
+        // does not match include
+        assert!(!passes_filter("data/terran/unit.png", &include, &exclude));
+    }
+
+    // -----------------------------------------------------------------------
+    // png_compression
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn png_compression_level_0_is_fast() {
+        assert!(matches!(png_compression(0), png::Compression::Fast));
+    }
+
+    #[test]
+    fn png_compression_level_2_is_fast() {
+        assert!(matches!(png_compression(2), png::Compression::Fast));
+    }
+
+    #[test]
+    fn png_compression_level_5_is_default() {
+        assert!(matches!(png_compression(5), png::Compression::Default));
+    }
+
+    #[test]
+    fn png_compression_level_9_is_best() {
+        assert!(matches!(png_compression(9), png::Compression::Best));
+    }
+
+    #[test]
+    fn png_compression_level_7_is_best() {
+        assert!(matches!(png_compression(7), png::Compression::Best));
+    }
+
+    // -----------------------------------------------------------------------
+    // compile_patterns
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn compile_patterns_none_returns_empty() {
+        let result = compile_patterns(&None);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn compile_patterns_some_empty_vec_returns_empty() {
+        let result = compile_patterns(&Some(vec![]));
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn compile_patterns_valid_patterns_compile() {
+        let result = compile_patterns(&Some(vec![
+            "terran".to_string(),
+            r".*\.anim$".to_string(),
+        ]));
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn compile_patterns_invalid_pattern_silently_skipped() {
+        // "[invalid" is not a valid regex
+        let result = compile_patterns(&Some(vec![
+            "valid".to_string(),
+            "[invalid".to_string(),
+        ]));
+        // Only the valid one is compiled
+        assert_eq!(result.len(), 1);
+        assert!(result[0].is_match("valid_path"));
+    }
+
+    #[test]
+    fn compile_patterns_all_invalid_returns_empty() {
+        let result = compile_patterns(&Some(vec![
+            "[bad".to_string(),
+            "**broken**(".to_string(),
+        ]));
+        assert!(result.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // should_skip
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn should_skip_always_returns_false() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let existing = dir.path().join("file.txt");
+        std::fs::write(&existing, b"content").unwrap();
+        let t = std::time::SystemTime::now();
+        // Always behavior never skips, even for existing files
+        assert!(!should_skip(&existing, OverwriteBehavior::Always, t));
+        // Also false for non-existent paths
+        assert!(!should_skip(&dir.path().join("does_not_exist.txt"), OverwriteBehavior::Always, t));
+    }
+
+    #[test]
+    fn should_skip_never_with_nonexistent_path_is_false() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("nonexistent.txt");
+        let t = std::time::SystemTime::now();
+        assert!(!should_skip(&path, OverwriteBehavior::Never, t));
+    }
+
+    #[test]
+    fn should_skip_never_with_existing_file_is_true() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("existing.txt");
+        std::fs::write(&path, b"hello").unwrap();
+        let t = std::time::SystemTime::now();
+        assert!(should_skip(&path, OverwriteBehavior::Never, t));
+    }
 }

@@ -32,7 +32,7 @@ animations/terran/medic: anim/main_944.anim
 animations/protoss/carrier: anim/main_112.anim
 animations/protoss/dragoon: anim/main_123.anim
 animations/protoss/high_templar: anim/main_127.anim
-animations/protoss/dark_templar: anim/main_130.anim
+animations/protoss/dark_templar: anim/main_129.anim  # Dark Templar (Hero GRP = Unit GRP in BW)
 animations/protoss/archon: anim/main_135.anim
 animations/protoss/probe: anim/main_138.anim
 animations/protoss/reaver: anim/main_144.anim

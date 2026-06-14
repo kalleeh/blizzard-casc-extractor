@@ -5,6 +5,7 @@
 
 # Extracted files
 /output/
+/extracted/
 *.png
 *.txt
 !benches/baseline.txt
