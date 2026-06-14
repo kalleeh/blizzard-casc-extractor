@@ -47,14 +47,16 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Rename binary
+        env:
+          VERSION: ${{ github.ref_name }}
         run: |
           cp target/${{ matrix.target }}/release/casc-extractor \
-             casc-extractor-${{ matrix.target }}
+             casc-extractor-${VERSION}-${{ matrix.target }}
 
       - uses: actions/upload-artifact@v4
         with:
-          name: casc-extractor-${{ matrix.target }}
-          path: casc-extractor-${{ matrix.target }}
+          name: casc-extractor-${{ github.ref_name }}-${{ matrix.target }}
+          path: casc-extractor-${{ github.ref_name }}-${{ matrix.target }}
           if-no-files-found: error
 
   release:
@@ -84,5 +86,5 @@ jobs:
 
             Build libcasc from source: https://github.com/ladislav-zezula/CascLib
           files: |
-            casc-extractor-aarch64-apple-darwin
-            casc-extractor-x86_64-unknown-linux-gnu
+            casc-extractor-${{ github.ref_name }}-aarch64-apple-darwin
+            casc-extractor-${{ github.ref_name }}-x86_64-unknown-linux-gnu

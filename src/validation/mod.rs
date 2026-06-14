@@ -3,28 +3,13 @@
 // This module provides comprehensive validation against reference tools to ensure
 // 100% byte-level accuracy and visual correctness of extracted sprites.
 
-pub mod reference_validator;
 pub mod byte_comparison;
 pub mod visual_validation;
-pub mod unity_import;
 pub mod regression_suite;
-pub mod pipeline;
-pub mod error_reporting;
 
-pub use reference_validator::ReferenceValidator;
 pub use byte_comparison::{ByteComparison, ByteComparisonResult};
 pub use visual_validation::{VisualComparison, VisualComparisonResult};
-pub use unity_import::{UnityImportValidator, UnityImportResult, SpriteMetadata};
 pub use regression_suite::{RegressionTestSuite, KnownGoodExtraction};
-pub use pipeline::{
-    ValidationPipeline, ValidationConfig, ExtractionValidationReport,
-    BatchValidationReport, PipelineReferenceResult, PipelineByteResult,
-    PipelineVisualResult, PipelineUnityResult,
-    RegressionTestResult,
-};
-pub use error_reporting::{
-    ErrorReporter, ErrorDiagnostic, ErrorType, Severity,
-};
 
 use std::path::PathBuf;
 use thiserror::Error;

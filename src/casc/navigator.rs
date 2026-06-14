@@ -141,18 +141,37 @@ impl CascNavigator {
     
     /// Automatically detect all StarCraft installations
     /// Requirements 15.1: Automatic detection in standard locations
+    ///
+    /// Honors the `STARCRAFT_PATH` environment variable as a fallback custom
+    /// search location. For thread-safe, race-free path injection (e.g. in
+    /// tests), prefer [`CascNavigator::detect_installations_with_path`].
     pub fn detect_installations(&mut self) -> Result<Vec<Installation>, NavigatorError> {
+        self.detect_installations_with_path(None)
+    }
+
+    /// Automatically detect all StarCraft installations, optionally including an
+    /// explicit custom installation path.
+    ///
+    /// When `custom_path` is `Some`, that path is analyzed in addition to the
+    /// default search locations. When it is `None`, the `STARCRAFT_PATH`
+    /// environment variable is consulted as a fallback (preserving the
+    /// historical CLI behavior). Passing an explicit path avoids touching the
+    /// process-global environment, which is not safe under concurrent access.
+    pub fn detect_installations_with_path(
+        &mut self,
+        custom_path: Option<&Path>,
+    ) -> Result<Vec<Installation>, NavigatorError> {
         info!("Scanning for StarCraft installations...");
         self.installations.clear();
-        
+
         let mut found_count = 0;
-        
+
         for search_path in &self.search_paths {
             debug!("Checking path: {:?}", search_path);
-            
+
             if let Ok(installation) = self.analyze_path(search_path) {
                 if installation.is_valid {
-                    info!("Found valid installation: {} at {:?}", 
+                    info!("Found valid installation: {} at {:?}",
                           installation.display_name, installation.path);
                     self.installations.push(installation);
                     found_count += 1;
@@ -161,25 +180,30 @@ impl CascNavigator {
                 }
             }
         }
-        
-        // Also check environment variables for custom paths
-        if let Ok(custom_path) = std::env::var("STARCRAFT_PATH") {
-            let path = PathBuf::from(custom_path);
+
+        // Resolve a custom path: an explicitly provided path takes precedence;
+        // otherwise fall back to the STARCRAFT_PATH environment variable.
+        let resolved_custom_path = match custom_path {
+            Some(path) => Some(path.to_path_buf()),
+            None => std::env::var("STARCRAFT_PATH").ok().map(PathBuf::from),
+        };
+
+        if let Some(path) = resolved_custom_path {
             if let Ok(installation) = self.analyze_path(&path) {
                 if installation.is_valid {
-                    info!("Found installation from STARCRAFT_PATH: {} at {:?}", 
+                    info!("Found installation from custom path: {} at {:?}",
                           installation.display_name, installation.path);
                     self.installations.push(installation);
                     found_count += 1;
                 }
             }
         }
-        
+
         if found_count == 0 {
             warn!("No valid StarCraft installations found in standard locations");
             return Err(NavigatorError::NoInstallationsFound);
         }
-        
+
         info!("Found {} valid StarCraft installation(s)", found_count);
         Ok(self.installations.clone())
     }
