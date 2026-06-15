@@ -1,6 +1,6 @@
 [package]
 name = "casc-extractor"
-version = "1.1.0"
+version = "0.1.0"
 edition = "2021"
 authors = ["Karl Wallbom <kalleeh@users.noreply.github.com>"]
 description = "Extract sprites from Blizzard CASC archives with Unity integration"
