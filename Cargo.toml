@@ -65,8 +65,7 @@ env_logger = "0.11"
 log = "0.4"
 
 # System information
-dirs = "6.0.0"
-glob = "0.3"  # File path pattern matching for finding Unity Editor
+dirs = "6"
 
 [dev-dependencies]
 # Property-based testing
@@ -88,27 +87,15 @@ criterion = { version = "0.5", features = ["html_reports"] }
 opt-level = 3
 lto = true
 codegen-units = 1
-strip = true
-panic = "abort"
+# Keep the symbol table so a panic in the binary-format parsers yields a
+# usable backtrace; debug info is still dropped. Overflow checks are on
+# because every offset/size here comes from untrusted file headers, where a
+# silently wrapped multiply turns a clean error into a bogus allocation.
+strip = "debuginfo"
+overflow-checks = true
 
 # Development profile for faster builds
 [profile.dev]
 opt-level = 0
 debug = true
 overflow-checks = true
-
-# Profile for distribution builds
-[profile.dist]
-inherits = "release"
-opt-level = 3
-lto = "fat"
-codegen-units = 1
-strip = "symbols"
-panic = "abort"
-
-# Cross-compilation targets for distribution
-[target.x86_64-apple-darwin]
-[target.aarch64-apple-darwin]
-[target.x86_64-unknown-linux-gnu]
-[target.x86_64-pc-windows-msvc]
-[target.aarch64-unknown-linux-gnu]

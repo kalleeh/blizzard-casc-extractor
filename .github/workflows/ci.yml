@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   ci:
     name: ci
@@ -33,11 +36,17 @@ jobs:
           RUSTFLAGS: "-D warnings"
         run: cargo check --all-targets
 
-      - name: cargo test
+      - name: cargo test (lib)
         env:
           RUSTFLAGS: "-D warnings"
           LD_LIBRARY_PATH: lib
         run: cargo test --lib
+
+      - name: cargo test (integration)
+        env:
+          RUSTFLAGS: "-D warnings"
+          LD_LIBRARY_PATH: lib
+        run: cargo test --tests
 
       - name: cargo clippy
         env:
@@ -45,7 +54,6 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: cargo audit
-        continue-on-error: true
         run: |
           cargo install cargo-audit --locked
           cargo audit

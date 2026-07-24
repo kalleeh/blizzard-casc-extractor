@@ -365,7 +365,7 @@ enum ExtractCommands {
         quality: QualityLevel,
 
         /// Number of tiles per row in the output atlas
-        #[arg(long, default_value_t = 32)]
+        #[arg(long, default_value_t = 32, value_parser = clap::value_parser!(u32).range(1..=4096))]
         cols: u32,
 
         /// Max tiles to extract (0 = all)
@@ -373,7 +373,7 @@ enum ExtractCommands {
         max_tiles: u32,
 
         /// Output tile size in pixels (tiles are scaled to this size)
-        #[arg(long, default_value_t = 32)]
+        #[arg(long, default_value_t = 32, value_parser = clap::value_parser!(u32).range(1..=4096))]
         tile_size: u32,
 
         /// Output directory
@@ -396,11 +396,11 @@ enum ExtractCommands {
         max_tiles: u32,
 
         /// Output tile size per megatile in atlas (32 = game tile size)
-        #[arg(long, default_value_t = 32)]
+        #[arg(long, default_value_t = 32, value_parser = clap::value_parser!(u32).range(1..=4096))]
         tile_size: u32,
 
         /// Atlas columns
-        #[arg(long, default_value_t = 32)]
+        #[arg(long, default_value_t = 32, value_parser = clap::value_parser!(u32).range(1..=4096))]
         cols: u32,
 
         /// Output directory
@@ -430,11 +430,11 @@ enum ExtractCommands {
         name: Option<String>,
 
         /// Columns in output atlas
-        #[arg(long, default_value_t = 32)]
+        #[arg(long, default_value_t = 32, value_parser = clap::value_parser!(u32).range(1..=4096))]
         cols: u32,
 
         /// Tile size in output atlas (pixels per megatile)
-        #[arg(long, default_value_t = 32)]
+        #[arg(long, default_value_t = 32, value_parser = clap::value_parser!(u32).range(1..=4096))]
         tile_size: u32,
 
         #[arg(long)]
@@ -449,11 +449,11 @@ enum ExtractCommands {
         scm: PathBuf,
 
         /// Columns in output atlas
-        #[arg(long, default_value_t = 32)]
+        #[arg(long, default_value_t = 32, value_parser = clap::value_parser!(u32).range(1..=4096))]
         cols: u32,
 
         /// Tile size in output atlas (pixels per megatile)
-        #[arg(long, default_value_t = 32)]
+        #[arg(long, default_value_t = 32, value_parser = clap::value_parser!(u32).range(1..=4096))]
         tile_size: u32,
 
         #[arg(long)]
@@ -626,6 +626,36 @@ enum InspectCommands {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Join a caller-supplied relative name onto `base`, guaranteeing the result
+/// stays inside `base`.
+///
+/// Names reach us from user-controlled JSON (`--name-map`, `--targets`), so a
+/// `..` component or an absolute path would otherwise write outside the chosen
+/// output directory. Subdirectories are still allowed, since mappings legitimately
+/// use them (`terran/marine`).
+fn join_within(base: &Path, name: &str) -> Result<PathBuf> {
+    use std::path::Component;
+
+    let rel = PathBuf::from(name.replace('\\', "/"));
+    let mut safe = PathBuf::new();
+    for comp in rel.components() {
+        match comp {
+            Component::Normal(part) => safe.push(part),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                anyhow::bail!(
+                    "refusing unsafe output name {:?}: must be a relative path without `..`",
+                    name
+                );
+            }
+        }
+    }
+    if safe.as_os_str().is_empty() {
+        anyhow::bail!("refusing empty output name");
+    }
+    Ok(base.join(safe))
+}
 
 /// Returns `true` when the file should be skipped based on overwrite policy.
 ///
@@ -1036,7 +1066,7 @@ fn cmd_extract_anim(
                 // When a mapping exists, the named path IS the primary output.
                 // Create subdirectories as needed (e.g. terran/marine.anim).
                 if let Some(ref name) = mapped_name {
-                    let named_path = output_ref.join(format!("{}.anim", name));
+                    let named_path = join_within(output_ref, &format!("{}.anim", name))?;
                     if let Some(parent) = named_path.parent() {
                         let _ = fs::create_dir_all(parent);
                     }
@@ -1129,7 +1159,7 @@ fn cmd_extract_anim(
 
                 let mapped_name = id_to_name.get(&id.to_string()).cloned();
                 if let Some(ref name) = mapped_name {
-                    let named_path = output.join(format!("{}.anim", name));
+                    let named_path = join_within(output, &format!("{}.anim", name))?;
                     if let Some(parent) = named_path.parent() {
                         let _ = fs::create_dir_all(parent);
                     }
@@ -1368,7 +1398,7 @@ fn discover_sound(archive: &CascArchive, storage: &CascStorage, stem_hint: &str)
     // Split hint on '_' to get keywords (e.g. "zergling_attack" -> ["zergling", "att"])
     let keywords: Vec<String> = hint_lower
         .split('_')
-        .map(|w| w[..w.len().min(4)].to_string())
+        .map(|w| w.chars().take(4).collect::<String>())
         .collect();
 
     let candidate = files.iter().find(|f| {
@@ -1424,13 +1454,17 @@ fn cmd_sounds_extract(
 
     let total = targets.len();
     let mut extracted = 0usize;
+    let mut pre_existing = 0usize;
 
     for (out_name, candidates) in &targets {
-        let dest = output.join(out_name);
+        let dest = join_within(output, out_name)?;
         if dest.exists() {
             println!("  {} already exists, skipping", out_name);
-            extracted += 1;
+            pre_existing += 1;
             continue;
+        }
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)?;
         }
 
         let mut found = false;
@@ -1482,22 +1516,28 @@ fn cmd_sounds_extract(
         }
     }
 
+    // `resolved` counts targets that are present on disk; `extracted` counts only
+    // what this run actually pulled from the archive, so a re-run cannot report
+    // progress it did not make.
+    let resolved = extracted + pre_existing;
     println!(
         "\n== Result ==================================================\n  \
-         {}/{} sounds extracted to {}",
-        extracted,
+         {}/{} sounds available in {} ({} newly extracted, {} already present)",
+        resolved,
         total,
-        output.display()
+        output.display(),
+        extracted,
+        pre_existing
     );
     println!(
         "\nIf any are missing, check exact paths with:\n  \
          casc-extractor sounds list"
     );
 
-    if fail_on_incomplete && extracted < total {
+    if fail_on_incomplete && resolved < total {
         return Err(anyhow::anyhow!(
             "sound extraction incomplete: {}/{} targets resolved",
-            extracted,
+            resolved,
             total
         ));
     }
@@ -1863,6 +1903,11 @@ fn cmd_validate_run(dir: &Path, suite_path: &Path, json_output: bool) -> Result<
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
         println!("\n{}/{} checks passed", passed, total);
+    }
+
+    // A regression check that reports failures but exits 0 cannot gate CI.
+    if passed < total {
+        anyhow::bail!("{} of {} validation check(s) failed", total - passed, total);
     }
     Ok(())
 }
@@ -3521,6 +3566,62 @@ fn cmd_sounds_probe(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -----------------------------------------------------------------------
+    // join_within
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn join_within_allows_plain_and_nested_names() {
+        let base = Path::new("/out");
+        assert_eq!(join_within(base, "marine.anim").unwrap(), base.join("marine.anim"));
+        assert_eq!(
+            join_within(base, "terran/marine.anim").unwrap(),
+            base.join("terran").join("marine.anim")
+        );
+        // Archive-style backslashes are normalised, not treated as one filename.
+        assert_eq!(
+            join_within(base, "terran\\marine.anim").unwrap(),
+            base.join("terran").join("marine.anim")
+        );
+    }
+
+    #[test]
+    fn join_within_rejects_escapes() {
+        let base = Path::new("/out");
+        for bad in [
+            "../escaped.anim",
+            "terran/../../escaped.anim",
+            "/etc/passwd",
+            "",
+            "..",
+        ] {
+            assert!(
+                join_within(base, bad).is_err(),
+                "{:?} should be rejected as an output name",
+                bad
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // tileset_name_from_era
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn tileset_name_from_era_matches_bw_ids() {
+        // Canonical Brood War tileset ids; 3 is ashworld, not jungle.
+        assert_eq!(tileset_name_from_era(0), "badlands");
+        assert_eq!(tileset_name_from_era(1), "platform");
+        assert_eq!(tileset_name_from_era(2), "install");
+        assert_eq!(tileset_name_from_era(3), "ashworld");
+        assert_eq!(tileset_name_from_era(4), "jungle");
+        assert_eq!(tileset_name_from_era(5), "desert");
+        assert_eq!(tileset_name_from_era(6), "ice");
+        assert_eq!(tileset_name_from_era(7), "twilight");
+        // CHK stores the tileset in the low 3 bits, so higher bits wrap.
+        assert_eq!(tileset_name_from_era(11), "ashworld");
+    }
 
     // -----------------------------------------------------------------------
     // passes_filter
