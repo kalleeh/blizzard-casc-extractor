@@ -38,7 +38,8 @@ Heroes of the Storm, World of Warcraft, Diablo III, Overwatch.
 - StarCraft: Remastered installed
 - CascLib native library (must be built from source — see [`lib/README.md`](lib/README.md))
 - macOS (ARM64) or Linux (x86_64)
-- ImageMagick (`magick`) for DDS → PNG conversion (optional but recommended)
+
+DDS → PNG conversion is done in-process (BC1/BC3); no external tools required.
 
 ## Quick Start
 
@@ -47,7 +48,7 @@ Heroes of the Storm, World of Warcraft, Diablo III, Overwatch.
 cargo build --release
 
 # Auto-detects StarCraft installation. Use --install-path to override.
-DYLD_LIBRARY_PATH=lib ./target/release/casc-extractor <command>
+DYLD_LIBRARY_PATH=lib DYLD_FRAMEWORK_PATH=lib ./target/release/casc-extractor <command>
 ```
 
 ## Commands
@@ -99,32 +100,31 @@ casc-extractor extract tileset --quality hd4 --convert-to-png
 casc-extractor extract effect --quality hd4 --convert-to-png
 ```
 
-### `extract organized` — mapping-driven extraction
-
-Extracts sprites from a YAML mapping file that maps unit names to CASC paths,
-producing a categorised directory tree.
+### Terrain and tileset extraction
 
 ```bash
-casc-extractor extract organized --mapping mappings/starcraft-remastered.yaml \
-  --quality sd --convert-to-png
+# Atlas of raw tileset tiles
+casc-extractor extract tileset-atlas --tileset jungle --max-tiles 64 --cols 8
 
-# HD with team-color mask and extra layers
-casc-extractor extract organized --quality hd4 --convert-to-png \
-  --team-color-mask --layers diffuse,normal
+# Atlas of assembled megatiles (VX4EX-indexed)
+casc-extractor extract tileset-megatile --tileset jungle --max-tiles 64
+
+# Exactly the terrain a given map uses, as an atlas + minimap + JSON
+casc-extractor extract map-terrain --scm "/path/to/(8)Char Magma.scm"
+
+# A raw, non-MPQ scenario.chk (e.g. an extracted campaign mission)
+casc-extractor extract map-terrain --chk scenario.chk --name Terran01
+
+# Dual-layer variant (diffuse + opaque base)
+casc-extractor extract map-terrain-dual --scm "/path/to/map.scm"
 ```
 
-Output structure:
-```
-output/
-├── terran/units/       # marine, ghost, firebat, …
-├── terran/buildings/
-├── protoss/units/
-├── protoss/buildings/
-├── zerg/units/
-├── zerg/buildings/
-├── effects/
-├── neutral/
-└── ui/
+### Other extraction subcommands
+
+```bash
+casc-extractor extract mainmenu --convert-to-png   # main-menu art
+casc-extractor extract cmdicons --convert-to-png   # command-card icons
+casc-extractor extract dat                         # units.dat, weapons.dat, …
 ```
 
 ### `sounds extract`
@@ -134,6 +134,7 @@ casc-extractor sounds extract
 casc-extractor sounds list                        # enumerate audio paths
 casc-extractor sounds export-targets              # write built-in target list to JSON
 casc-extractor sounds extract --targets my.json  # use custom target list
+casc-extractor sounds probe                        # report which targets resolve
 ```
 
 ### `extract raw` — raw file extraction
@@ -165,7 +166,7 @@ casc-extractor extract raw --search "cmdicons" --output /tmp/icons
 |------|-------------|
 | `FILE_PATH …` | One or more exact CASC archive paths. Mutually exclusive with `--search`. |
 | `--search <pattern>` | Extract all files whose path contains this substring (case-insensitive). |
-| `--locale <code>` | Locale used for `--search` filtering and the automatic locale prefix (default: `enUS`). |
+| `--locale <code>` | Locale for the automatic `--online` path prefix, and for narrowing `--search` results that live under `locales\` (default: `enUS`). Locale-neutral paths are never filtered out. |
 | `--online` | Open the CDN-backed archive to reach files not present in the local install. |
 | `--preserve-path` / `-p` | Write output to the full archive sub-path instead of filename-only. |
 
@@ -190,8 +191,9 @@ casc-extractor extract raw "Assets\rez\statbtnn.ui.json" --online
 casc-extractor extract raw "locales\enUS\Assets\rez\statbtnn.ui.json" --online
 ```
 
-When using `--search`, the locale string is matched as a substring, so
-`--locale enUS` already restricts results to the `enUS` tree.
+When using `--search`, the locale only narrows paths that are themselves under
+`locales\`, so `--locale enUS` restricts localised hits to the `enUS` tree while
+still matching the locale-neutral majority of the archive.
 
 #### Embedded fallbacks
 
@@ -246,7 +248,7 @@ casc-extractor validate run --dir output/ --suite regression.json
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--install-path <path>` | | Override auto-detected StarCraft installation |
-| `--output <dir>` | | Output directory (default: `output`; overrides config) |
+| `--output <dir>` | | Output directory (default: `extracted`; overrides config) |
 | `--config <path>` | `-c` | Path to a JSON config file |
 | `--verbose` | `-v` | Enable debug logging |
 | `--validate-only` | | Open archive and list files without writing output |
@@ -316,7 +318,7 @@ src/
 │   └── hd_parser.rs    — HdAnimFile, layer extraction, team-colour helpers
 ├── casc/               — CascLib FFI, archive discovery, file enumeration
 ├── config/             — ExtractionConfig (serde JSON, all fields wired)
-├── dds_converter.rs    — DDS → PNG via ImageMagick + ddsfile fallback
+├── dds_converter.rs    — DDS → PNG (BC1/BC3) via ddsfile + texture2ddecoder
 ├── grp/                — GRP (SD) parser, RLE decoder, spritesheet builder
 ├── sprite/export.rs    — ExportConfig, export_anim pipeline
 ├── mapping/            — YAML sprite-name → CASC-path loader

@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Terrain rendered with the wrong tileset for every map with `ERA >= 2`: BW's
+  canonical ids are `2=install, 3=ashworld, 4=jungle`, so lava maps were drawn
+  with jungle art.
+- WPE palettes are RGB0, not BGR0 — red and blue were swapped in all
+  `map-terrain` output.
+- `.dds.vr4` tile stride was hardcoded to 8192. Each tile is a standalone DDS
+  (128-byte header + BC1 payload + 12 padding) and its size varies by quality
+  (128×128 full-res, 64×64 under HD2), so `tileset-atlas`, `tileset-megatile`
+  and `map-terrain-dual` produced garbled atlases.
+- `map-terrain-dual` skipped the CV5 indirection (`MTXM → CV5 → tile`) that
+  `map-terrain` already performed, leaving 70% of tile lookups out of range.
+- GRP RLE mis-decoded the code byte `0x40`, writing 64 wrong pixels and
+  desynchronising the rest of the scanline.
+- `extract raw --search` ANDed the `--locale` default into every path, hiding
+  93% of the archive; locale now narrows only locale-scoped paths.
+- `extract anim` with a name map copied rather than renamed each `.anim`,
+  doubling output size.
+- `--layers ao` silently produced nothing (header spells it `ao_depth`), and the
+  conventional layer-index fallback table was misordered.
+- `validate run` exited 0 on failing checks; `sounds extract` counted
+  pre-existing files as freshly extracted.
+- Path traversal via `--name-map` and `--targets` output names.
+- Panics on `--cols 0`, oversized `--cols`/`--tile-size`, and non-ASCII
+  `--targets` names.
+
+### Changed
+
+- DDS → PNG decoding is done in-process (BC1/BC3 via `ddsfile` +
+  `texture2ddecoder`) instead of spawning ImageMagick per file. A full SD run
+  (868 sprites) goes from ~12.5s to ~0.9s; output is byte-identical. ImageMagick
+  is no longer a dependency.
+- `--team-color-mask` now writes the diffuse PNG unmodified alongside the binary
+  mask, matching the documented shader. Previously masked pixels were replaced
+  with BT.601 luminance, discarding chroma.
+- Release profile enables `overflow-checks` and keeps the symbol table
+  (`strip = "debuginfo"`) so parser panics yield usable backtraces.
+
+### Security
+
+- `lz4_flex` 0.11.5 → 0.11.6 (RUSTSEC-2026-0041, CVSS 8.2: uninitialised memory
+  disclosure when decompressing invalid data, reachable from ANIM textures) and
+  `crossbeam-epoch` 0.9.18 → 0.9.20. CI's `cargo audit` is no longer
+  `continue-on-error`, and now also runs `cargo test --tests`.
+
 ## [0.1.0] - 2026-06-14
 
 Initial public release: a CASC extraction CLI for StarCraft: Remastered, with a
@@ -26,7 +72,7 @@ production-readiness pass for correctness, robustness, and operability.
 - Unit/UI sound (WAV) extraction; `sounds --fail-on-incomplete` flag to exit
   non-zero when a requested sound target is missing, for reliable scripted use.
 - DAT file extraction.
-- `--save-dds`, `--layers`, and `--team-color-mask` options on `extract organized`;
+- `--save-dds`, `--layers`, and `--team-color-mask` options on `extract anim`;
   `--convert-to-png` wired on `extract tileset` / `extract effect`.
 - Unity integration options (pixels-per-unit, metadata JSON, filter/wrap modes).
 - JSON configuration file support with overwrite-behaviour modes

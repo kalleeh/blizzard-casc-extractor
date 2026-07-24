@@ -16,8 +16,13 @@ Every HD ANIM file contains up to 7 named layers stored in order:
 
 **Important:** the `teamcolor` layer at index 2 is a **DXT1 binary mask** — its pixels
 are either fully opaque white (team-colour region) or fully transparent (not team-coloured).
-It is *not* the same as the derived `_tc.png` that `--team-color-mask` exports (which is
-derived from the `bright` layer and has varying luminance).
+`--team-color-mask` exports this layer verbatim as `_tc.png`, and writes the diffuse
+PNG **unmodified**, so applying the formula below reproduces exactly what the game
+renders.
+
+Note the mask relies on BC1 one-bit alpha: its blocks all use the punchthrough mode
+(`color0 <= color1`), where colour index 3 means transparent. A BC1 decoder that
+ignores this returns an all-opaque mask, making every pixel look team-coloured.
 
 The layer *names* are always present in the header, but the layer *data* may be empty
 (`size == 0`) for sprites that carry no team colour (neutral units, effects, etc.).
@@ -116,7 +121,10 @@ def apply_player_color(diffuse_png, tc_dds_bytes, player_rgb):
     Composite player_rgb onto diffuse using the binary teamcolor mask.
     Returns a PIL RGBA Image.
     """
-    # Decode DXT1 teamcolor mask via ImageMagick
+    # Decode the DXT1 teamcolor mask. Simplest route: let the extractor do it —
+    #   casc-extractor extract anim --ids N --convert-to-png --team-color-mask
+    # writes main_NNN.png (raw diffuse) and main_NNN_tc.png (the mask), so this
+    # step is only needed when starting from raw DDS bytes.
     with open('/tmp/_tc.dds', 'wb') as f:
         f.write(tc_dds_bytes)
     subprocess.run(['magick', '/tmp/_tc.dds', '/tmp/_tc.png'], check=True)
