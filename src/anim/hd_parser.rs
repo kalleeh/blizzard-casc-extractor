@@ -115,9 +115,11 @@ impl HdAnimFile {
         for _ in 0..10 {
             let mut name_bytes = [0u8; 32];
             cursor.read_exact(&mut name_bytes)?;
-            let name = String::from_utf8_lossy(&name_bytes)
-                .trim_end_matches('\0')
-                .to_string();
+            // Truncate at the first NUL: a reused slot can hold stale bytes after
+            // the terminator, and trailing-only trimming would keep them, breaking
+            // the name lookup in get_team_color_layer().
+            let end = name_bytes.iter().position(|&b| b == 0).unwrap_or(name_bytes.len());
+            let name = String::from_utf8_lossy(&name_bytes[..end]).into_owned();
             layer_names.push(name);
         }
         
@@ -196,10 +198,23 @@ impl HdAnimFile {
     /// The correct teamcolor layer is at index 2 (by name lookup in the header).
     pub fn get_team_color_layer(&self) -> Option<&[u8]> {
         // Find the layer named "teamcolor" in the header to get the correct index.
-        let idx = self.header.layer_names
+        let idx = match self
+            .header
+            .layer_names
             .iter()
-            .position(|n| n.eq_ignore_ascii_case("teamcolor"))
-            .unwrap_or(2);
+            .position(|n| n.trim().eq_ignore_ascii_case("teamcolor"))
+        {
+            Some(idx) => idx,
+            None => {
+                // Falling back to the conventional slot can composite the wrong
+                // layer as the mask, so say so rather than failing silently.
+                log::warn!(
+                    "no layer named \"teamcolor\" in header (names: {:?}); falling back to index 2",
+                    self.header.layer_names
+                );
+                2
+            }
+        };
         self.layer_data.get(idx).filter(|d| !d.is_empty()).map(|d| d.as_slice())
     }
 
@@ -220,23 +235,12 @@ impl HdAnimFile {
         Some(crate::dds_converter::dds_to_png(dds))
     }
 
-    /// Build the team-color mask PNG from layer 1.
+    /// Build the team-colour mask PNG from the `teamcolor` layer.
     ///
-    /// Each output pixel: R=G=B=BT.601 luminance of the TC pixel, A=TC alpha.
-    /// Returns `None` if layer 1 is absent or empty.
+    /// Opaque white marks team-coloured pixels, transparent marks the rest.
+    /// Returns `None` if the layer is absent or empty.
     pub fn team_color_mask_image(&self) -> Option<io::Result<RgbaImage>> {
         let tc_dds = self.get_team_color_layer()?;
         Some(crate::dds_converter::build_tc_mask_png(tc_dds))
-    }
-
-    /// Build a diffuse PNG with hue stripped from all TC-masked pixels.
-    ///
-    /// Where TC layer alpha > 0 the diffuse R/G/B are replaced by BT.601
-    /// luminance, keeping diffuse alpha.  Requires both layer 0 and layer 1.
-    /// Returns `None` if either layer is absent.
-    pub fn diffuse_tc_stripped_image(&self) -> Option<io::Result<RgbaImage>> {
-        let diffuse_dds = self.get_diffuse_layer()?;
-        let tc_dds = self.get_team_color_layer()?;
-        Some(crate::dds_converter::build_diffuse_tc_stripped_png(diffuse_dds, tc_dds))
     }
 }

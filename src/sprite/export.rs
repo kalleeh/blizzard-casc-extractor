@@ -104,33 +104,11 @@ pub fn export_anim(
                 // ---------------------------------------------------------
                 // Team-colour-aware diffuse export
                 // ---------------------------------------------------------
-                // If the TC layer is present, strip the hue from pixels that
-                // the TC layer covers before writing the diffuse PNG.
-                let write_result = if anim.get_team_color_layer().is_some() {
-                    match anim.diffuse_tc_stripped_image() {
-                        Some(Ok(img)) => img
-                            .save(&png_path)
-                            .map_err(|e| {
-                                std::io::Error::other(
-                                    format!("PNG save error: {}", e),
-                                )
-                            }),
-                        Some(Err(e)) => {
-                            // TC-stripping failed — fall back to the plain diffuse.
-                            eprintln!(
-                                "     Warning: TC-stripping failed ({}), falling back to plain diffuse",
-                                e
-                            );
-                            save_dds_as_png(diffuse, &png_path)
-                        }
-                        None => save_dds_as_png(diffuse, &png_path),
-                    }
-                } else {
-                    // No TC layer in this file — write diffuse unchanged.
-                    save_dds_as_png(diffuse, &png_path)
-                };
-
-                write_result.with_context(|| {
+                // The diffuse is written unmodified: SC:R's shader multiplies
+                // the raw diffuse by the player colour where the mask is set,
+                // so altering the diffuse here would make the documented
+                // formula reproduce something the game never renders.
+                save_dds_as_png(diffuse, &png_path).with_context(|| {
                     format!("writing diffuse PNG {}", png_path.display())
                 })?;
 
@@ -165,61 +143,25 @@ pub fn export_anim(
                 // ---------------------------------------------------------
                 // Plain diffuse export (no TC processing)
                 // ---------------------------------------------------------
-                // Mirror the binary: try ImageMagick first, fall back to the
-                // ddsfile crate if ImageMagick is not available or fails.
-                let dds_path = output_base.with_extension("dds");
-
-                // Write DDS to disk temporarily for ImageMagick if it is not
-                // already written.
-                if !config.save_dds {
-                    File::create(&dds_path)
-                        .with_context(|| {
-                            format!("creating temporary DDS file {}", dds_path.display())
-                        })?
-                        .write_all(diffuse)
-                        .with_context(|| {
-                            format!("writing temporary DDS file {}", dds_path.display())
-                        })?;
-                }
-
-                let magick_ok = std::process::Command::new("magick")
-                    .args([
-                        dds_path.to_str().unwrap_or(""),
-                        png_path.to_str().unwrap_or(""),
-                    ])
-                    .output()
-                    .map(|o| o.status.success())
-                    .unwrap_or(false);
-
-                if !magick_ok {
-                    save_dds_as_png(diffuse, &png_path).with_context(|| {
-                        format!(
-                            "PNG conversion failed for {} (install ImageMagick for better DDS support)",
-                            png_path.display()
-                        )
-                    })?;
-                }
-
-                // Remove the temporary DDS unless the caller asked to keep it.
-                if !config.save_dds {
-                    let _ = std::fs::remove_file(&dds_path);
-                }
+                save_dds_as_png(diffuse, &png_path).with_context(|| {
+                    format!("writing diffuse PNG {}", png_path.display())
+                })?;
             }
         }
 
         // -----------------------------------------------------------------
         // Export additional requested layers (normal, specular, emissive, ao …)
         // -----------------------------------------------------------------
-        // Conventional layer-name → index mapping for HD ANIM files.
-        // Layer 0 = diffuse (handled above), layer 1 = teamcolor (handled via
-        // team_color_mask), remaining layers are optional.
+        // Conventional layer order for HD ANIM files, used only when a file's
+        // header does not name its layers. See docs/team-color.md.
         let conventional_index: &[(&str, usize)] = &[
             ("diffuse",   0),
-            ("teamcolor", 1),
-            ("normal",    2),
-            ("specular",  3),
-            ("emissive",  4),
-            ("ao",        5),
+            ("bright",    1),
+            ("teamcolor", 2),
+            ("emissive",  3),
+            ("normal",    4),
+            ("specular",  5),
+            ("ao",        6),
         ];
 
         for layer_name in &config.layers {
@@ -231,11 +173,16 @@ pub fn export_anim(
 
             // Resolve the layer index: try matching against the file's own
             // layer_names first, then fall back to the conventional table.
+            // The header spells the last layer "ao_depth", so accept the "ao"
+            // CLI alias as a prefix match.
             let layer_index = anim
                 .header
                 .layer_names
                 .iter()
-                .position(|n| n.to_lowercase() == lname)
+                .position(|n| {
+                    let n = n.trim().to_lowercase();
+                    n == lname || (lname == "ao" && n.starts_with("ao"))
+                })
                 .or_else(|| {
                     conventional_index
                         .iter()
