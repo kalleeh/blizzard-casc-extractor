@@ -408,12 +408,26 @@ enum ExtractCommands {
         output: Option<PathBuf>,
     },
 
-    /// Extract the exact terrain tiles used by a specific BW map (.scm/.scx).
+    /// Extract the exact terrain tiles used by a specific BW map (.scm/.scx),
+    /// or a raw scenario.chk file (via --chk, e.g. an already-extracted
+    /// campaign mission that isn't MPQ-wrapped).
     /// Output: `<output>/map-terrain/` by default.
     MapTerrain {
-        /// Path to the .scm or .scx map file
+        /// Path to the .scm or .scx map file (MPQ-wrapped). Mutually
+        /// exclusive with --chk.
+        #[arg(long, required_unless_present = "chk", conflicts_with = "chk")]
+        scm: Option<PathBuf>,
+
+        /// Path to a raw (non-MPQ) scenario.chk file. Requires --name for the
+        /// output filename stem, since a raw campaign chk is always literally
+        /// "scenario.chk" and its own file stem is useless.
+        #[arg(long, requires = "name")]
+        chk: Option<PathBuf>,
+
+        /// Output filename stem when using --chk (e.g. "Terran01" →
+        /// Terran01_terrain.{png,json} + Terran01_minimap.png).
         #[arg(long)]
-        scm: PathBuf,
+        name: Option<String>,
 
         /// Columns in output atlas
         #[arg(long, default_value_t = 32)]
@@ -2078,32 +2092,54 @@ fn cmd_extract_tileset_atlas(
     Ok(())
 }
 
+/// Read a scenario.chk either from an MPQ-wrapped .scm/.scx (`scm_path`) or
+/// directly from a raw .chk file (`chk_path`); exactly one must be `Some`.
+/// Returns the CHK bytes and the output filename stem.
+fn acquire_chk_bytes(
+    scm_path: Option<&Path>,
+    chk_path: Option<&Path>,
+    name: Option<&str>,
+) -> Result<(Vec<u8>, String)> {
+    use mpq::Archive;
+    if let Some(chk_path) = chk_path {
+        let bytes = fs::read(chk_path)
+            .with_context(|| format!("Failed to read raw CHK: {:?}", chk_path))?;
+        let stem = name
+            .map(|s| s.to_string())
+            .expect("clap requires --name alongside --chk");
+        Ok((bytes, stem))
+    } else {
+        let scm_path = scm_path.expect("clap requires --scm when --chk absent");
+        let mut archive_mpq = Archive::open(scm_path)
+            .with_context(|| format!("Failed to open MPQ: {:?}", scm_path))?;
+        let chk_file = archive_mpq.open_file("staredit\\scenario.chk")
+            .or_else(|_| archive_mpq.open_file("staredit/scenario.chk"))
+            .or_else(|_| archive_mpq.open_file("scenario.chk"))
+            .with_context(|| "CHK not found in MPQ")?;
+        let chk_size = chk_file.size() as usize;
+        let mut chk_bytes = vec![0u8; chk_size];
+        chk_file.read(&mut archive_mpq, &mut chk_bytes)
+            .context("Failed to read CHK")?;
+        let stem = scm_path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+        Ok((chk_bytes, stem))
+    }
+}
+
 fn cmd_extract_map_terrain(
     archive: &CascArchive,
-    scm_path: &Path,
+    scm_path: Option<&Path>,
+    chk_path: Option<&Path>,
+    name: Option<&str>,
     cols: u32,
     tile_size: u32,
     output: &Path,
 ) -> Result<()> {
     use image::{ImageBuffer, RgbaImage};
-    use mpq::Archive;
 
     fs::create_dir_all(output)?;
 
-    // 1. Parse SCM to get ERA (tileset) and MTXM (megatile IDs)
-    let mut archive_mpq = Archive::open(scm_path)
-        .with_context(|| format!("Failed to open MPQ: {:?}", scm_path))?;
-
-    // Try each path variant; open_file returns File which requires archive to read.
-    let chk_file = archive_mpq.open_file("staredit\\scenario.chk")
-        .or_else(|_| archive_mpq.open_file("staredit/scenario.chk"))
-        .or_else(|_| archive_mpq.open_file("scenario.chk"))
-        .with_context(|| "CHK not found in MPQ")?;
-
-    let chk_size = chk_file.size() as usize;
-    let mut chk_bytes = vec![0u8; chk_size];
-    chk_file.read(&mut archive_mpq, &mut chk_bytes)
-        .context("Failed to read CHK")?;
+    // 1. Parse SCM/CHK to get ERA (tileset) and MTXM (megatile IDs)
+    let (chk_bytes, map_stem) = acquire_chk_bytes(scm_path, chk_path, name)?;
 
     // Parse CHK chunks
     let mut era: u16 = 3; // default jungle
@@ -2287,6 +2323,52 @@ fn cmd_extract_map_terrain(
         }
     }
 
+    // Build per-tile ground level (0 = low, 1 = mid, 2 = high) from the VF4
+    // elevation bits: flag_middle 0x0002, flag_high 0x0004, flag_very_high 0x0008.
+    //
+    // BW derives a megatile's elevation from its 16 mini-tiles by COUNT, not by
+    // "any bit set" (bwgame.h:21097-21099 in tiles_flags_and, which builds
+    // tile_t::flag_middle / flag_high):
+    //     high >= 12                        -> high  (2)
+    //     high < 12 && middle + high >= 12  -> mid   (1)
+    //     otherwise                          -> low   (0)
+    // A separate flag_very_high (any mini-tile) marks fully sight-blocking
+    // terrain and is emitted as level 3 so the consumer can treat it like BW's
+    // flag_very_high, which blocks vision from every ground elevation.
+    // Emitted id-keyed (like `walkable_ids`) rather than as a per-tile grid:
+    // elevation is a pure function of the megatile id, so a compact
+    // [id, level] table lets a consumer derive any map's heights from the
+    // MTXM it already holds, and stays valid if the map is re-cropped.
+    let ground_level = |mega_id: u16| -> u8 {
+        let Some(vx4_idx) = mtxm_to_vx4(mega_id) else { return 0 };
+        let vf4_off = vx4_idx * VF4_ENTRY_BYTES;
+        if vf4_off + VF4_ENTRY_BYTES > vf4_data.len() { return 0; }
+        let (mut middle_count, mut high_count, mut very_high_count) = (0u32, 0u32, 0u32);
+        for i in 0..16usize {
+            let flags = u16::from_le_bytes(
+                vf4_data[vf4_off + i*2 .. vf4_off + i*2 + 2].try_into().unwrap()
+            );
+            if flags & 0x0002 != 0 { middle_count += 1; }
+            if flags & 0x0004 != 0 { high_count += 1; }
+            if flags & 0x0008 != 0 { very_high_count += 1; }
+        }
+        if very_high_count > 0 { 3 }
+        else if high_count >= 12 { 2 }
+        else if middle_count + high_count >= 12 { 1 }
+        else { 0 }
+    };
+    let mut height_levels: Vec<[u32; 2]> = unique_ids.iter()
+        .map(|&id| [id as u32, ground_level(id) as u32])
+        .filter(|&[_, lvl]| lvl != 0)   // level 0 is the default; omit for compactness
+        .collect();
+    height_levels.sort_unstable();
+    let level_hist = unique_ids.iter().fold([0u32; 4], |mut acc, &id| {
+        acc[ground_level(id) as usize] += 1;
+        acc
+    });
+    println!("Ground levels over {} unique megatiles: low={} mid={} high={} very_high={}",
+        unique_ids.len(), level_hist[0], level_hist[1], level_hist[2], level_hist[3]);
+
     // Pipeline: MTXM → CV5 → VX4EX → 16 classic VR4 mini-tiles (8×8) → 32×32 megatile.
     // 4. Build atlas: 4×4 classic 8×8 mini-tiles → 32×32 megatile → scaled to tile_size
     const MEGA_W: u32 = 32; // 4 mini-tiles × 8px = 32px megatile
@@ -2340,7 +2422,6 @@ fn cmd_extract_map_terrain(
     }
 
     // 5. Save atlas and mapping
-    let map_stem = scm_path.file_stem().unwrap_or_default().to_string_lossy();
     let safe_name: String = map_stem.chars()
         .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
         .collect();
@@ -2374,7 +2455,7 @@ fn cmd_extract_map_terrain(
     minimap.save(&mm_path)?;
 
     let meta = serde_json::json!({
-        "map": map_stem.as_ref(),
+        "map": map_stem.as_str(),
         "tileset": tileset_name,
         "era": era,
         "tile_size": tile_size,
@@ -2389,6 +2470,10 @@ fn cmd_extract_map_terrain(
         "walk_map": walk_map,
         "walk_map_width": walk_w,
         "walk_map_height": walk_h,
+        // VF4-derived ground level per megatile id: [megatile_id, level] pairs,
+        // level 1 = mid, 2 = high, 3 = very high (fully sight-blocking).
+        // Ids absent from this table are level 0 (low).
+        "height_levels": height_levels,
     });
     let json_path = output.join(format!("{}_terrain.json", safe_name));
     fs::write(&json_path, serde_json::to_string_pretty(&meta)?)?;
@@ -2874,9 +2959,9 @@ fn main() -> Result<()> {
                     let out = mega_output.unwrap_or_else(|| output.join("tileset-megatile"));
                     cmd_extract_tileset_megatile(&archive, &tileset, quality, max_tiles, tile_size, cols, &out)?;
                 }
-                ExtractCommands::MapTerrain { scm, cols, tile_size, output: terrain_output } => {
+                ExtractCommands::MapTerrain { scm, chk, name, cols, tile_size, output: terrain_output } => {
                     let out = terrain_output.unwrap_or_else(|| output.join("map-terrain"));
-                    cmd_extract_map_terrain(&archive, &scm, cols, tile_size, &out)?;
+                    cmd_extract_map_terrain(&archive, scm.as_deref(), chk.as_deref(), name.as_deref(), cols, tile_size, &out)?;
                 }
                 ExtractCommands::MapTerrainDual { scm, cols, tile_size, output: terrain_output } => {
                     let out = terrain_output.unwrap_or_else(|| output.join("map-terrain"));
