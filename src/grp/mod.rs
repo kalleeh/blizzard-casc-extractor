@@ -227,9 +227,9 @@ impl GrpFile {
     /// Decode a single RLE-encoded line into a flat pixel buffer of `width` bytes.
     ///
     /// RLE codes:
-    ///   byte >= 0x80  — skip (byte - 0x80) transparent pixels
-    ///   byte >  0x40  — repeat the next byte (byte - 0x40) times
-    ///   otherwise     — copy the next `byte` literal bytes
+    ///   byte & 0x80  — skip (byte & 0x7F) transparent pixels
+    ///   byte & 0x40  — repeat the next byte (byte & 0x3F) times
+    ///   otherwise    — copy the next `byte` literal bytes
     fn decode_rle_line(line_data: &[u8], width: u16) -> Result<Vec<u8>, GrpError> {
         let w = width as usize;
         let mut pixels = vec![0u8; w];
@@ -240,13 +240,13 @@ impl GrpFile {
             let byte = line_data[pos];
             pos += 1;
 
-            if byte >= 0x80 {
+            if byte & 0x80 != 0 {
                 // Skip (transparent) pixels — advance col, leave zeros in place
-                let skip = (byte - 0x80) as usize;
+                let skip = (byte & 0x7F) as usize;
                 col = col.saturating_add(skip).min(w);
-            } else if byte > 0x40 {
+            } else if byte & 0x40 != 0 {
                 // RLE repeat: fill `count` pixels with the next byte value
-                let count = (byte - 0x40) as usize;
+                let count = (byte & 0x3F) as usize;
                 if pos >= line_data.len() {
                     break;
                 }
@@ -524,6 +524,26 @@ mod tests {
         assert_eq!(frame.pixel_data[5], 200);
     }
     
+    #[test]
+    fn test_rle_code_byte_0x40_is_a_zero_length_run() {
+        // 0x40 is the one code byte where `byte > 0x40` and `byte & 0x40` diverge:
+        // it is a repeat with count 0, consuming 2 bytes. Treating it as a literal
+        // consumed 65 bytes and desynchronised the rest of the line.
+        let mut data = vec![1, 0, 3, 0, 1, 0]; // 1 frame, 3x1
+        data.extend_from_slice(&[0, 0, 0, 0, 14, 0, 0, 0]);
+        data.extend_from_slice(&[2, 0]);       // one line offset
+        data.extend_from_slice(&[0x40, 99]);   // zero-length run of 99 → writes nothing
+        data.extend_from_slice(&[0x43, 7]);    // run of 3 pixels of 7
+
+        let grp = GrpFile::parse(&data).expect("0x40 run should decode");
+        let frame = grp.get_first_frame().expect("frame");
+        assert_eq!(
+            frame.pixel_data,
+            vec![7, 7, 7],
+            "0x40 must consume its value byte and write nothing, leaving the next run aligned"
+        );
+    }
+
     #[test]
     fn test_rle_error_handling() {
         // The refactored RLE decoder is tolerant: it clamps rather than errors.

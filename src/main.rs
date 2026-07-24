@@ -1130,13 +1130,31 @@ fn cmd_extract_anim(
                 let mapped_name = id_to_name.get(&id.to_string()).cloned();
                 if let Some(ref name) = mapped_name {
                     let named_path = output.join(format!("{}.anim", name));
-                    if let Err(e) = fs::copy(&output_path, &named_path) {
-                        eprintln!("Warning: could not write named copy {:?}: {}", named_path, e);
+                    if let Some(parent) = named_path.parent() {
+                        let _ = fs::create_dir_all(parent);
+                    }
+                    let mut final_path = output_path.clone();
+                    if named_path != output_path {
+                        match fs::rename(&output_path, &named_path) {
+                            Ok(()) => final_path = named_path.clone(),
+                            Err(e) => {
+                                // rename can fail across filesystems; fall back to copy+delete
+                                if fs::copy(&output_path, &named_path).is_ok() {
+                                    let _ = fs::remove_file(&output_path);
+                                    final_path = named_path.clone();
+                                } else {
+                                    eprintln!(
+                                        "Warning: could not move to named path {:?}: {}",
+                                        named_path, e
+                                    );
+                                }
+                            }
+                        }
                     }
                     println!(
                         "  {}.anim ({}, {:.1} MB)",
                         name,
-                        output_path.display(),
+                        final_path.display(),
                         data.len() as f64 / 1_000_000.0
                     );
                 } else {
@@ -1868,21 +1886,11 @@ fn cmd_extract_tileset_megatile(
     let vr4_raw = archive.extract_file(&vr4_path)
         .with_context(|| format!("VR4 not found: {}", vr4_path))?;
 
-    // DDS header: 128×128 DXT1 tiles, 8192 bytes each. Each VR4 entry IS a full megatile.
-    const VR4_HEADER: usize = 148;
-    const TILE_STRIDE: usize = 8192;
-    const TILE_W: u32 = 128;
-    const TILE_H: u32 = 128;
-    if vr4_raw.len() < VR4_HEADER {
-        return Err(anyhow::anyhow!(
-            "VR4 too short: {} bytes, need at least {} for the DDS header",
-            vr4_raw.len(),
-            VR4_HEADER
-        ));
-    }
-    let vr4_data = &vr4_raw[VR4_HEADER..];
-    let vr4_tile_count = vr4_data.len() / TILE_STRIDE;
-    println!("VR4 tiles: {}", vr4_tile_count);
+    // Each VR4 entry IS a full megatile.
+    let layout = vr4_layout(&vr4_raw)?;
+    let (tile_w, tile_h) = (layout.tile_w, layout.tile_h);
+    let vr4_tile_count = layout.tile_count;
+    println!("VR4 tiles: {} ({}×{})", vr4_tile_count, tile_w, tile_h);
 
     // 2. Load VX4EX — 1 entry per megatile (4 bytes): vr4_idx = entry>>1, flip_x = entry&1
     let vx4_path = format!("tileset/{}.vx4ex", tileset);
@@ -1917,15 +1925,15 @@ fn cmd_extract_tileset_megatile(
 
         if vr4_idx >= vr4_tile_count { continue; }
 
-        let tile_bytes = &vr4_data[vr4_idx * TILE_STRIDE .. vr4_idx * TILE_STRIDE + TILE_STRIDE];
-        let decoded = decode_dxt1_nxn(tile_bytes, TILE_W as usize, TILE_H as usize);
+        let Some(tile_bytes) = layout.tile_bytes(&vr4_raw, vr4_idx) else { continue };
+        let decoded = decode_dxt1_nxn(tile_bytes, tile_w as usize, tile_h as usize);
 
-        let mut mini: RgbaImage = ImageBuffer::from_raw(TILE_W, TILE_H, decoded)
-            .unwrap_or_else(|| ImageBuffer::new(TILE_W, TILE_H));
+        let mut mini: RgbaImage = ImageBuffer::from_raw(tile_w, tile_h, decoded)
+            .unwrap_or_else(|| ImageBuffer::new(tile_w, tile_h));
         if flip_x { mini = image::imageops::flip_horizontal(&mini); }
 
-        // Scale 128×128 → tile_size×tile_size for the final atlas
-        let mega_scaled = if tile_size == TILE_W {
+        // Scale the native tile → tile_size×tile_size for the final atlas
+        let mega_scaled = if tile_size == tile_w {
             mini
         } else {
             image::imageops::resize(&mini, tile_size, tile_size, image::imageops::FilterType::Lanczos3)
@@ -1955,6 +1963,67 @@ fn cmd_extract_tileset_megatile(
     std::fs::write(&json_path, serde_json::to_string_pretty(&meta)?)?;
 
     Ok(())
+}
+
+/// Geometry of a `tileset/*.dds.vr4` container.
+///
+/// A VR4 is not one big DDS: it is a 20-byte outer header followed by N
+/// self-contained DDS files, each `stride` bytes apart (128-byte DDS header +
+/// BC1 payload + 12 bytes of padding). Tile dimensions differ per quality —
+/// 128×128 at full res, 64×64 under HD2 — so both stride and size must be read
+/// from the first embedded header rather than hardcoded.
+struct Vr4Layout {
+    first_dds: usize,
+    stride: usize,
+    tile_w: u32,
+    tile_h: u32,
+    tile_count: usize,
+}
+
+fn vr4_layout(vr4_raw: &[u8]) -> Result<Vr4Layout> {
+    const DDS_MAGIC: &[u8; 4] = b"DDS ";
+    const DDS_HEADER: usize = 128;
+    const PADDING: usize = 12;
+
+    let first_dds = vr4_raw
+        .windows(4)
+        .position(|w| w == DDS_MAGIC)
+        .ok_or_else(|| anyhow::anyhow!("VR4 contains no DDS tile (not a .dds.vr4 container?)"))?;
+
+    if vr4_raw.len() < first_dds + DDS_HEADER {
+        anyhow::bail!(
+            "VR4 too short: {} bytes, need at least {} for the first DDS header",
+            vr4_raw.len(),
+            first_dds + DDS_HEADER
+        );
+    }
+
+    let rd = |off: usize| -> u32 {
+        u32::from_le_bytes([
+            vr4_raw[off], vr4_raw[off + 1], vr4_raw[off + 2], vr4_raw[off + 3],
+        ])
+    };
+    let tile_h = rd(first_dds + 12);
+    let tile_w = rd(first_dds + 16);
+    if tile_w == 0 || tile_h == 0 || tile_w > 4096 || tile_h > 4096 {
+        anyhow::bail!("VR4 tile has implausible dimensions {}×{}", tile_w, tile_h);
+    }
+
+    // BC1: 8 bytes per 4×4 block.
+    let payload = (tile_w.div_ceil(4) as usize) * (tile_h.div_ceil(4) as usize) * 8;
+    let stride = DDS_HEADER + payload + PADDING;
+    let tile_count = vr4_raw.len().saturating_sub(first_dds) / stride;
+
+    Ok(Vr4Layout { first_dds, stride, tile_w, tile_h, tile_count })
+}
+
+impl Vr4Layout {
+    /// BC1 payload bytes of tile `idx`, or `None` if it lies outside the file.
+    fn tile_bytes<'a>(&self, vr4_raw: &'a [u8], idx: usize) -> Option<&'a [u8]> {
+        let start = self.first_dds + idx * self.stride + 128;
+        let end = start + self.stride - 128 - 12;
+        vr4_raw.get(start..end)
+    }
 }
 
 /// Decode a 64×64 DXT1 (BC1) compressed tile to raw RGBA pixels.
@@ -2027,21 +2096,16 @@ fn cmd_extract_tileset_atlas(
     let data = archive.extract_file(&path)
         .with_context(|| format!("Failed to extract {}", path))?;
 
-    // 20-byte VR4 header + 128-byte DDS header = 148 bytes to skip
-    if data.len() < 148 {
-        anyhow::bail!("VR4 file too small: {} bytes", data.len());
-    }
-    let pixel_data = &data[148..];
+    let layout = vr4_layout(&data)?;
+    let (tile_w, tile_h) = (layout.tile_w, layout.tile_h);
 
-    // DDS header: 128×128 DXT1 tiles, 8192 bytes each
-    const TILE_STRIDE: usize = 8192;
-    const TILE_W: u32 = 128;
-    const TILE_H: u32 = 128;
-
-    let total_tiles = (pixel_data.len() / TILE_STRIDE) as u32;
+    let total_tiles = layout.tile_count as u32;
     let n_tiles = if max_tiles == 0 { total_tiles } else { max_tiles.min(total_tiles) };
 
-    println!("Tileset: {} ({} total tiles, extracting {})", tileset, total_tiles, n_tiles);
+    println!(
+        "Tileset: {} ({} total {}×{} tiles, extracting {})",
+        tileset, total_tiles, tile_w, tile_h, n_tiles
+    );
 
     let rows = n_tiles.div_ceil(cols);
     let atlas_w = cols * tile_size;
@@ -2050,17 +2114,15 @@ fn cmd_extract_tileset_atlas(
     let mut atlas: RgbaImage = ImageBuffer::new(atlas_w, atlas_h);
 
     for i in 0..n_tiles {
-        let offset = i as usize * TILE_STRIDE;
-        if offset + TILE_STRIDE > pixel_data.len() { break; }
-        let tile_bytes = &pixel_data[offset..offset + TILE_STRIDE];
+        let Some(tile_bytes) = layout.tile_bytes(&data, i as usize) else { break };
 
-        let decoded = decode_dxt1_nxn(tile_bytes, TILE_W as usize, TILE_H as usize);
+        let decoded = decode_dxt1_nxn(tile_bytes, tile_w as usize, tile_h as usize);
 
-        let tile_img: RgbaImage = if tile_size == TILE_W {
-            ImageBuffer::from_raw(TILE_W, TILE_H, decoded)
+        let tile_img: RgbaImage = if tile_size == tile_w {
+            ImageBuffer::from_raw(tile_w, tile_h, decoded)
                 .ok_or_else(|| anyhow::anyhow!("Failed to create tile image"))?
         } else {
-            let src: RgbaImage = ImageBuffer::from_raw(TILE_W, TILE_H, decoded)
+            let src: RgbaImage = ImageBuffer::from_raw(tile_w, tile_h, decoded)
                 .ok_or_else(|| anyhow::anyhow!("Failed to create tile image"))?;
             image::imageops::resize(&src, tile_size, tile_size, image::imageops::FilterType::Lanczos3)
         };
@@ -2090,6 +2152,23 @@ fn cmd_extract_tileset_atlas(
     fs::write(&meta_path, serde_json::to_string_pretty(&meta)?)?;
 
     Ok(())
+}
+
+/// Map a CHK `ERA ` tileset id to its archive tileset name.
+///
+/// These are Brood War's canonical tileset indices; `install` at 2 is easy to
+/// miss because no ladder map ships with it.
+fn tileset_name_from_era(era: u16) -> &'static str {
+    match era & 0x7 {
+        0 => "badlands",
+        1 => "platform",
+        2 => "install",
+        3 => "ashworld",
+        4 => "jungle",
+        5 => "desert",
+        6 => "ice",
+        _ => "twilight",
+    }
 }
 
 /// Read a scenario.chk either from an MPQ-wrapped .scm/.scx (`scm_path`) or
@@ -2142,7 +2221,7 @@ fn cmd_extract_map_terrain(
     let (chk_bytes, map_stem) = acquire_chk_bytes(scm_path, chk_path, name)?;
 
     // Parse CHK chunks
-    let mut era: u16 = 3; // default jungle
+    let mut era: u16 = 4; // default jungle
     let mut dim_w: u16 = 128;
     let mut dim_h: u16 = 128;
     let mut mtxm: Vec<u16> = Vec::new();
@@ -2191,18 +2270,7 @@ fn cmd_extract_map_terrain(
         ));
     }
 
-    // Tileset name from ERA
-    let tileset_name = match era {
-        0 => "badlands",
-        1 => "platform",
-        2 => "ashworld",
-        3 => "jungle",
-        4 => "jungle",
-        5 => "desert",
-        6 => "ice",
-        7 => "twilight",
-        _ => "jungle",
-    };
+    let tileset_name = tileset_name_from_era(era);
 
     // 2. Collect all unique megatile IDs. No cap needed — we use a single atlas PNG,
     // not a GPU texture array, so there is no hardware layer limit.
@@ -2239,11 +2307,11 @@ fn cmd_extract_map_terrain(
     let wpe_data = archive.extract_file(&format!("tileset/{}.wpe", tileset_name))
         .with_context(|| format!("WPE palette not found for tileset {}", tileset_name))?;
 
-    // Build RGBA palette lookup from WPE (BGR0 format)
+    // Build RGBA palette lookup from WPE (RGB0 format — 3 colour bytes + 1 pad)
     let palette: Vec<[u8;4]> = (0..256usize).map(|i| {
         let base = i * 4;
         if base + 4 <= wpe_data.len() {
-            [wpe_data[base+2], wpe_data[base+1], wpe_data[base], 255] // BGR→RGB
+            [wpe_data[base], wpe_data[base+1], wpe_data[base+2], 255]
         } else { [0, 0, 0, 255] }
     }).collect();
     let classic_tile_count = classic_vr4.len() / 64;
@@ -2510,7 +2578,7 @@ fn cmd_extract_map_terrain_dual(
     chk_file.read(&mut archive_mpq, &mut chk_bytes)
         .context("Failed to read CHK")?;
 
-    let mut era: u16 = 3;
+    let mut era: u16 = 4;
     let mut dim_w: u16 = 128;
     let mut dim_h: u16 = 128;
     let mut mtxm: Vec<u16> = Vec::new();
@@ -2545,17 +2613,7 @@ fn cmd_extract_map_terrain_dual(
 
     println!("Map: {}×{} tiles, ERA={} (tileset), {} MTXM entries", dim_w, dim_h, era, mtxm.len());
 
-    let tileset_name = match era {
-        0 => "badlands",
-        1 => "platform",
-        2 => "ashworld",
-        3 => "jungle",
-        4 => "jungle",
-        5 => "desert",
-        6 => "ice",
-        7 => "twilight",
-        _ => "jungle",
-    };
+    let tileset_name = tileset_name_from_era(era);
 
     // 2. Collect unique megatile IDs
     let mut unique_ids: Vec<u16> = mtxm.iter().copied()
@@ -2566,32 +2624,29 @@ fn cmd_extract_map_terrain_dual(
     let n_tiles = unique_ids.len() as u32;
     println!("Unique megatile IDs: {}", n_tiles);
 
-    // 3. Load VX4EX and VR4 from CASC
-    let vx4_data = archive.extract_file(&format!("tileset/{}.vx4ex", tileset_name))
-        .with_context(|| format!("VX4EX not found for tileset {}", tileset_name))?;
+    // 3. Load CV5, VX4EX and VR4 from CASC.
+    // A MTXM id is not a VX4EX index: it resolves through CV5 first, as
+    // MTXM → (group = id >> 4, tile = id & 0xf) → CV5[group].tiles[tile].
+    // Indexing VX4EX directly leaves ~70% of lookups out of range.
+    let cv5_data = archive.extract_file(&format!("tileset/{}.cv5", tileset_name))
+        .with_context(|| format!("CV5 not found for tileset {}", tileset_name))?;
+    const CV5_ENTRY_BYTES: usize = 52;
+    const CV5_TILES_OFFSET: usize = 20;
+    let cv5_lookup = |mega_id: u16| -> Option<usize> {
+        let group = (mega_id >> 4) as usize;
+        let tile = (mega_id & 0xf) as usize;
+        let off = group * CV5_ENTRY_BYTES + CV5_TILES_OFFSET + tile * 2;
+        if off + 2 > cv5_data.len() { return None; }
+        Some(u16::from_le_bytes(cv5_data[off..off+2].try_into().unwrap()) as usize)
+    };
 
     let vr4_raw = archive.extract_file(&format!("tileset/{}.dds.vr4", tileset_name))
         .with_context(|| format!("VR4 not found for tileset {}", tileset_name))?;
 
-    // VR4: 128×128 DXT1 (8192 bytes/tile). VX4EX: 16×u32 = 64 bytes/record. MTXM = VX4EX index.
-    const VR4_HEADER: usize = 148;
-    const VR4_STRIDE: usize = 8192;
-    const VR4_W: u32 = 128;
-    const VR4_H: u32 = 128;
-    const MINI_W: u32 = 32;
-    const MINI_H: u32 = 32;
-    const MEGA_W: u32 = 128;
-    const MEGA_H: u32 = 128;
-    if vr4_raw.len() < VR4_HEADER {
-        return Err(anyhow::anyhow!(
-            "VR4 too short: {} bytes, need at least {} for the DDS header",
-            vr4_raw.len(),
-            VR4_HEADER
-        ));
-    }
-    let vr4_data = &vr4_raw[VR4_HEADER..];
-    let vr4_tile_count = vr4_data.len() / VR4_STRIDE;
-    println!("VR4 tiles: {}", vr4_tile_count);
+    let layout = vr4_layout(&vr4_raw)?;
+    let (vr4_w, vr4_h) = (layout.tile_w, layout.tile_h);
+    let vr4_tile_count = layout.tile_count;
+    println!("VR4 tiles: {} ({}×{})", vr4_tile_count, vr4_w, vr4_h);
 
     // 4. Build atlas
     let rows = n_tiles.div_ceil(cols);
@@ -2606,30 +2661,18 @@ fn cmd_extract_map_terrain_dual(
     for (atlas_idx, &mega_id) in unique_ids.iter().enumerate() {
         id_to_atlas[mega_id as usize] = atlas_idx as u32;
 
-        let vx4_offset = mega_id as usize * 64;
-        let mut mega_img: RgbaImage = ImageBuffer::new(MEGA_W, MEGA_H);
+        // In the HD tilesets each VR4 entry is already a whole 128×128 megatile,
+        // addressed straight by the CV5-resolved index — there is no 4×4 mini-tile
+        // assembly step (that is the classic 8×8-per-mini-tile SD layout).
+        let Some(vr4_idx) = cv5_lookup(mega_id) else { continue };
+        if vr4_idx >= vr4_tile_count { continue; }
+        let Some(tile_bytes) = layout.tile_bytes(&vr4_raw, vr4_idx) else { continue };
+        let decoded = decode_dxt1_nxn(tile_bytes, vr4_w as usize, vr4_h as usize);
+        let mega_img: RgbaImage = ImageBuffer::from_raw(vr4_w, vr4_h, decoded)
+            .unwrap_or_else(|| ImageBuffer::new(vr4_w, vr4_h));
 
-        for mini_row in 0..4usize {
-            for mini_col in 0..4usize {
-                let entry_offset = vx4_offset + (mini_row * 4 + mini_col) * 4;
-                if entry_offset + 4 > vx4_data.len() { continue; }
-                let entry = u32::from_le_bytes(vx4_data[entry_offset..entry_offset+4].try_into().unwrap());
-                let vr4_idx = (entry >> 1) as usize;
-                let flip_x  = (entry & 1) == 1;
-                if vr4_idx >= vr4_tile_count { continue; }
-
-                let tile_bytes = &vr4_data[vr4_idx * VR4_STRIDE .. vr4_idx * VR4_STRIDE + VR4_STRIDE];
-                let decoded = decode_dxt1_nxn(tile_bytes, VR4_W as usize, VR4_H as usize);
-                let mut mini: RgbaImage = ImageBuffer::from_raw(VR4_W, VR4_H, decoded)
-                    .unwrap_or_else(|| ImageBuffer::new(VR4_W, VR4_H));
-                if flip_x { mini = image::imageops::flip_horizontal(&mini); }
-                let mini_s = image::imageops::resize(&mini, MINI_W, MINI_H, image::imageops::FilterType::Lanczos3);
-                image::imageops::overlay(&mut mega_img, &mini_s, (mini_col as i64) * MINI_W as i64, (mini_row as i64) * MINI_H as i64);
-            }
-        }
-
-        let scaled = if tile_size == MEGA_W {
-            mega_img.clone()
+        let scaled = if tile_size == vr4_w {
+            mega_img
         } else {
             image::imageops::resize(&mega_img, tile_size, tile_size, image::imageops::FilterType::Lanczos3)
         };
@@ -2723,11 +2766,19 @@ fn cmd_extract_raw(
                 let pattern_lower = pattern.to_lowercase();
                 let locale_lower = locale.to_lowercase();
 
+                // Only localised assets live under `locales\<locale>\`; the vast
+                // majority of the archive is locale-neutral. Applying the locale
+                // as an unconditional AND would hide everything else, so it only
+                // narrows results that are themselves locale-scoped.
                 all_files
                     .into_iter()
                     .filter(|f| {
                         let fl = f.to_lowercase();
-                        fl.contains(&pattern_lower) && fl.contains(&locale_lower)
+                        if !fl.contains(&pattern_lower) {
+                            return false;
+                        }
+                        let is_localised = fl.starts_with("locales\\") || fl.starts_with("locales/");
+                        !is_localised || fl.contains(&locale_lower)
                     })
                     .collect()
             }
@@ -2767,6 +2818,11 @@ fn cmd_extract_raw(
     let mut extracted = 0usize;
     let mut from_fallback = 0usize;
     let mut skipped = 0usize;
+    // Without --preserve-path, distinct archive paths can share a basename and
+    // silently overwrite each other (e.g. the same campaign .ogg under several
+    // locales), so a plain "N extracted" would overstate what landed on disk.
+    let mut written: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    let mut collisions = 0usize;
 
     for casc_path in &paths {
         // Resolve data: live archive first, then embedded fallback.
@@ -2803,6 +2859,15 @@ fn cmd_extract_raw(
                 fs::write(&local_path, &data)
                     .with_context(|| format!("Failed to write {:?}", local_path))?;
 
+                if !written.insert(local_path.clone()) {
+                    collisions += 1;
+                    eprintln!(
+                        "Warning: {} overwrote an earlier file at {} (use --preserve-path to keep both)",
+                        casc_path,
+                        local_path.display()
+                    );
+                }
+
                 if is_fallback {
                     println!(
                         "fallback: {} -> {} ({} bytes) [embedded]",
@@ -2835,6 +2900,13 @@ fn cmd_extract_raw(
         skipped,
         paths.len()
     );
+    if collisions > 0 {
+        println!(
+            "{} file(s) shared an output name and were overwritten — {} distinct file(s) on disk. Re-run with --preserve-path to keep all of them.",
+            collisions,
+            written.len()
+        );
+    }
 
     if extracted == 0 && from_fallback == 0 && skipped > 0 {
         anyhow::bail!("All {} requested file(s) were skipped — none present in local install or embedded fallbacks.", skipped);
