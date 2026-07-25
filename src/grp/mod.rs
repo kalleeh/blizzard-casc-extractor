@@ -286,9 +286,9 @@ impl GrpFile {
             }
 
             let line_data = &frame_data[line_offset..line_end];
-            let decoded = Self::decode_rle_line(line_data, width)?;
             let row_start = line_idx * width as usize;
-            pixel_data[row_start..row_start + width as usize].copy_from_slice(&decoded);
+            let row = &mut pixel_data[row_start..row_start + width as usize];
+            Self::decode_rle_line(line_data, row);
         }
 
         log::debug!("Successfully parsed frame {}", frame_index);
@@ -306,9 +306,11 @@ impl GrpFile {
     ///   byte & 0x80  — skip (byte & 0x7F) transparent pixels
     ///   byte & 0x40  — repeat the next byte (byte & 0x3F) times
     ///   otherwise    — copy the next `byte` literal bytes
-    fn decode_rle_line(line_data: &[u8], width: u16) -> Result<Vec<u8>, GrpError> {
-        let w = width as usize;
-        let mut pixels = vec![0u8; w];
+    /// Decodes straight into `row`, which the caller has already zeroed as part
+    /// of the frame buffer. Returning a fresh `Vec` per scanline meant one heap
+    /// allocation and one full copy for every line of every frame.
+    fn decode_rle_line(line_data: &[u8], row: &mut [u8]) {
+        let w = row.len();
         let mut col = 0usize;
         let mut pos = 0usize;
 
@@ -329,25 +331,16 @@ impl GrpFile {
                 let pixel = line_data[pos];
                 pos += 1;
                 let end = col.saturating_add(count).min(w);
-                for p in pixels[col..end].iter_mut() {
-                    *p = pixel;
-                }
+                row[col..end].fill(pixel);
                 col = end;
             } else {
                 // Literal copy: read `count` pixel values directly
-                let count = byte as usize;
-                for _ in 0..count {
-                    if pos >= line_data.len() || col >= w {
-                        break;
-                    }
-                    pixels[col] = line_data[pos];
-                    pos += 1;
-                    col += 1;
-                }
+                let count = (byte as usize).min(w - col).min(line_data.len() - pos);
+                row[col..col + count].copy_from_slice(&line_data[pos..pos + count]);
+                pos += count;
+                col += count;
             }
         }
-
-        Ok(pixels)
     }
 
     /// Get a specific frame by index

@@ -1146,7 +1146,11 @@ fn cmd_extract_anim(
             config.feedback_settings.verbose_logging,
         );
 
-        let mut extracted: Vec<(u16, PathBuf, Vec<u8>)> = Vec::new();
+        // Only (id, path, size) is carried into phase 2 — the bytes are already on
+        // disk and get re-read per item there. Holding every payload here peaked
+        // near 1 GB at 150 sprites and would reach multiple GB for a full 1000-ID
+        // run, where an allocation failure aborts the whole extraction.
+        let mut extracted: Vec<(u16, PathBuf)> = Vec::new();
 
         for &id in &id_list {
             let casc_path = format!("{}anim/main_{:03}.anim", prefix, id);
@@ -1165,7 +1169,7 @@ fn cmd_extract_anim(
                     {
                         eprintln!("Warning: could not write {:?}: {}", output_path, e);
                     } else {
-                        extracted.push((id, output_path, data));
+                        extracted.push((id, output_path));
                     }
                 }
             }
@@ -1185,8 +1189,11 @@ fn cmd_extract_anim(
 
         let results: Vec<anyhow::Result<()>> = extracted
             .par_iter()
-            .map(|(id, output_path, data)| -> anyhow::Result<()> {
+            .map(|(id, output_path)| -> anyhow::Result<()> {
                 let mapped_name = id_to_name_ref.get(&id.to_string()).cloned();
+                // Tracks where the bytes actually live: the rename below may move
+                // the file before we read it back.
+                let mut source_path = output_path.clone();
                 // When a mapping exists, the named path IS the primary output.
                 // Create subdirectories as needed (e.g. terran/marine.anim).
                 if let Some(ref name) = mapped_name {
@@ -1199,17 +1206,23 @@ fn cmd_extract_anim(
                             // rename may fail across filesystems; fall back to copy+delete
                             if fs::copy(output_path, &named_path).is_ok() {
                                 let _ = fs::remove_file(output_path);
+                                source_path = named_path.clone();
                             } else {
                                 eprintln!(
                                     "Warning: could not move to named path {:?}: {}",
                                     named_path, e
                                 );
                             }
+                        } else {
+                            source_path = named_path.clone();
                         }
                     }
                 }
 
-                match HdAnimFile::parse(data) {
+                let data = fs::read(&source_path)
+                    .with_context(|| format!("re-reading {}", source_path.display()))?;
+
+                match HdAnimFile::parse(&data) {
                     Ok(anim) => {
                         let export_cfg = ExportConfig {
                             convert_to_png: true,

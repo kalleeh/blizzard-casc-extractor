@@ -1,12 +1,25 @@
-# Benchmark Baseline — 2026-03-03 (aarch64-apple-darwin, release build)
+# Benchmark Baseline — 2026-07-25 (aarch64-apple-darwin, release build)
 # Run: DYLD_LIBRARY_PATH=lib DYLD_FRAMEWORK_PATH=lib cargo bench --bench extraction
 
-grp_parse/32x32_1frame          957 ns  (range: 949–967 ns)
-grp_parse/128x128_10frames       53 µs  (range: 52.2–53.4 µs)
+grp_parse/32x32_1frame          284 ns  (was 957 ns — 3.4x)
+grp_parse/128x128_10frames     32.7 µs  (was 53 µs — 1.6x)
 
-grp_to_rgba/32x32               603 ns  (range: 599–609 ns)
-grp_to_rgba/128x128             9.7 µs  (range: 9.6–9.7 µs)
-grp_to_rgba/256x256              37 µs  (range: 36.8–37.2 µs)
+grp_to_rgba/32x32               587 ns
+grp_to_rgba/128x128            10.3 µs
+grp_to_rgba/256x256            60.3 µs
+
+# The grp_parse gain comes from decoding each RLE scanline straight into the
+# frame buffer instead of allocating and copying a Vec per line.
+#
+# These microbenchmarks do NOT cover the dominant cost of a real run, which is
+# DDS block decode plus PNG encode. Reference figures measured end-to-end
+# against /Applications/StarCraft:
+#   full SD run (868 sprites, decode + PNG)      ~0.9 s
+#   HD 150 sprites --convert-to-png              ~8 s, 1.09 GB peak RSS
+#   HD 300 sprites --convert-to-png             ~11 s, 1.32 GB peak RSS
+# Peak RSS is per-thread decode working set (the largest sprite, ultralisk, is
+# 119 MB on its own), so it tracks RAYON_NUM_THREADS rather than the number of
+# sprites requested.
 
 # filter_passes and png_write results available in target/criterion/ HTML reports
 # Run `open target/criterion/report/index.html` to view full results

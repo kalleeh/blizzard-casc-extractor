@@ -31,6 +31,9 @@ jobs:
           mkdir -p lib
           cp /tmp/CascLib/build/libcasc.so lib/
 
+      - name: cargo fmt
+        run: cargo fmt --check
+
       - name: cargo check
         env:
           RUSTFLAGS: "-D warnings"
