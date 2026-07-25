@@ -91,6 +91,21 @@ disagrees, but re-verify with a hexdump if a new tileset or quality misbehaves.
   implementation over header comments — the online params separator is `*`, not the
   `:` the header's own comment implies.
 
+## `--online` (CDN) mode
+
+Validated end to end Jul 2026 against the live CDN, since this path had four
+separate defects and is the least exercised:
+
+- cold cache fetches 16 `statbtn*.ui.json` in ~26s; warm cache is ~0.45s (58x) with
+  byte-identical output. Cache lives at `~/Library/Caches/casc-extractor-online`.
+- `--preserve-path` produces the correct nested `locales/<locale>/Assets/...` tree.
+- `--locale deDE` returns the deDE variant. Note UI layout files are identical
+  across locales (they carry geometry, not text), so a byte-diff between locales
+  proving "nothing happened" is expected, not a bug.
+- A positional path without a `locales\` prefix gets one added automatically.
+- `.ui.json` files carry a UTF-8 BOM — that is genuine SC:R data, so parsers need
+  `utf-8-sig` or equivalent. Not a corruption bug.
+
 ## Writing output
 
 Use `write_atomic` / `save_rgba_as_png`, never bare `fs::write` or `File::create`,
