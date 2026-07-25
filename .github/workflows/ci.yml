@@ -44,7 +44,10 @@ jobs:
             cp /tmp/CascLib/build/casc.framework/casc lib/casc.framework/Versions/1.0.0/casc
             ln -sf casc.framework/Versions/1.0.0/casc lib/libcasc.dylib
           else
-            cp /tmp/CascLib/build/libcasc.so lib/
+            # CascLib links with soname libcasc.so.1, so the loader asks for that
+            # name, not libcasc.so. CMake emits the versioned files plus symlinks —
+            # copy them all (-a preserves the links) or the binary fails to start.
+            cp -a /tmp/CascLib/build/libcasc.so* lib/
           fi
 
       - name: cargo fmt

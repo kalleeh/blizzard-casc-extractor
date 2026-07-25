@@ -15,10 +15,8 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             runner: macos-latest
-            lib_name: libcasc.dylib
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
-            lib_name: libcasc.so
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -46,7 +44,8 @@ jobs:
             cp /tmp/CascLib/build/casc.framework/casc lib/casc.framework/Versions/1.0.0/casc
             ln -sf casc.framework/Versions/1.0.0/casc lib/libcasc.dylib
           else
-            cp /tmp/CascLib/build/${{ matrix.lib_name }} lib/
+            # Same soname caveat as CI: the loader wants libcasc.so.1.
+            cp -a /tmp/CascLib/build/libcasc.so* lib/
           fi
 
       - name: Build release binary
@@ -80,7 +79,9 @@ jobs:
               codesign -s - "${STAGE}/casc-extractor" 2>/dev/null || true
             fi
           else
-            cp "lib/${{ matrix.lib_name }}" "${STAGE}/lib/"
+            # Copy every libcasc.so* — the soname the loader wants is libcasc.so.1,
+            # not the bare libcasc.so. -a preserves CMake's symlinks.
+            cp -a lib/libcasc.so* "${STAGE}/lib/"
             # build.rs emits $ORIGIN/lib for ELF targets, so no patching is needed.
             # This used to call patchelf without installing it, silently falling
             # back to a package that required LD_LIBRARY_PATH.
