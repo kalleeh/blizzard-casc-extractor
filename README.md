@@ -341,22 +341,38 @@ Full algorithm, layer layout, and Python reference implementation:
 
 ```
 src/
-├── main.rs             — unified CLI (clap), all subcommand handlers
+├── main.rs             — CLI definition (clap) + dispatch only
+├── commands/           — subcommand handlers, grouped by subject
+│   ├── support.rs      — path safety, overwrite policy, config, archive opening
+│   ├── sprites.rs      — extract anim / tileset / effect
+│   ├── terrain.rs      — tileset atlases, map-terrain, VR4 + CHK parsing
+│   ├── assets.rs       — cmdicons, mainmenu, dat, raw
+│   ├── sounds.rs       — sounds extract / list / probe / export-targets
+│   ├── inspect.rs      — inspect sprites / archive / files
+│   └── maintenance.rs  — config init, validate register / run
 ├── lib.rs              — public API
 ├── anim/               — HD ANIM parser (v0x0202/0x0204) + SD ANIM (v0x0101)
 │   └── hd_parser.rs    — HdAnimFile, layer extraction, team-colour helpers
 ├── casc/               — CascLib FFI, archive discovery, file enumeration
-├── config/             — ExtractionConfig (serde JSON, all fields wired)
+├── config/             — ExtractionConfig (serde JSON) + FormatFilterOption
 ├── dds_converter.rs    — DDS → PNG (BC1/BC3) via ddsfile + texture2ddecoder
 ├── grp/                — GRP (SD) parser, RLE decoder, spritesheet builder
 ├── sprite/export.rs    — ExportConfig, export_anim pipeline
 ├── mapping/            — YAML sprite-name → CASC-path loader
 ├── palette/            — 256-colour game palette
-├── filter/             — Regex include/exclude + format filter
 ├── progress/           — indicatif progress reporter
 └── validation/         — Byte comparison, regression suite
+tests/
+└── baselines/          — committed SHA256 suite guarding pixel output
 docs/
 └── team-color.md       — HD team colour layer structure and compositing algorithm
+```
+
+Pixel output is pinned by `tests/baselines/validation-suite.json`. If a change is
+meant to alter output, re-register the affected files:
+
+```bash
+casc-extractor validate register <file> --suite tests/baselines/validation-suite.json
 ```
 
 ## Legal Notice

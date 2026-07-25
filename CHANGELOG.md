@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- SD ANIM parsing panicked on a slice index when the header's `layer_count`
+  exceeded the ten reserved name slots; a single malformed sprite also failed the
+  entire 38 MB `mainSD.anim`, discarding all ~999 sprites.
+- HD layer extraction allocated from an unvalidated `u32` size before any bounds
+  check, so a corrupt header could request up to 4 GiB.
+- `extract raw --online` never contacted a CDN: it passed `0x40` as a "feature
+  flag" to `CascOpenStorage`, whose second parameter is `dwLocaleMask` — `0x40`
+  is `CASC_LOCALE_ZHCN`. It now uses `CascOpenOnlineStorage` with a proper
+  `cache*product*region` params string and a region read from `.build.info`.
+- Failed archive enumeration was reported as an empty-but-successful listing
+  (`CascFindFirstFile` signals failure with `INVALID_HANDLE_VALUE`, not NULL).
+- `CascGetFileSize` failure surfaced as a bogus "size 4294967295 exceeds maximum".
+- Published release artifacts could not start at all — the bare binary shipped
+  without CascLib, and the embedded rpaths only resolve from `target/<profile>/`.
+  Releases now ship a tarball containing `lib/`, verified by running the packaged
+  binary before publishing.
+- `--validate-only` is documented as global but was only honoured by `extract`,
+  so `sounds extract --validate-only` wrote files.
+- `inspect files --sizes` printed bare paths (both branches were identical).
+- `extract tileset-megatile --quality` was accepted and ignored.
+- `OverwriteBehavior::Backup` overwrote the previous backup on every run, so only
+  one generation ever survived.
+- Multiple `MTXM` chunks in a CHK were concatenated instead of last-writer-wins.
+- `build.rs` emitted Mach-O `@loader_path` rpaths on all platforms, leaving Linux
+  builds with no usable rpath (ELF needs `$ORIGIN`).
 - Terrain rendered with the wrong tileset for every map with `ERA >= 2`: BW's
   canonical ids are `2=install, 3=ashworld, 4=jungle`, so lava maps were drawn
   with jungle art.
@@ -36,6 +61,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `main.rs` split from ~4300 lines into `src/commands/` grouped by subject; it now
+  holds only the CLI definition and dispatch.
+- Removed 12 config fields that were deserialized but never read (most of
+  `UnityExportSettings`, several `MetadataOptions`, both `resolution_tier` copies,
+  `custom_settings`). Legacy config files still load; a test pins that.
+- Deleted the unused `FileFilter` engine and `ValidationResult`; `src/filter`
+  collapsed into a single enum now living in `config`.
+- Dependencies moved to current majors: image 0.25 (png+jpeg features only, since
+  the defaults pull in unused AVIF encoders), png 0.18, thiserror 2, ddsfile 0.6,
+  indicatif 0.18. This also removed duplicate `bitflags` and `syn` copies.
+- `calculate_file_size` no longer rescans every index per entry (was quadratic),
+  and `sounds extract` enumerates the archive at most once per run.
+
 - DDS → PNG decoding is done in-process (BC1/BC3 via `ddsfile` +
   `texture2ddecoder`) instead of spawning ImageMagick per file. A full SD run
   (868 sprites) goes from ~12.5s to ~0.9s; output is byte-identical. ImageMagick
@@ -45,6 +83,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with BT.601 luminance, discarding chroma.
 - Release profile enables `overflow-checks` and keeps the symbol table
   (`strip = "debuginfo"`) so parser panics yield usable backtraces.
+
+### Added
+
+- `tests/baselines/validation-suite.json` — committed SHA256 baselines for nine
+  representative outputs covering every decode path, checked end-to-end by
+  `tests/pixel_regression_test.rs`. The regression suite previously had no
+  committed data, so no pixel regression could ever be caught.
+- CI now also runs on macOS (the primary development platform, and the only one
+  where CascLib builds as a framework), gates `cargo fmt --check`, and asserts the
+  binary runs with all loader environment variables unset.
 
 ### Security
 
