@@ -1943,15 +1943,35 @@ fn cmd_validate_register(file: &Path, suite_path: &Path) -> Result<()> {
 
     let timestamp = chrono::Utc::now().to_rfc3339();
 
+    // Record real dimensions where the file is a readable image, so a committed
+    // suite documents what it is guarding rather than a row of zeroes. `validate
+    // run` matches on the file name alone, so store that instead of the absolute
+    // path the baseline happened to be created from — otherwise a suite is only
+    // meaningful on the machine that produced it.
+    let (width, height, format) = match image::open(file) {
+        Ok(img) => {
+            let rgba = img.to_rgba8();
+            (
+                rgba.width(),
+                rgba.height(),
+                file.extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_ascii_uppercase(),
+            )
+        }
+        Err(_) => (0, 0, String::new()),
+    };
+
     let entry = KnownGoodExtraction {
         sprite_name: sprite_name.clone(),
-        source_file: file.to_path_buf(),
-        expected_output: file.to_path_buf(),
+        source_file: PathBuf::from(&sprite_name),
+        expected_output: PathBuf::from(&sprite_name),
         expected_metadata: RegressionSpriteMetadata {
-            width: 0,
-            height: 0,
+            width,
+            height,
             frame_count: 0,
-            format: String::new(),
+            format,
         },
         sha256_hash: hash.clone(),
         baseline_date: timestamp,

@@ -11,6 +11,7 @@
 !benches/baseline.txt
 !lib/README.md
 *.json
+!tests/baselines/*.json
 
 # Build artifacts
 /lib/*.dylib

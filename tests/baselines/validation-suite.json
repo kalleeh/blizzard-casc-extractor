@@ -1,0 +1,128 @@
+[
+  {
+    "sprite_name": "_8_Char_Magma_terrain.png",
+    "source_file": "_8_Char_Magma_terrain.png",
+    "expected_output": "_8_Char_Magma_terrain.png",
+    "expected_metadata": {
+      "width": 1024,
+      "height": 1536,
+      "frame_count": 0,
+      "format": "PNG"
+    },
+    "sha256_hash": "6e103b627d44b7af6fa7e6aece3fef9d22011a04bfd68add1ae07da5a924e59e",
+    "baseline_date": "2026-07-25T10:04:03.984023+00:00",
+    "extractor_version": "0.1.0"
+  },
+  {
+    "sprite_name": "animations_zerg_scourge.png",
+    "source_file": "animations_zerg_scourge.png",
+    "expected_output": "animations_zerg_scourge.png",
+    "expected_metadata": {
+      "width": 260,
+      "height": 156,
+      "frame_count": 0,
+      "format": "PNG"
+    },
+    "sha256_hash": "7efd32ab2ddad249910bedb0c373fe3199f12f044f27f0e40b74d0ae595ece09",
+    "baseline_date": "2026-07-25T10:04:04.008225+00:00",
+    "extractor_version": "0.1.0"
+  },
+  {
+    "sprite_name": "jungle_32_atlas.png",
+    "source_file": "jungle_32_atlas.png",
+    "expected_output": "jungle_32_atlas.png",
+    "expected_metadata": {
+      "width": 128,
+      "height": 128,
+      "frame_count": 0,
+      "format": "PNG"
+    },
+    "sha256_hash": "979579f625450c2aa8a5ea85f34215308c61b9dd2527b096aca37f5df0407660",
+    "baseline_date": "2026-07-25T10:04:04.015628+00:00",
+    "extractor_version": "0.1.0"
+  },
+  {
+    "sprite_name": "main_000_tc.png",
+    "source_file": "main_000_tc.png",
+    "expected_output": "main_000_tc.png",
+    "expected_metadata": {
+      "width": 1024,
+      "height": 888,
+      "frame_count": 0,
+      "format": "PNG"
+    },
+    "sha256_hash": "313f6abffeea3c25295f5f2472f0787c840d27ce6a0a1dd7e2403480c140a1ea",
+    "baseline_date": "2026-07-25T10:04:04.022811+00:00",
+    "extractor_version": "0.1.0"
+  },
+  {
+    "sprite_name": "main_000.png",
+    "source_file": "main_000.png",
+    "expected_output": "main_000.png",
+    "expected_metadata": {
+      "width": 1024,
+      "height": 888,
+      "frame_count": 0,
+      "format": "PNG"
+    },
+    "sha256_hash": "4083ffdf8b65abf507aad34c64a968509ef8b9daacc962d37cd63de634ba4268",
+    "baseline_date": "2026-07-25T10:04:04.039305+00:00",
+    "extractor_version": "0.1.0"
+  },
+  {
+    "sprite_name": "main_025_tc.png",
+    "source_file": "main_025_tc.png",
+    "expected_output": "main_025_tc.png",
+    "expected_metadata": {
+      "width": 4072,
+      "height": 1560,
+      "frame_count": 0,
+      "format": "PNG"
+    },
+    "sha256_hash": "315d1a6f6fd77030e428765d1bb4f54cd1aa27dc21c6dcb5d96a3d3fceda9704",
+    "baseline_date": "2026-07-25T10:04:04.057742+00:00",
+    "extractor_version": "0.1.0"
+  },
+  {
+    "sprite_name": "main_025.png",
+    "source_file": "main_025.png",
+    "expected_output": "main_025.png",
+    "expected_metadata": {
+      "width": 4072,
+      "height": 1560,
+      "frame_count": 0,
+      "format": "PNG"
+    },
+    "sha256_hash": "af5b9cc873707c979338225750674ccd026006fe2910191e4cf81da27dae9a1c",
+    "baseline_date": "2026-07-25T10:04:04.120209+00:00",
+    "extractor_version": "0.1.0"
+  },
+  {
+    "sprite_name": "main_250_tc.png",
+    "source_file": "main_250_tc.png",
+    "expected_output": "main_250_tc.png",
+    "expected_metadata": {
+      "width": 1936,
+      "height": 1592,
+      "frame_count": 0,
+      "format": "PNG"
+    },
+    "sha256_hash": "3c2d1b4af81303219707d7e9275e2a3abbfee12e96ba534dfe8ff80d8c622aeb",
+    "baseline_date": "2026-07-25T10:04:04.201660+00:00",
+    "extractor_version": "0.1.0"
+  },
+  {
+    "sprite_name": "main_250.png",
+    "source_file": "main_250.png",
+    "expected_output": "main_250.png",
+    "expected_metadata": {
+      "width": 1936,
+      "height": 1592,
+      "frame_count": 0,
+      "format": "PNG"
+    },
+    "sha256_hash": "502661ae3f25b914fbfc2d5532a5772b676a88eff7a8869ca4c8ff0eb04815f1",
+    "baseline_date": "2026-07-25T10:04:04.241095+00:00",
+    "extractor_version": "0.1.0"
+  }
+]
