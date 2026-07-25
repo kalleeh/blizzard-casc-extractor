@@ -197,8 +197,10 @@ fn main() {
 ```
 
 ### Runtime
+The linked rpaths resolve CascLib relative to the executable, so no loader
+environment variables are needed:
 ```bash
-DYLD_LIBRARY_PATH=lib cargo run --release --bin extract_all_units
+cargo run --release -- extract anim --quality hd4 --convert-to-png
 ```
 
 ## Known File Paths

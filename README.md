@@ -43,13 +43,40 @@ DDS → PNG conversion is done in-process (BC1/BC3); no external tools required.
 
 ## Quick Start
 
+### From a release
+
+Download the archive for your platform, unpack it, and run the binary. CascLib is
+bundled in `lib/` and resolved relative to the executable, so no environment
+variables are needed:
+
 ```bash
-# Build
+tar xzf casc-extractor-<version>-aarch64-apple-darwin.tar.gz
+cd casc-extractor-<version>-aarch64-apple-darwin
+./casc-extractor inspect archive
+```
+
+To put it on your `PATH`, keep the directory intact and symlink the binary:
+
+```bash
+sudo mv casc-extractor-<version>-aarch64-apple-darwin /usr/local/opt/casc-extractor
+sudo ln -sf /usr/local/opt/casc-extractor/casc-extractor /usr/local/bin/casc-extractor
+casc-extractor inspect archive
+```
+
+### From source
+
+```bash
+# Build CascLib into ./lib first — see lib/README.md
 cargo build --release
 
-# Auto-detects StarCraft installation. Use --install-path to override.
-DYLD_LIBRARY_PATH=lib DYLD_FRAMEWORK_PATH=lib ./target/release/casc-extractor <command>
+# Auto-detects the StarCraft installation. Use --install-path to override.
+./target/release/casc-extractor <command>
 ```
+
+The build links `@executable_path/lib` and `@loader_path/../../lib`, so running
+from `target/release/` (or via `cargo run`) finds CascLib without
+`DYLD_LIBRARY_PATH`/`LD_LIBRARY_PATH`. If you copy the bare binary somewhere else,
+copy `lib/` next to it too.
 
 ## Commands
 
@@ -226,6 +253,8 @@ Output summary distinguishes live vs embedded extractions:
 ```bash
 casc-extractor inspect archive          # archive file count and basic info
 casc-extractor inspect sprites --max-id 20
+casc-extractor inspect files --search cmdicons          # search archive paths
+casc-extractor inspect files --search .wpe --sizes      # include file sizes
 ```
 
 ### `config`
@@ -251,7 +280,7 @@ casc-extractor validate run --dir output/ --suite regression.json
 | `--output <dir>` | | Output directory (default: `extracted`; overrides config) |
 | `--config <path>` | `-c` | Path to a JSON config file |
 | `--verbose` | `-v` | Enable debug logging |
-| `--validate-only` | | Open archive and list files without writing output |
+| `--validate-only` | | Dry run: confirm the archive opens and list files, then exit without writing. Applies to every subcommand. |
 
 ## Configuration File
 

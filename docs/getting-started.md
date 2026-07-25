@@ -52,12 +52,15 @@ cargo build --release
 ### Extract All Sprites
 
 ```bash
-# macOS
-DYLD_LIBRARY_PATH=lib ./target/release/extract_organized
+# All HD sprites, named from the built-in mapping, converted to PNG
+./target/release/casc-extractor extract anim --quality hd4 --convert-to-png
 
-# Linux
-LD_LIBRARY_PATH=lib ./target/release/extract_organized
+# All SD sprites (868 PNGs from the single mainSD.anim)
+./target/release/casc-extractor extract anim --quality sd --convert-to-png
 ```
+
+CascLib is resolved relative to the executable, so no `DYLD_LIBRARY_PATH` /
+`LD_LIBRARY_PATH` is needed.
 
 ### Output
 
@@ -87,10 +90,10 @@ Each sprite includes:
 
 ### Change Game Path
 
-Edit the path in `src/bin/extract_organized.rs`:
+The installation is auto-detected. Override it with a flag — no code edits:
 
-```rust
-let archive = CascArchive::open("/Applications/StarCraft")?;
+```bash
+./target/release/casc-extractor --install-path /path/to/StarCraft inspect archive
 ```
 
 ### Customize Mappings
@@ -106,16 +109,20 @@ protoss/units/zealot: unit\protoss\zealot.grp
 
 ### "Library not loaded: libcasc.dylib"
 
-Set library path:
+The binary finds CascLib via a relative rpath, so this means `lib/` is not where
+it expects. Build CascLib into `./lib` (see `lib/README.md`) and run the binary
+from `target/release/`; if you copied the binary elsewhere, copy `lib/` beside it.
+As a last resort, point the loader at it explicitly:
+
 ```bash
-export DYLD_LIBRARY_PATH=lib  # macOS
-export LD_LIBRARY_PATH=lib    # Linux
+export DYLD_LIBRARY_PATH=lib DYLD_FRAMEWORK_PATH=lib  # macOS
+export LD_LIBRARY_PATH=lib                            # Linux
 ```
 
 ### "Failed to open CASC storage"
 
-- Verify game is installed
-- Check path in code matches your installation
+- Verify the game is installed
+- Pass `--install-path` if auto-detection picked the wrong directory
 - Ensure you have read permissions
 
 ### "No sprites extracted"
@@ -136,10 +143,10 @@ export LD_LIBRARY_PATH=lib    # Linux
 cargo build --release
 
 # Extract
-DYLD_LIBRARY_PATH=lib ./target/release/extract_organized
+./target/release/casc-extractor extract anim --quality hd4 --convert-to-png
 
 # Test
-cargo test
+cargo test --lib && cargo test --tests
 
 # Clean
 cargo clean

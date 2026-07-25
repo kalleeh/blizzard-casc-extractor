@@ -248,7 +248,10 @@ struct Cli {
     #[arg(long, global = true)]
     install_path: Option<PathBuf>,
 
-    /// Output directory (overrides config file)
+    /// Output directory (overrides config file). Accepted before or after the
+    /// subcommand; when given, it is used verbatim, so subcommands that would
+    /// otherwise nest their output (e.g. `<output>/map-terrain/`) write directly
+    /// into it.
     #[arg(long, global = true)]
     output: Option<PathBuf>,
 
@@ -426,15 +429,13 @@ enum ExtractCommands {
         output: Option<PathBuf>,
     },
 
-    /// Build a megatile atlas from VX4EX + VR4 data (game-ready terrain tiles)
+    /// Build a megatile atlas from VX4EX + VR4 data (game-ready terrain tiles).
+    /// Always uses full-resolution art: VX4EX indices address the HD4 tile array,
+    /// so there is no quality option here.
     TilesetMegatile {
         /// Which tileset to extract
         #[arg(long, default_value = "jungle")]
         tileset: String,
-
-        /// Quality level (hd2 recommended; hd4 may not have vr4)
-        #[arg(long, value_enum, default_value = "hd2")]
-        quality: QualityLevel,
 
         /// Max megatiles to extract (0 = all; typical map uses ~2000 unique megatiles)
         #[arg(long, default_value_t = 1024)]
@@ -595,7 +596,7 @@ enum ExtractCommands {
 enum SoundsCommands {
     /// Extract known unit and UI sounds from the archive
     Extract {
-        /// Output directory for extracted sounds (overrides global --output).
+        /// Output directory for extracted sounds (overrides the global --output).
         /// Default: `<output>/sounds/`
         #[arg(long)]
         sounds_output: Option<PathBuf>,
@@ -2066,7 +2067,6 @@ fn cmd_validate_run(dir: &Path, suite_path: &Path, json_output: bool) -> Result<
 fn cmd_extract_tileset_megatile(
     archive: &CascArchive,
     tileset: &str,
-    _quality: QualityLevel,
     max_tiles: u32,
     tile_size: u32,
     cols: u32,
@@ -2422,6 +2422,65 @@ fn tileset_name_from_era(era: u16) -> &'static str {
     }
 }
 
+/// The parts of a scenario.chk this tool renders terrain from.
+struct ChkTerrain {
+    era: u16,
+    dim_w: u16,
+    dim_h: u16,
+    mtxm: Vec<u16>,
+}
+
+/// Parse `ERA `, `DIM ` and `MTXM` out of a scenario.chk.
+///
+/// Kept in one place deliberately: this logic used to be copy-pasted between
+/// `map-terrain` and `map-terrain-dual`, which is why the ERA table bug had to be
+/// fixed twice.
+fn parse_chk_terrain(chk_bytes: &[u8]) -> ChkTerrain {
+    let mut out = ChkTerrain {
+        era: 4, // jungle
+        dim_w: 128,
+        dim_h: 128,
+        mtxm: Vec::new(),
+    };
+
+    let mut pos = 0;
+    while pos + 8 <= chk_bytes.len() {
+        let tag = &chk_bytes[pos..pos + 4];
+        let size = u32::from_le_bytes(chk_bytes[pos + 4..pos + 8].try_into().unwrap()) as usize;
+        pos += 8;
+        if pos + size > chk_bytes.len() {
+            break;
+        }
+        let data = &chk_bytes[pos..pos + size];
+
+        match tag {
+            b"ERA " if size >= 2 => {
+                out.era = u16::from_le_bytes(data[0..2].try_into().unwrap()) & 7;
+            }
+            b"DIM " if size >= 4 => {
+                out.dim_w = u16::from_le_bytes(data[0..2].try_into().unwrap());
+                out.dim_h = u16::from_le_bytes(data[2..4].try_into().unwrap());
+            }
+            // A CHK may carry several MTXM chunks (map protection, overlays);
+            // BW applies them in order with the last writer winning, so restart
+            // the grid rather than appending onto the previous one.
+            b"MTXM" => {
+                out.mtxm.clear();
+                for i in (0..size).step_by(2) {
+                    if i + 2 <= size {
+                        out.mtxm
+                            .push(u16::from_le_bytes(data[i..i + 2].try_into().unwrap()));
+                    }
+                }
+            }
+            _ => {}
+        }
+        pos += size;
+    }
+
+    out
+}
+
 /// Read a scenario.chk either from an MPQ-wrapped .scm/.scx (`scm_path`) or
 /// directly from a raw .chk file (`chk_path`); exactly one must be `Some`.
 /// Returns the CHK bytes and the output filename stem.
@@ -2477,41 +2536,12 @@ fn cmd_extract_map_terrain(
     // 1. Parse SCM/CHK to get ERA (tileset) and MTXM (megatile IDs)
     let (chk_bytes, map_stem) = acquire_chk_bytes(scm_path, chk_path, name)?;
 
-    // Parse CHK chunks
-    let mut era: u16 = 4; // default jungle
-    let mut dim_w: u16 = 128;
-    let mut dim_h: u16 = 128;
-    let mut mtxm: Vec<u16> = Vec::new();
-
-    let mut pos = 0;
-    while pos + 8 <= chk_bytes.len() {
-        let tag = &chk_bytes[pos..pos + 4];
-        let size = u32::from_le_bytes(chk_bytes[pos + 4..pos + 8].try_into().unwrap()) as usize;
-        pos += 8;
-        if pos + size > chk_bytes.len() {
-            break;
-        }
-        let data = &chk_bytes[pos..pos + size];
-
-        match tag {
-            b"ERA " if size >= 2 => {
-                era = u16::from_le_bytes(data[0..2].try_into().unwrap()) & 7;
-            }
-            b"DIM " if size >= 4 => {
-                dim_w = u16::from_le_bytes(data[0..2].try_into().unwrap());
-                dim_h = u16::from_le_bytes(data[2..4].try_into().unwrap());
-            }
-            b"MTXM" => {
-                for i in (0..size).step_by(2) {
-                    if i + 2 <= size {
-                        mtxm.push(u16::from_le_bytes(data[i..i + 2].try_into().unwrap()));
-                    }
-                }
-            }
-            _ => {}
-        }
-        pos += size;
-    }
+    let ChkTerrain {
+        era,
+        dim_w,
+        dim_h,
+        mtxm,
+    } = parse_chk_terrain(&chk_bytes);
 
     println!(
         "Map: {}×{} tiles, ERA={} (tileset), {} MTXM entries",
@@ -2938,40 +2968,12 @@ fn cmd_extract_map_terrain_dual(
         .read(&mut archive_mpq, &mut chk_bytes)
         .context("Failed to read CHK")?;
 
-    let mut era: u16 = 4;
-    let mut dim_w: u16 = 128;
-    let mut dim_h: u16 = 128;
-    let mut mtxm: Vec<u16> = Vec::new();
-
-    let mut pos = 0;
-    while pos + 8 <= chk_bytes.len() {
-        let tag = &chk_bytes[pos..pos + 4];
-        let size = u32::from_le_bytes(chk_bytes[pos + 4..pos + 8].try_into().unwrap()) as usize;
-        pos += 8;
-        if pos + size > chk_bytes.len() {
-            break;
-        }
-        let data = &chk_bytes[pos..pos + size];
-
-        match tag {
-            b"ERA " if size >= 2 => {
-                era = u16::from_le_bytes(data[0..2].try_into().unwrap()) & 7;
-            }
-            b"DIM " if size >= 4 => {
-                dim_w = u16::from_le_bytes(data[0..2].try_into().unwrap());
-                dim_h = u16::from_le_bytes(data[2..4].try_into().unwrap());
-            }
-            b"MTXM" => {
-                for i in (0..size).step_by(2) {
-                    if i + 2 <= size {
-                        mtxm.push(u16::from_le_bytes(data[i..i + 2].try_into().unwrap()));
-                    }
-                }
-            }
-            _ => {}
-        }
-        pos += size;
-    }
+    let ChkTerrain {
+        era,
+        dim_w,
+        dim_h,
+        mtxm,
+    } = parse_chk_terrain(&chk_bytes);
 
     println!(
         "Map: {}×{} tiles, ERA={} (tileset), {} MTXM entries",
@@ -3345,22 +3347,25 @@ fn main() -> Result<()> {
         .output
         .unwrap_or_else(|| config.output_settings.output_directory.clone());
 
+    // --validate-only is a global dry run: confirm the archive opens and files are
+    // visible, then exit before any command can write. It used to be checked only
+    // inside `extract`, so `sounds extract --validate-only` happily wrote files.
+    if cli.validate_only {
+        let storage = open_casc_storage(cli.install_path.as_deref())?;
+        let files = storage
+            .list_files()
+            .map_err(|e| anyhow::anyhow!("list_files failed: {}", e))?;
+        println!("Archive opened successfully. {} files found.", files.len());
+        for f in files.iter().take(5) {
+            println!("  {}", f);
+        }
+        println!("(--validate-only: no output written)");
+        return Ok(());
+    }
+
     match cli.command {
         // ------------------------------------------------------------------
         Commands::Extract { target } => {
-            // --validate-only: open archive, count files, print first 5, then exit.
-            if cli.validate_only {
-                let storage = open_casc_storage(cli.install_path.as_deref())?;
-                let files = storage
-                    .list_files()
-                    .map_err(|e| anyhow::anyhow!("list_files failed: {}", e))?;
-                println!("Archive opened successfully. {} files found.", files.len());
-                for f in files.iter().take(5) {
-                    println!("  {}", f);
-                }
-                return Ok(());
-            }
-
             let archive = open_casc_archive(cli.install_path.as_deref())?;
             match target {
                 ExtractCommands::Anim {
@@ -3441,7 +3446,6 @@ fn main() -> Result<()> {
                 }
                 ExtractCommands::TilesetMegatile {
                     tileset,
-                    quality,
                     max_tiles,
                     tile_size,
                     cols,
@@ -3449,7 +3453,7 @@ fn main() -> Result<()> {
                 } => {
                     let out = mega_output.unwrap_or_else(|| output.join("tileset-megatile"));
                     cmd_extract_tileset_megatile(
-                        &archive, &tileset, quality, max_tiles, tile_size, cols, &out,
+                        &archive, &tileset, max_tiles, tile_size, cols, &out,
                     )?;
                 }
                 ExtractCommands::MapTerrain {
@@ -3976,17 +3980,16 @@ fn cmd_inspect_files(
 ) -> anyhow::Result<()> {
     let storage = open_casc_storage(install_path)?;
     let files = storage
-        .list_files()
+        .list_files_with_sizes()
         .map_err(|e| anyhow::anyhow!("list_files failed: {}", e))?;
 
     let pattern = search.map(|s| s.to_lowercase());
     let mut count = 0usize;
-    for f in &files {
+    for (f, size) in &files {
         let fl = f.to_lowercase();
         if pattern.as_deref().is_none_or(|p| fl.contains(p)) {
             if sizes {
-                // Try to get file size via a quick extract probe — skip for speed
-                println!("{}", f);
+                println!("{:>12}  {}", size, f);
             } else {
                 println!("{}", f);
             }

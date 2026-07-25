@@ -237,6 +237,18 @@ impl CascStorage {
     }
 
     pub fn list_files(&self) -> Result<Vec<String>, CascLibError> {
+        Ok(self
+            .list_files_with_sizes()?
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect())
+    }
+
+    /// Enumerate the archive, returning each file's name and size.
+    ///
+    /// The size comes from the find-data record, so it costs nothing extra —
+    /// no per-file open is needed.
+    pub fn list_files_with_sizes(&self) -> Result<Vec<(String, u64)>, CascLibError> {
         let mask = CString::new("*").unwrap();
         let mut find_data = CascFindData {
             file_name: [0; 1024],
@@ -265,7 +277,7 @@ impl CascStorage {
                 return Err(CascLibError::ListFailed);
             }
 
-            let mut files = Vec::new();
+            let mut files: Vec<(String, u64)> = Vec::new();
             loop {
                 // bFileAvailable is a DWORD:1 bitfield; the remaining 31 bits are
                 // padding the library never explicitly initialises.
@@ -273,7 +285,7 @@ impl CascStorage {
                     let filename = CStr::from_ptr(find_data.file_name.as_ptr())
                         .to_string_lossy()
                         .to_string();
-                    files.push(filename);
+                    files.push((filename, find_data.file_size));
                 }
                 if !CascFindNextFile(find_handle, &mut find_data) {
                     break;

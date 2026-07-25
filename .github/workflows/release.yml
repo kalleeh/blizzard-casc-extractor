@@ -56,17 +56,48 @@ jobs:
           ${{ matrix.lib_path_var }}: lib
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Rename binary
+      # Ship the native library alongside the binary. Publishing the bare
+      # executable produced a release that could not even run --version, because
+      # libcasc is a hard runtime dependency and the in-tree rpaths
+      # (@loader_path/../../lib) only resolve from target/<profile>/.
+      - name: Package archive
         env:
           VERSION: ${{ github.ref_name }}
+          TARGET: ${{ matrix.target }}
         run: |
-          cp target/${{ matrix.target }}/release/casc-extractor \
-             casc-extractor-${VERSION}-${{ matrix.target }}
+          set -euo pipefail
+          STAGE="casc-extractor-${VERSION}-${TARGET}"
+          mkdir -p "${STAGE}/lib"
+          cp "target/${TARGET}/release/casc-extractor" "${STAGE}/"
+          cp README.md CHANGELOG.md LICENSE "${STAGE}/" 2>/dev/null || true
+
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            mkdir -p "${STAGE}/lib/casc.framework/Versions/1.0.0"
+            cp lib/casc.framework/Versions/1.0.0/casc \
+               "${STAGE}/lib/casc.framework/Versions/1.0.0/casc"
+            # .cargo/config.toml already links in @executable_path/lib, which makes
+            # this layout self-contained. Add it only if that ever stops being true
+            # (a duplicate LC_RPATH is a hard error, so tolerate the failure).
+            if ! otool -l "${STAGE}/casc-extractor" | grep -q "@executable_path/lib"; then
+              install_name_tool -add_rpath "@executable_path/lib" "${STAGE}/casc-extractor"
+              codesign --remove-signature "${STAGE}/casc-extractor" 2>/dev/null || true
+              codesign -s - "${STAGE}/casc-extractor" 2>/dev/null || true
+            fi
+          else
+            cp "lib/${{ matrix.lib_name }}" "${STAGE}/lib/"
+            patchelf --set-rpath '$ORIGIN/lib' "${STAGE}/casc-extractor" \
+              || echo "patchelf unavailable; LD_LIBRARY_PATH=lib may be required"
+          fi
+
+          # Verify the packaged layout actually runs before publishing it.
+          ( cd "${STAGE}" && ./casc-extractor --version )
+
+          tar czf "${STAGE}.tar.gz" "${STAGE}"
 
       - uses: actions/upload-artifact@v4
         with:
           name: casc-extractor-${{ github.ref_name }}-${{ matrix.target }}
-          path: casc-extractor-${{ github.ref_name }}-${{ matrix.target }}
+          path: casc-extractor-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
           if-no-files-found: error
 
   release:
@@ -88,13 +119,23 @@ jobs:
           body: |
             ## Installation
 
-            Download the binary for your platform and make it executable.
+            Download the archive for your platform, unpack it, and run the binary.
+            The bundled `lib/` directory contains CascLib, and the executable
+            resolves it relatively — no environment variables needed.
 
-            **Note:** This binary requires `libcasc` at runtime. Place `libcasc.dylib` (macOS)
-            or `libcasc.so` (Linux) in the same directory as the binary, then set
-            `DYLD_LIBRARY_PATH` / `LD_LIBRARY_PATH` to that directory before running.
+            ```bash
+            tar xzf casc-extractor-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz
+            cd casc-extractor-${{ github.ref_name }}-aarch64-apple-darwin
+            ./casc-extractor inspect archive
+            ```
 
-            Build libcasc from source: https://github.com/ladislav-zezula/CascLib
+            To put it on your PATH, move the whole directory somewhere stable and
+            symlink the binary (the symlink is followed, so `lib/` is still found):
+
+            ```bash
+            sudo mv casc-extractor-${{ github.ref_name }}-aarch64-apple-darwin /usr/local/opt/casc-extractor
+            sudo ln -sf /usr/local/opt/casc-extractor/casc-extractor /usr/local/bin/casc-extractor
+            ```
           files: |
-            casc-extractor-${{ github.ref_name }}-aarch64-apple-darwin
-            casc-extractor-${{ github.ref_name }}-x86_64-unknown-linux-gnu
+            casc-extractor-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz
+            casc-extractor-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz
