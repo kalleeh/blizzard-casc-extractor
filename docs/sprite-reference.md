@@ -1,138 +1,103 @@
 # Sprite Reference
 
-Complete reference of extractable sprites from StarCraft: Remastered.
+What the extractor can pull out of StarCraft: Remastered, and how sprites are named.
 
-## Overview
+## Scale
 
-The extractor can extract **133 sprites** organized into:
-- **44 units** (all playable units)
-- **46 buildings** (all structures)
-- **33 effects** (projectiles, explosions, etc.)
-- **7 neutral** (critters, resources)
-- **3 UI** (wireframes)
+Sprites are addressed by ANIM id, not by a hand-curated list:
 
-## Units
+| Source | Count | Notes |
+|--------|-------|-------|
+| HD 4x | up to 1000 | `anim/main_000.anim` … `main_999.anim`; ~872 ids exist in this build |
+| HD 2x | up to 1000 | Same ids under `HD2/` |
+| SD | 868 | All inside the single `SD/mainSD.anim` (38 MB, ANIM v0x0101) |
 
-### Terran (13)
-- Marine
-- Firebat
-- Ghost
-- Vulture
-- Goliath
-- Siege Tank
-- SCV
-- Wraith
-- Dropship
-- Battlecruiser
-- Science Vessel
-- Medic
-- Valkyrie
+Enumerate what your archive actually contains:
 
-### Protoss (15)
-- Probe
-- Zealot
-- Dragoon
-- High Templar
-- Dark Templar
-- Archon
-- Dark Archon
-- Shuttle
-- Scout
-- Corsair
-- Carrier
-- Arbiter
-- Reaver
-- Observer
-- Interceptor
-
-### Zerg (16)
-- Larva
-- Egg
-- Cocoon
-- Drone
-- Zergling
-- Hydralisk
-- Ultralisk
-- Mutalisk
-- Guardian
-- Devourer
-- Scourge
-- Queen
-- Defiler
-- Overlord
-- Lurker
-- Broodling
-
-## Buildings
-
-### Terran (15)
-Command Center, Supply Depot, Refinery, Barracks, Academy, Factory, Starport, Control Tower, Science Facility, Missile Turret, Engineering Bay, Armory, Bunker, Physics Lab, Machine Shop
-
-### Protoss (16)
-Nexus, Pylon, Assimilator, Gateway, Forge, Cybernetics Core, Photon Cannon, Citadel, Robotics Facility, Stargate, Templar Archives, Observatory, Arbiter Tribunal, Robotics Support Bay, Fleet Beacon, Shield Battery
-
-### Zerg (15)
-Hatchery, Lair, Hive, Creep Colony, Sunken Colony, Spore Colony, Extractor, Spawning Pool, Evolution Chamber, Hydralisk Den, Spire, Queens Nest, Nydus Canal, Ultralisk Cavern, Defiler Mound
-
-## Effects
-
-### Projectiles (18)
-Marine Bullet, Gauss Rifle, Missile, Yamato Cannon, Psi Storm, Psi Blade, Scarab, Photon Blast, Phase Disruptor, Needle Spine, Acid Spore, Glave Wurm, Seeker Spore, Subterranean Spines, Corrosive Acid, Particle Beam, Grenade, Fragmentation Grenade
-
-### Explosions (3)
-EMP, Nuclear Hit, Nuclear Beam
-
-### Environmental (10)
-Fire (Flame, Building Large, Building Small), Smoke (Building, Green), Blood (Terran Small/Large, Zerg Small/Large), Dust, Shield Hit
-
-## Neutral
-
-### Resources (1)
-Vespene Geyser
-
-### Critters (6)
-Rhynadon, Bengalaas, Scantid, Kakaru, Ragnasaur, Ursadon
-
-## UI
-
-### Wireframes (3)
-Terran, Protoss, Zerg unit outlines
-
-## Output Format
-
-Each sprite is extracted as:
-- `{name}.png` - Sprite sheet (17 frames per row)
-- `{name}.json` - Unity metadata
-- `{name}.txt` - Frame information
-
-## File Locations
-
+```bash
+casc-extractor inspect sprites --max-id 1000
 ```
-output/
-├── terran/units/
-├── terran/buildings/
-├── protoss/units/
-├── protoss/buildings/
-├── zerg/units/
-├── zerg/buildings/
-├── effects/projectiles/
-├── effects/explosions/
-├── effects/fire/
-├── effects/smoke/
-├── effects/blood/
-├── effects/dust/
-├── effects/shields/
-├── neutral/buildings/
-├── neutral/critters/
-└── ui/wireframes/
+
+## Naming
+
+`mappings/starcraft-remastered.yaml` maps readable names to archive paths. It has
+~1040 entries, keyed by name and valued by CASC path:
+
+```yaml
+animations/terran/battlecruiser: anim/main_218.anim
+animations/zerg/guardian: anim/main_025.anim
 ```
+
+`extract anim` inverts this to name its output, so you get `battlecruiser.anim`
+rather than `main_218.anim`. Pass `--raw` for numbered filenames, or `--name-map
+my.json` to override with your own `{"218": "some/name"}` table.
+
+Most entries are `animations/<race>/<unit>`, but the file also covers effects and
+scenery — flames, blood variants, selection circles, vespene smoke, mineral fields,
+psi storm parts, explosions — plus `tilesets/`, `ui/` and `data/` prefixes for the
+non-sprite commands.
+
+## Output per sprite
+
+With `--convert-to-png`:
+
+| File | Contents |
+|------|----------|
+| `{name}.png` | Diffuse layer as a sprite sheet |
+| `{name}.json` | Frame metadata (see below) |
+| `{name}_tc.png` | Team-colour mask, only with `--team-color-mask` |
+| `{name}_{layer}.png` | One per extra `--layers` entry |
+| `{name}.dds` | Raw diffuse DDS, only with `--save-dds` |
+
+Without `--convert-to-png` you get the raw `{name}.anim` instead.
+
+The JSON schema is:
+
+```json
+{
+  "name": "main_025",
+  "frameCount": 119,
+  "grpWidth": 421,
+  "grpHeight": 420,
+  "textureWidth": 4072,
+  "textureHeight": 1560,
+  "pixelsPerUnit": 100.0,
+  "frames": [
+    {"index": 0, "x": 3208, "y": 1408, "width": 268, "height": 140,
+     "offsetX": 79, "offsetY": 101}
+  ]
+}
+```
+
+Frames carry `offsetX`/`offsetY` because ANIM frames are trimmed — the offset is
+where the frame sits relative to the logical sprite bounds, and ignoring it makes
+animations jitter.
+
+## Available layers
+
+HD sprites carry up to seven layers; `--layers` selects which to export.
+
+| Layer | Format | Notes |
+|-------|--------|-------|
+| `diffuse` | DXT5 | Base texture (the default) |
+| `teamcolor` | DXT1 | Binary mask; see [team-color.md](team-color.md) |
+| `emissive` | DXT5 | Often empty |
+| `normal` | DXT5 | Normal map |
+| `specular` | DXT1 | Specular mask |
+| `ao` | DXT5 | Spelled `ao_depth` in the file header |
+
+Roughly half of all sprites have a non-empty `teamcolor` layer; the rest are neutral
+units or effects.
 
 ## Extending
 
-To add more sprites, edit `mappings/starcraft-remastered.yaml`:
+Add a line to `mappings/starcraft-remastered.yaml`:
 
 ```yaml
-category/subcategory/name: archive\path\to\file.grp
+animations/terran/my_unit: anim/main_042.anim
 ```
 
-See [Getting Started](getting-started.md) for configuration details.
+Find the id first with `casc-extractor inspect sprites`, or search the archive
+directly with `casc-extractor inspect files --search marine`.
+
+See [Getting Started](getting-started.md) for the extraction commands.

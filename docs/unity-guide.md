@@ -2,21 +2,32 @@
 
 ## Overview
 
-All 133 StarCraft sprites have been extracted with complete Unity integration metadata:
-- **PNG sprite sheets** - All animation frames in grid layout
-- **JSON metadata** - Frame positions and dimensions for automatic slicing
-- **TXT metadata** - Human-readable sprite information
-- **Unity Editor scripts** - Automatic import and animation creation
+`extract anim --convert-to-png` produces everything Unity needs:
+- **PNG sprite sheets** — the diffuse layer, frames packed into an atlas
+- **JSON metadata** — per-frame rects for automatic slicing
+- **Unity Editor scripts** — in this repo's [`unity/`](../unity/) directory
+
+Up to ~1000 HD sprites or 868 SD sprites, depending on quality; see
+[Sprite Reference](sprite-reference.md).
 
 ## File Structure
 
+Names come from the built-in mapping, so output mirrors its keys:
+
+```bash
+casc-extractor extract anim --quality hd4 --convert-to-png --output extracted
 ```
-output/
-├── terran/units/marine.png          # Sprite sheet
-├── terran/units/marine.json         # Unity metadata
-├── terran/units/marine.txt          # Human-readable info
-└── ... (133 sprites total)
+
 ```
+extracted/
+├── terran/marine.png      # Sprite sheet (diffuse layer)
+├── terran/marine.json     # Frame metadata for slicing
+├── zerg/guardian.png
+└── zerg/guardian.json
+```
+
+Add `--team-color-mask` for a `_tc.png` mask beside each sheet, or `--raw` for
+numbered `main_NNN.png` filenames.
 
 ## Unity Integration (3 Steps)
 
@@ -42,9 +53,10 @@ output/
 
 1. Create an `Assets/Editor/` folder if it doesn't exist
 
-2. Copy these scripts to `Assets/Editor/`:
-   - `StarcraftSpriteImporter.cs` - Automatic sprite slicing on import
-   - `StarcraftAnimationCreator.cs` - One-click animation creation
+2. Copy both scripts from this repo's [`unity/`](../unity/) directory to
+   `Assets/Editor/`:
+   - `StarcraftSpriteImporter.cs` — automatic sprite slicing on import
+   - `StarcraftAnimationCreator.cs` — one-click animation creation
 
 3. Unity will automatically compile the scripts
 
@@ -62,24 +74,34 @@ output/
 
 ## JSON Metadata Format
 
-Each sprite has a JSON file with this structure:
+Each sprite has a JSON file alongside its PNG. Real output for `main_025`:
 
 ```json
 {
-  "frameCount": 229,
-  "frameWidth": 64,
-  "frameHeight": 64,
-  "framesPerRow": 17,
-  "rows": 14,
-  "sheetWidth": 1088,
-  "sheetHeight": 896,
+  "name": "main_025",
+  "frameCount": 119,
+  "grpWidth": 421,
+  "grpHeight": 420,
+  "textureWidth": 4072,
+  "textureHeight": 1560,
+  "pixelsPerUnit": 100.0,
   "frames": [
-    {"index": 0, "x": 0, "y": 0, "width": 64, "height": 64},
-    {"index": 1, "x": 64, "y": 0, "width": 64, "height": 64},
-    ...
+    {"index": 0, "x": 3208, "y": 1408, "width": 268, "height": 140,
+     "offsetX": 79, "offsetY": 101}
   ]
 }
 ```
+
+Two things to know when writing your own importer:
+
+- **Frames are not a uniform grid.** ANIM frames are trimmed and packed, so each has
+  its own size and position. There is no `frameWidth`/`framesPerRow` to divide by.
+- **`y` is top-down**; Unity's texture space is bottom-up, so flip with
+  `textureHeight - y - height`. `offsetX`/`offsetY` place the trimmed frame within
+  the logical `grpWidth`×`grpHeight` bounds — ignore them and animations jitter.
+
+`pixelsPerUnit` comes from `output_settings.unity_settings.pixels_per_unit` in the
+config file.
 
 ## Import Settings
 
@@ -151,30 +173,10 @@ public class UnitSpriteBaker : Baker<UnitAuthoring>
 
 ## Sprite Categories
 
-### Units (44 sprites)
-- **Terran**: 13 units (Marine, Firebat, Ghost, etc.)
-- **Protoss**: 15 units (Probe, Zealot, Dragoon, etc.)
-- **Zerg**: 16 units (Drone, Zergling, Hydralisk, etc.)
-
-### Buildings (46 sprites)
-- **Terran**: 15 buildings
-- **Protoss**: 16 buildings
-- **Zerg**: 15 buildings
-
-### Effects (33 sprites)
-- Projectiles (18)
-- Explosions (3)
-- Fire (3)
-- Smoke (2)
-- Blood (4)
-- Other (3)
-
-### Neutral (7 sprites)
-- Vespene Geyser
-- Critters (6)
-
-### UI (3 sprites)
-- Wireframes (Terran, Protoss, Zerg)
+The built-in mapping covers units and buildings for all three races plus effects and
+scenery (flames, blood, selection circles, vespene smoke, mineral fields, explosions).
+It is a flat name-to-id table rather than a category tree — see
+[Sprite Reference](sprite-reference.md).
 
 ## Performance Tips
 
@@ -219,7 +221,8 @@ animator.SetTrigger("Idle");
 
 ## Complete Asset List
 
-All 133 sprites are available for extraction. See [Sprite Reference](sprite-reference.md) for the complete list.
+See [Sprite Reference](sprite-reference.md) for how sprites are addressed and named,
+and `casc-extractor inspect sprites` for what your archive actually contains.
 
 ## Support
 
