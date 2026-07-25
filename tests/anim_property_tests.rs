@@ -85,12 +85,17 @@ mod anim_parsing_never_panics {
 
         #[test]
         fn anim_parsing_never_panics_on_valid_input(
-            sprite_count in 1u32..10,
-            texture_count in 1u32..10,
-            frame_count in 1u32..100,
-            width in 1u16..512,
-            height in 1u16..512,
-            compression_type in 0u8..3,
+            // Ranges include 0, unlike the previous `1..N` bounds: zero counts and
+            // zero extents are exactly where a parser divides by zero or indexes an
+            // empty buffer. Dimensions stay bounded because this generator
+            // materialises width*height*4 real bytes — u16::MAX would ask for 17 GB
+            // and OOM the test process rather than exercise the parser.
+            sprite_count in prop_oneof![Just(0u32), 1u32..10],
+            texture_count in prop_oneof![Just(0u32), 1u32..10],
+            frame_count in prop_oneof![Just(0u32), 1u32..100],
+            width in prop_oneof![Just(0u16), 1u16..512],
+            height in prop_oneof![Just(0u16), 1u16..512],
+            compression_type in 0u8..=4,
         ) {
             let anim_data = generate_valid_anim_data(
                 sprite_count,
