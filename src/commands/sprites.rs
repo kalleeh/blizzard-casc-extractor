@@ -93,13 +93,19 @@ pub fn cmd_extract_anim(
                                             );
                                             // Build a name map from the sprite mapping if available:
                                             // "terran/marine" -> "anim/main_000.anim" => id 0 -> "terran/marine"
-                                            let mapping_path =
-                                                PathBuf::from("mappings/starcraft-remastered.yaml");
+                                            // Use the YAML compiled into the binary: this used to
+                                            // read a relative "mappings/…" path, so running from any
+                                            // directory other than the repo root silently produced
+                                            // mainSD_sprite_NNN.png instead of mapped names.
                                             let id_to_name: std::collections::HashMap<
                                                 usize,
                                                 String,
-                                            > = if mapping_path.exists() {
-                                                SpriteMapping::load(&mapping_path)
+                                            > = {
+                                                let mapping =
+                                                    SpriteMapping::parse_str(include_str!(
+                                                        "../../mappings/starcraft-remastered.yaml"
+                                                    ));
+                                                Some(mapping)
                                                     .map(|m| {
                                                         m.entries
                                                             .into_iter()
@@ -119,8 +125,6 @@ pub fn cmd_extract_anim(
                                                             .collect()
                                                     })
                                                     .unwrap_or_default()
-                                            } else {
-                                                std::collections::HashMap::new()
                                             };
 
                                             let export_teamcolor = team_color_mask;

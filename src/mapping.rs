@@ -12,7 +12,14 @@ pub struct SpriteMapping {
 impl SpriteMapping {
     pub fn load(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         let content = fs::read_to_string(path)?;
+        Ok(Self::parse_str(&content))
+    }
 
+    /// Parse the mapping from an in-memory string.
+    ///
+    /// Exists so callers can use the YAML compiled into the binary rather than
+    /// reading it from a relative path at runtime.
+    pub fn parse_str(content: &str) -> Self {
         // Simple YAML parser for our format
         let mut entries = HashMap::new();
         for line in content.lines() {
@@ -28,7 +35,7 @@ impl SpriteMapping {
             }
         }
 
-        Ok(Self { entries })
+        Self { entries }
     }
 
     pub fn get_category_entries(&self, category: &str) -> Vec<(String, String)> {
