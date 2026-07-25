@@ -4,12 +4,12 @@
 // 100% byte-level accuracy and visual correctness of extracted sprites.
 
 pub mod byte_comparison;
-pub mod visual_validation;
 pub mod regression_suite;
+pub mod visual_validation;
 
 pub use byte_comparison::{ByteComparison, ByteComparisonResult};
+pub use regression_suite::{KnownGoodExtraction, RegressionTestSuite};
 pub use visual_validation::{VisualComparison, VisualComparisonResult};
-pub use regression_suite::{RegressionTestSuite, KnownGoodExtraction};
 
 use std::path::PathBuf;
 use thiserror::Error;

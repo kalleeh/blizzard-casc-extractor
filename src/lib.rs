@@ -1,29 +1,35 @@
 //! CASC Sprite Extractor Library
-//! 
-//! This library provides functionality for extracting sprite assets from 
+//!
+//! This library provides functionality for extracting sprite assets from
 //! StarCraft: Remastered CASC archives and converting them to PNG format.
 
-pub mod casc;
 pub mod anim;
-pub mod grp;
-pub mod sprite;
-pub mod palette;
-pub mod mapping;
+pub mod casc;
 pub mod config;
 pub mod filter;
-pub mod resolution;
+pub mod grp;
+pub mod mapping;
+pub mod palette;
 pub mod progress;
+pub mod resolution;
+pub mod sprite;
 pub mod validation;
 
-pub use casc::{CascArchive, CascError, FileEntry, FileAnalysis};
-pub use casc::discovery::{locate_starcraft, open_archive};
-pub use anim::{AnimFile, AnimError, CompressionType, PixelFormat, AnimPalette};
-pub use grp::{GrpFile, GrpFrame, GrpError};
-pub use sprite::export::{ExportConfig, ExportResult, export_anim, generate_metadata};
-pub use resolution::ResolutionTier;
-pub use config::{ExtractionConfig, QualitySettings, OutputSettings, FeedbackSettings, UnityExportSettings, MetadataOptions, OverwriteBehavior};
-pub use filter::{FormatFilterOption, UnityFilterMode, UnityWrapMode};
-pub use progress::ProgressReporter;
+pub use anim::{AnimError, AnimFile, AnimPalette, CompressionType, PixelFormat};
 pub use casc::casclib_ffi::CascStorage;
-pub use validation::{ByteComparison, ByteComparisonResult, VisualComparison, VisualComparisonResult, RegressionTestSuite, KnownGoodExtraction, ValidationError};
+pub use casc::discovery::{locate_starcraft, open_archive};
+pub use casc::{CascArchive, CascError, FileAnalysis, FileEntry};
+pub use config::{
+    ExtractionConfig, FeedbackSettings, MetadataOptions, OutputSettings, OverwriteBehavior,
+    QualitySettings, UnityExportSettings,
+};
+pub use filter::{FormatFilterOption, UnityFilterMode, UnityWrapMode};
+pub use grp::{GrpError, GrpFile, GrpFrame};
+pub use progress::ProgressReporter;
+pub use resolution::ResolutionTier;
+pub use sprite::export::{export_anim, generate_metadata, ExportConfig, ExportResult};
+pub use validation::{
+    ByteComparison, ByteComparisonResult, KnownGoodExtraction, RegressionTestSuite,
+    ValidationError, VisualComparison, VisualComparisonResult,
+};
 pub mod dds_converter;

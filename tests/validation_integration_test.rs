@@ -5,9 +5,7 @@
 
 mod common;
 
-use casc_extractor::validation::{
-    ByteComparison, VisualComparison, RegressionTestSuite,
-};
+use casc_extractor::validation::{ByteComparison, RegressionTestSuite, VisualComparison};
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
@@ -30,7 +28,10 @@ fn test_byte_comparison_identical_files() {
     assert!(result.matches, "Files should match byte-for-byte");
     assert_eq!(result.hash1, result.hash2, "SHA256 hashes should match");
     assert_eq!(result.size1, result.size2, "File sizes should match");
-    assert!(result.first_diff_offset.is_none(), "No differences should be found");
+    assert!(
+        result.first_diff_offset.is_none(),
+        "No differences should be found"
+    );
 }
 
 #[test]
@@ -40,15 +41,24 @@ fn test_byte_comparison_different_files() {
     let file2 = temp_dir.path().join("file2.bin");
 
     // Create different files
-    File::create(&file1).unwrap().write_all(b"data one").unwrap();
-    File::create(&file2).unwrap().write_all(b"data two").unwrap();
+    File::create(&file1)
+        .unwrap()
+        .write_all(b"data one")
+        .unwrap();
+    File::create(&file2)
+        .unwrap()
+        .write_all(b"data two")
+        .unwrap();
 
     // Compare files
     let result = ByteComparison::compare_files(&file1, &file2, false).unwrap();
 
     assert!(!result.matches, "Files should not match");
     assert_ne!(result.hash1, result.hash2, "SHA256 hashes should differ");
-    assert!(result.first_diff_offset.is_some(), "Difference offset should be found");
+    assert!(
+        result.first_diff_offset.is_some(),
+        "Difference offset should be found"
+    );
 }
 
 #[test]
@@ -58,15 +68,28 @@ fn test_byte_comparison_with_hex_dump() {
     let file2 = temp_dir.path().join("file2.bin");
 
     // Create files with difference at specific offset
-    File::create(&file1).unwrap().write_all(b"abcdefghijklmnop").unwrap();
-    File::create(&file2).unwrap().write_all(b"abcdXfghijklmnop").unwrap();
+    File::create(&file1)
+        .unwrap()
+        .write_all(b"abcdefghijklmnop")
+        .unwrap();
+    File::create(&file2)
+        .unwrap()
+        .write_all(b"abcdXfghijklmnop")
+        .unwrap();
 
     // Compare files with hex dump generation
     let result = ByteComparison::compare_files(&file1, &file2, true).unwrap();
 
     assert!(!result.matches, "Files should not match");
-    assert_eq!(result.first_diff_offset, Some(4), "Difference should be at offset 4");
-    assert!(result.hex_dump_path.is_some(), "Hex dump should be generated");
+    assert_eq!(
+        result.first_diff_offset,
+        Some(4),
+        "Difference should be at offset 4"
+    );
+    assert!(
+        result.hex_dump_path.is_some(),
+        "Hex dump should be generated"
+    );
 }
 
 #[test]
@@ -75,14 +98,20 @@ fn test_sha256_calculation() {
     let file = temp_dir.path().join("test.bin");
 
     // Create a test file
-    File::create(&file).unwrap().write_all(b"test data").unwrap();
+    File::create(&file)
+        .unwrap()
+        .write_all(b"test data")
+        .unwrap();
 
     // Calculate SHA256
     let hash = ByteComparison::calculate_sha256(&file).unwrap();
 
     // Verify hash format (64 hex characters)
     assert_eq!(hash.len(), 64, "SHA256 hash should be 64 characters");
-    assert!(hash.chars().all(|c| c.is_ascii_hexdigit()), "Hash should be hex");
+    assert!(
+        hash.chars().all(|c| c.is_ascii_hexdigit()),
+        "Hash should be hex"
+    );
 
     // Calculate again to verify consistency
     let hash2 = ByteComparison::calculate_sha256(&file).unwrap();
@@ -105,10 +134,19 @@ fn test_visual_comparison_identical_images() {
     // Compare images
     let result = VisualComparison::compare_images(&img1_path, &img2_path, false).unwrap();
 
-    assert!(result.pixel_perfect_match, "Images should match pixel-for-pixel");
+    assert!(
+        result.pixel_perfect_match,
+        "Images should match pixel-for-pixel"
+    );
     assert_eq!(result.different_pixels, 0, "No pixels should differ");
-    assert_eq!(result.perceptual_hash1, result.perceptual_hash2, "Perceptual hashes should match");
-    assert_eq!(result.perceptual_distance, 0, "Perceptual distance should be 0");
+    assert_eq!(
+        result.perceptual_hash1, result.perceptual_hash2,
+        "Perceptual hashes should match"
+    );
+    assert_eq!(
+        result.perceptual_distance, 0,
+        "Perceptual distance should be 0"
+    );
 }
 
 #[test]
@@ -130,7 +168,10 @@ fn test_visual_comparison_different_images() {
 
     assert!(!result.pixel_perfect_match, "Images should not match");
     assert_eq!(result.different_pixels, 64 * 64, "All pixels should differ");
-    assert_eq!(result.difference_percentage, 100.0, "100% of pixels should differ");
+    assert_eq!(
+        result.difference_percentage, 100.0,
+        "100% of pixels should differ"
+    );
 }
 
 #[test]
@@ -144,11 +185,11 @@ fn test_visual_comparison_with_diff_generation() {
     // Create slightly different images
     let img1 = RgbaImage::from_pixel(64, 64, image::Rgba([128, 128, 128, 255]));
     let mut img2 = RgbaImage::from_pixel(64, 64, image::Rgba([128, 128, 128, 255]));
-    
+
     // Make a few pixels different
     img2.put_pixel(10, 10, image::Rgba([255, 0, 0, 255]));
     img2.put_pixel(20, 20, image::Rgba([255, 0, 0, 255]));
-    
+
     img1.save(&img1_path).unwrap();
     img2.save(&img2_path).unwrap();
 
@@ -157,8 +198,14 @@ fn test_visual_comparison_with_diff_generation() {
 
     assert!(!result.pixel_perfect_match, "Images should not match");
     assert_eq!(result.different_pixels, 2, "2 pixels should differ");
-    assert!(result.diff_image_path.is_some(), "Diff image should be generated");
-    assert!(result.comparison_image_path.is_some(), "Comparison image should be generated");
+    assert!(
+        result.diff_image_path.is_some(),
+        "Diff image should be generated"
+    );
+    assert!(
+        result.comparison_image_path.is_some(),
+        "Comparison image should be generated"
+    );
 }
 
 #[test]
@@ -177,19 +224,31 @@ fn test_regression_suite_add_known_good() {
     let output_file = temp_dir.path().join("test_sprite.png");
 
     // Create a test sprite file
-    File::create(&output_file).unwrap().write_all(b"test sprite data").unwrap();
+    File::create(&output_file)
+        .unwrap()
+        .write_all(b"test sprite data")
+        .unwrap();
 
     let mut suite = RegressionTestSuite::new(db_path).unwrap();
 
-    suite.add_known_good(
-        "test_sprite".to_string(),
-        PathBuf::from("source.casc"),
-        output_file,
-        common::sprite_metadata_64(),
-    ).unwrap();
+    suite
+        .add_known_good(
+            "test_sprite".to_string(),
+            PathBuf::from("source.casc"),
+            output_file,
+            common::sprite_metadata_64(),
+        )
+        .unwrap();
 
-    assert_eq!(suite.count(), 1, "Suite should have 1 known-good extraction");
-    assert!(suite.has_baseline("test_sprite"), "Suite should have baseline for test_sprite");
+    assert_eq!(
+        suite.count(),
+        1,
+        "Suite should have 1 known-good extraction"
+    );
+    assert!(
+        suite.has_baseline("test_sprite"),
+        "Suite should have baseline for test_sprite"
+    );
 }
 
 #[test]
@@ -205,17 +264,24 @@ fn test_regression_suite_validation() {
     // Add to regression suite
     let mut suite = RegressionTestSuite::new(db_path).unwrap();
 
-    suite.add_known_good(
-        "test_sprite".to_string(),
-        PathBuf::from("source.casc"),
-        output_file.clone(),
-        common::sprite_metadata_64(),
-    ).unwrap();
+    suite
+        .add_known_good(
+            "test_sprite".to_string(),
+            PathBuf::from("source.casc"),
+            output_file.clone(),
+            common::sprite_metadata_64(),
+        )
+        .unwrap();
 
     // Validate against the same file (should pass)
-    let result = suite.validate_no_regression("test_sprite", &output_file).unwrap();
+    let result = suite
+        .validate_no_regression("test_sprite", &output_file)
+        .unwrap();
     assert!(result.passed, "Validation should pass for identical file");
-    assert!(result.regression_details.is_none(), "No regression should be detected");
+    assert!(
+        result.regression_details.is_none(),
+        "No regression should be detected"
+    );
 }
 
 #[test]
@@ -227,26 +293,35 @@ fn test_regression_suite_detects_changes() {
 
     // Create original file as a valid 1x1 red PNG
     image::RgbaImage::from_pixel(1, 1, image::Rgba([255, 0, 0, 255]))
-        .save(&original_file).unwrap();
+        .save(&original_file)
+        .unwrap();
 
     // Add to regression suite
     let mut suite = RegressionTestSuite::new(db_path).unwrap();
 
-    suite.add_known_good(
-        "test_sprite".to_string(),
-        PathBuf::from("source.casc"),
-        original_file,
-        common::sprite_metadata_64(),
-    ).unwrap();
+    suite
+        .add_known_good(
+            "test_sprite".to_string(),
+            PathBuf::from("source.casc"),
+            original_file,
+            common::sprite_metadata_64(),
+        )
+        .unwrap();
 
     // Create modified file as a valid 1x1 green PNG (different from original)
     image::RgbaImage::from_pixel(1, 1, image::Rgba([0, 255, 0, 255]))
-        .save(&modified_file).unwrap();
+        .save(&modified_file)
+        .unwrap();
 
     // Validate against modified file (should fail)
-    let result = suite.validate_no_regression("test_sprite", &modified_file).unwrap();
+    let result = suite
+        .validate_no_regression("test_sprite", &modified_file)
+        .unwrap();
     assert!(!result.passed, "Validation should fail for modified file");
-    assert!(result.regression_details.is_some(), "Regression should be detected");
+    assert!(
+        result.regression_details.is_some(),
+        "Regression should be detected"
+    );
 }
 
 #[test]
@@ -255,14 +330,26 @@ fn test_byte_comparison_report_generation() {
     let file1 = temp_dir.path().join("file1.bin");
     let file2 = temp_dir.path().join("file2.bin");
 
-    File::create(&file1).unwrap().write_all(b"test data").unwrap();
-    File::create(&file2).unwrap().write_all(b"test data").unwrap();
+    File::create(&file1)
+        .unwrap()
+        .write_all(b"test data")
+        .unwrap();
+    File::create(&file2)
+        .unwrap()
+        .write_all(b"test data")
+        .unwrap();
 
     let result = ByteComparison::compare_files(&file1, &file2, false).unwrap();
     let report = ByteComparison::generate_report(&file1, &file2, &result);
 
-    assert!(report.contains("Byte-Level Comparison Report"), "Report should have title");
-    assert!(report.contains("FILES MATCH"), "Report should indicate match");
+    assert!(
+        report.contains("Byte-Level Comparison Report"),
+        "Report should have title"
+    );
+    assert!(
+        report.contains("FILES MATCH"),
+        "Report should indicate match"
+    );
     assert!(report.contains(&result.hash1), "Report should include hash");
 }
 
@@ -281,7 +368,16 @@ fn test_visual_comparison_report_generation() {
     let result = VisualComparison::compare_images(&img1_path, &img2_path, false).unwrap();
     let report = VisualComparison::generate_report(&img1_path, &img2_path, &result);
 
-    assert!(report.contains("Visual Comparison Report"), "Report should have title");
-    assert!(report.contains("IMAGES MATCH"), "Report should indicate match");
-    assert!(report.contains("Perceptual Hash"), "Report should include perceptual hash");
+    assert!(
+        report.contains("Visual Comparison Report"),
+        "Report should have title"
+    );
+    assert!(
+        report.contains("IMAGES MATCH"),
+        "Report should indicate match"
+    );
+    assert!(
+        report.contains("Perceptual Hash"),
+        "Report should include perceptual hash"
+    );
 }

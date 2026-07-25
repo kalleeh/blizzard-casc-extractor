@@ -95,10 +95,7 @@ fn make_frame(width: u16, height: u16) -> GrpFrame {
 // ---------------------------------------------------------------------------
 
 fn compile_patterns(patterns: &[&str]) -> Vec<Regex> {
-    patterns
-        .iter()
-        .filter_map(|p| Regex::new(p).ok())
-        .collect()
+    patterns.iter().filter_map(|p| Regex::new(p).ok()).collect()
 }
 
 fn passes_filter(path: &str, include: &[Regex], exclude: &[Regex]) -> bool {

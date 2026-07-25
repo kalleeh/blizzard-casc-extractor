@@ -2,8 +2,8 @@
 // Handles 4x HD and 2x HD animated sprites with multiple layers
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use std::io::{self, Cursor, Read, Seek, SeekFrom};
 use image::RgbaImage;
+use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
 const ANIM_MAGIC: u32 = 0x4D494E41; // "ANIM"
 
@@ -54,31 +54,31 @@ pub struct HdAnimFile {
 impl HdAnimFile {
     pub fn parse(data: &[u8]) -> io::Result<Self> {
         let mut cursor = Cursor::new(data);
-        
+
         let header = Self::parse_header(&mut cursor)?;
-        
+
         if header.filetype != ANIM_MAGIC {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("Invalid ANIM magic: 0x{:08x}", header.filetype),
             ));
         }
-        
+
         if header.version == 0x0101 {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
                 "SD ANIM format not supported",
             ));
         }
-        
+
         let entry = Self::parse_entry(&mut cursor)?;
-        
+
         cursor.seek(SeekFrom::Start(entry.frame_ptr as u64))?;
         let mut frames = Vec::with_capacity(entry.frames as usize);
         for _ in 0..entry.frames {
             frames.push(Self::parse_frame(&mut cursor)?);
         }
-        
+
         // Extract layer DDS data
         let mut layer_data = Vec::new();
         for (i, img) in entry.images.iter().enumerate() {
@@ -98,7 +98,10 @@ impl HdAnimFile {
                         io::ErrorKind::InvalidData,
                         format!(
                             "layer {} spans {}..{} which exceeds the {}-byte file",
-                            i, start, end, data.len()
+                            i,
+                            start,
+                            end,
+                            data.len()
                         ),
                     ));
                 }
@@ -110,7 +113,7 @@ impl HdAnimFile {
                 layer_data.push(Vec::new());
             }
         }
-        
+
         Ok(HdAnimFile {
             header,
             entry,
@@ -118,14 +121,14 @@ impl HdAnimFile {
             layer_data,
         })
     }
-    
+
     fn parse_header(cursor: &mut Cursor<&[u8]>) -> io::Result<HdAnimHeader> {
         let filetype = cursor.read_u32::<LittleEndian>()?;
         let version = cursor.read_u16::<LittleEndian>()?;
         let _unk2 = cursor.read_u16::<LittleEndian>()?;
         let layers = cursor.read_u16::<LittleEndian>()?;
         let entries = cursor.read_u16::<LittleEndian>()?;
-        
+
         // Store ALL 10 name slots by physical position (including empty strings).
         // This preserves the direct mapping: layer_names[i] corresponds to layer_data[i],
         // which is required for correct name→index lookup in get_team_color_layer().
@@ -136,11 +139,14 @@ impl HdAnimFile {
             // Truncate at the first NUL: a reused slot can hold stale bytes after
             // the terminator, and trailing-only trimming would keep them, breaking
             // the name lookup in get_team_color_layer().
-            let end = name_bytes.iter().position(|&b| b == 0).unwrap_or(name_bytes.len());
+            let end = name_bytes
+                .iter()
+                .position(|&b| b == 0)
+                .unwrap_or(name_bytes.len());
             let name = String::from_utf8_lossy(&name_bytes[..end]).into_owned();
             layer_names.push(name);
         }
-        
+
         Ok(HdAnimHeader {
             filetype,
             version,
@@ -149,14 +155,14 @@ impl HdAnimFile {
             layer_names,
         })
     }
-    
+
     fn parse_entry(cursor: &mut Cursor<&[u8]>) -> io::Result<HdAnimEntry> {
         let frames = cursor.read_u16::<LittleEndian>()?;
         let _unk2 = cursor.read_u16::<LittleEndian>()?;
         let grp_width = cursor.read_u16::<LittleEndian>()?;
         let grp_height = cursor.read_u16::<LittleEndian>()?;
         let frame_ptr = cursor.read_u32::<LittleEndian>()?;
-        
+
         let mut images = Vec::new();
         for _ in 0..10 {
             images.push(HdAnimImage {
@@ -166,7 +172,7 @@ impl HdAnimFile {
                 tex_height: cursor.read_u16::<LittleEndian>()?,
             });
         }
-        
+
         Ok(HdAnimEntry {
             frames,
             grp_width,
@@ -175,7 +181,7 @@ impl HdAnimFile {
             images,
         })
     }
-    
+
     fn parse_frame(cursor: &mut Cursor<&[u8]>) -> io::Result<HdAnimFrame> {
         let x = cursor.read_u16::<LittleEndian>()?;
         let y = cursor.read_u16::<LittleEndian>()?;
@@ -185,7 +191,7 @@ impl HdAnimFile {
         let height = cursor.read_u16::<LittleEndian>()?;
         let _unk1 = cursor.read_u16::<LittleEndian>()?;
         let _unk2 = cursor.read_u16::<LittleEndian>()?;
-        
+
         Ok(HdAnimFrame {
             x,
             y,
@@ -195,12 +201,15 @@ impl HdAnimFile {
             height,
         })
     }
-    
+
     /// Layer 0 — `diffuse` (DXT5).  Full-colour base texture.
     /// In team-colour regions the pixels are neutral grey (saturation 0.06–0.14);
     /// the visible unit colour (e.g. Protoss gold) lives in the non-TC pixels.
     pub fn get_diffuse_layer(&self) -> Option<&[u8]> {
-        self.layer_data.first().filter(|d| !d.is_empty()).map(|d| d.as_slice())
+        self.layer_data
+            .first()
+            .filter(|d| !d.is_empty())
+            .map(|d| d.as_slice())
     }
 
     /// Layer 2 — `teamcolor` (DXT1).  **Binary** mask: white = team-colour pixel,
@@ -233,12 +242,18 @@ impl HdAnimFile {
                 2
             }
         };
-        self.layer_data.get(idx).filter(|d| !d.is_empty()).map(|d| d.as_slice())
+        self.layer_data
+            .get(idx)
+            .filter(|d| !d.is_empty())
+            .map(|d| d.as_slice())
     }
 
     /// Return the raw DDS bytes for any layer by index.
     pub fn get_layer(&self, index: usize) -> Option<&[u8]> {
-        self.layer_data.get(index).filter(|d| !d.is_empty()).map(|d| d.as_slice())
+        self.layer_data
+            .get(index)
+            .filter(|d| !d.is_empty())
+            .map(|d| d.as_slice())
     }
 
     // -------------------------------------------------------------------------

@@ -1,10 +1,10 @@
+use crate::casc::CascArchive;
+use anyhow::{anyhow, Result};
 /// Cross-platform StarCraft: Remastered installation discovery.
 ///
 /// Provides helpers to locate the game directory and open the CASC archive
 /// without callers needing to hard-code platform-specific paths.
 use std::path::{Path, PathBuf};
-use anyhow::{anyhow, Result};
-use crate::casc::CascArchive;
 
 /// Locate the StarCraft: Remastered installation directory.
 ///
@@ -74,6 +74,11 @@ fn platform_candidates() -> Vec<PathBuf> {
 /// Convenience: open the CascArchive, auto-detecting or using override_path.
 pub fn open_archive(override_path: Option<&Path>) -> Result<CascArchive> {
     let install_dir = locate_starcraft(override_path)?;
-    CascArchive::open(&install_dir)
-        .map_err(|e| anyhow!("Failed to open CASC archive at {}: {}", install_dir.display(), e))
+    CascArchive::open(&install_dir).map_err(|e| {
+        anyhow!(
+            "Failed to open CASC archive at {}: {}",
+            install_dir.display(),
+            e
+        )
+    })
 }

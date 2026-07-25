@@ -16,7 +16,11 @@ struct Salsa20State {
 impl Salsa20State {
     fn new(key: &[u8], vector: &[u8]) -> Self {
         let key_len = key.len();
-        let constants = if key_len == 32 { KEY_CONSTANT_32 } else { KEY_CONSTANT_16 };
+        let constants = if key_len == 32 {
+            KEY_CONSTANT_32
+        } else {
+            KEY_CONSTANT_16
+        };
         let key_index = key_len.saturating_sub(0x10);
 
         let mut state = [0u32; 16];
@@ -31,11 +35,32 @@ impl Salsa20State {
         state[8] = 0;
         state[9] = 0;
         state[10] = u32::from_le_bytes([constants[8], constants[9], constants[10], constants[11]]);
-        state[11] = u32::from_le_bytes([key[key_index], key[key_index + 1], key[key_index + 2], key[key_index + 3]]);
-        state[12] = u32::from_le_bytes([key[key_index + 4], key[key_index + 5], key[key_index + 6], key[key_index + 7]]);
-        state[13] = u32::from_le_bytes([key[key_index + 8], key[key_index + 9], key[key_index + 10], key[key_index + 11]]);
-        state[14] = u32::from_le_bytes([key[key_index + 12], key[key_index + 13], key[key_index + 14], key[key_index + 15]]);
-        state[15] = u32::from_le_bytes([constants[12], constants[13], constants[14], constants[15]]);
+        state[11] = u32::from_le_bytes([
+            key[key_index],
+            key[key_index + 1],
+            key[key_index + 2],
+            key[key_index + 3],
+        ]);
+        state[12] = u32::from_le_bytes([
+            key[key_index + 4],
+            key[key_index + 5],
+            key[key_index + 6],
+            key[key_index + 7],
+        ]);
+        state[13] = u32::from_le_bytes([
+            key[key_index + 8],
+            key[key_index + 9],
+            key[key_index + 10],
+            key[key_index + 11],
+        ]);
+        state[14] = u32::from_le_bytes([
+            key[key_index + 12],
+            key[key_index + 13],
+            key[key_index + 14],
+            key[key_index + 15],
+        ]);
+        state[15] =
+            u32::from_le_bytes([constants[12], constants[13], constants[14], constants[15]]);
 
         Self {
             key: state,
@@ -102,9 +127,8 @@ impl Salsa20State {
             // Convert to bytes and XOR with input
             let block_size = remaining.min(0x40);
             // SAFETY: xor_value is [u32; 16] = 64 bytes on all platforms. Interpreting as &[u8; 64] is valid.
-            let xor_bytes: &[u8] = unsafe {
-                std::slice::from_raw_parts(xor_value.as_ptr() as *const u8, 64)
-            };
+            let xor_bytes: &[u8] =
+                unsafe { std::slice::from_raw_parts(xor_value.as_ptr() as *const u8, 64) };
 
             for i in 0..block_size {
                 output[offset + i] = input[offset + i] ^ xor_bytes[i];

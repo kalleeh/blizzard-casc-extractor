@@ -1,3 +1,6 @@
+use crate::anim::HdAnimFile;
+use crate::dds_converter::save_dds_as_png;
+use anyhow::{Context, Result};
 /// Reusable HD anim export logic extracted from the `extract_hd` binary.
 ///
 /// `SpriteExporter` consolidates DDS saving, PNG conversion (with optional
@@ -6,9 +9,6 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use anyhow::{Context, Result};
-use crate::anim::HdAnimFile;
-use crate::dds_converter::save_dds_as_png;
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -108,9 +108,8 @@ pub fn export_anim(
                 // the raw diffuse by the player colour where the mask is set,
                 // so altering the diffuse here would make the documented
                 // formula reproduce something the game never renders.
-                save_dds_as_png(diffuse, &png_path).with_context(|| {
-                    format!("writing diffuse PNG {}", png_path.display())
-                })?;
+                save_dds_as_png(diffuse, &png_path)
+                    .with_context(|| format!("writing diffuse PNG {}", png_path.display()))?;
 
                 // ---------------------------------------------------------
                 // Team-colour mask export (_tc.png)
@@ -126,11 +125,9 @@ pub fn export_anim(
 
                     match anim.team_color_mask_image() {
                         Some(Ok(tc_img)) => {
-                            tc_img
-                                .save(&tc_png_path)
-                                .with_context(|| {
-                                    format!("saving TC mask PNG {}", tc_png_path.display())
-                                })?;
+                            tc_img.save(&tc_png_path).with_context(|| {
+                                format!("saving TC mask PNG {}", tc_png_path.display())
+                            })?;
                             tc_mask_written = true;
                         }
                         Some(Err(e)) => {
@@ -143,9 +140,8 @@ pub fn export_anim(
                 // ---------------------------------------------------------
                 // Plain diffuse export (no TC processing)
                 // ---------------------------------------------------------
-                save_dds_as_png(diffuse, &png_path).with_context(|| {
-                    format!("writing diffuse PNG {}", png_path.display())
-                })?;
+                save_dds_as_png(diffuse, &png_path)
+                    .with_context(|| format!("writing diffuse PNG {}", png_path.display()))?;
             }
         }
 
@@ -155,13 +151,13 @@ pub fn export_anim(
         // Conventional layer order for HD ANIM files, used only when a file's
         // header does not name its layers. See docs/team-color.md.
         let conventional_index: &[(&str, usize)] = &[
-            ("diffuse",   0),
-            ("bright",    1),
+            ("diffuse", 0),
+            ("bright", 1),
             ("teamcolor", 2),
-            ("emissive",  3),
-            ("normal",    4),
-            ("specular",  5),
-            ("ao",        6),
+            ("emissive", 3),
+            ("normal", 4),
+            ("specular", 5),
+            ("ao", 6),
         ];
 
         for layer_name in &config.layers {
@@ -196,14 +192,11 @@ pub fn export_anim(
                         .file_stem()
                         .and_then(|s| s.to_str())
                         .unwrap_or("anim");
-                    let layer_png_path = output_base
-                        .with_file_name(format!("{}_{}.png", stem, lname));
+                    let layer_png_path =
+                        output_base.with_file_name(format!("{}_{}.png", stem, lname));
 
                     if let Err(e) = save_dds_as_png(layer_dds, &layer_png_path) {
-                        eprintln!(
-                            "     Warning: could not export {} layer: {}",
-                            lname, e
-                        );
+                        eprintln!("     Warning: could not export {} layer: {}", lname, e);
                     }
                 }
                 // If get_layer returns None the layer simply isn't in this file — skip silently.
@@ -242,7 +235,11 @@ pub fn generate_metadata(anim: &HdAnimFile, name: &str) -> String {
 }
 
 /// Generate Unity-compatible JSON metadata, including `pixelsPerUnit`.
-pub fn generate_metadata_with_config(anim: &HdAnimFile, name: &str, pixels_per_unit: f32) -> String {
+pub fn generate_metadata_with_config(
+    anim: &HdAnimFile,
+    name: &str,
+    pixels_per_unit: f32,
+) -> String {
     // Get PNG dimensions from first image entry.
     let (width, height) = if let Some(img) = anim.entry.images.first() {
         (img.tex_width as u32, img.tex_height as u32)

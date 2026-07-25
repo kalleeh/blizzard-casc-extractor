@@ -50,20 +50,23 @@ pub fn get(casc_path: &str) -> Option<&'static [u8]> {
     let normalised = casc_path.replace('/', "\\");
     let lower = normalised.to_lowercase();
 
-    ENTRIES.iter().find(|(key, _)| {
-        let kl = key.to_lowercase();
-        // Exact match.
-        if kl == lower {
-            return true;
-        }
-        // The stored key has a `locales\<locale>\` prefix but the caller may
-        // have omitted it (paths from CascStorage often lack it).
-        // Check whether the key ends with `\<lower>`.
-        if kl.ends_with(&format!("\\{}", lower)) {
-            return true;
-        }
-        false
-    }).map(|(_, data)| *data)
+    ENTRIES
+        .iter()
+        .find(|(key, _)| {
+            let kl = key.to_lowercase();
+            // Exact match.
+            if kl == lower {
+                return true;
+            }
+            // The stored key has a `locales\<locale>\` prefix but the caller may
+            // have omitted it (paths from CascStorage often lack it).
+            // Check whether the key ends with `\<lower>`.
+            if kl.ends_with(&format!("\\{}", lower)) {
+                return true;
+            }
+            false
+        })
+        .map(|(_, data)| *data)
 }
 
 /// Return all embedded entries whose key contains `pattern` (case-insensitive)

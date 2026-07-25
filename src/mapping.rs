@@ -12,7 +12,7 @@ pub struct SpriteMapping {
 impl SpriteMapping {
     pub fn load(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         let content = fs::read_to_string(path)?;
-        
+
         // Simple YAML parser for our format
         let mut entries = HashMap::new();
         for line in content.lines() {
@@ -20,17 +20,17 @@ impl SpriteMapping {
             if line.is_empty() || line.starts_with('#') {
                 continue;
             }
-            
+
             if let Some((key, value)) = line.split_once(':') {
                 let key = key.trim().to_string();
                 let value = value.trim().to_string();
                 entries.insert(key, value);
             }
         }
-        
+
         Ok(Self { entries })
     }
-    
+
     pub fn get_category_entries(&self, category: &str) -> Vec<(String, String)> {
         self.entries
             .iter()

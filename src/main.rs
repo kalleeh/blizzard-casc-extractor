@@ -18,14 +18,14 @@ use casc_extractor::casc::casclib_ffi::CascArchive;
 use casc_extractor::casc::discovery::locate_starcraft;
 use casc_extractor::config::{ExtractionConfig, OverwriteBehavior};
 use casc_extractor::filter::FormatFilterOption;
-use casc_extractor::validation::regression_suite::KnownGoodExtraction;
-use casc_extractor::validation::regression_suite::SpriteMetadata as RegressionSpriteMetadata;
-use rayon::prelude::*;
-use regex::Regex;
 use casc_extractor::grp::GrpFile;
 use casc_extractor::mapping::SpriteMapping;
+use casc_extractor::validation::regression_suite::KnownGoodExtraction;
+use casc_extractor::validation::regression_suite::SpriteMetadata as RegressionSpriteMetadata;
 use casc_extractor::{export_anim, CascStorage, ExportConfig};
 use clap::{Parser, Subcommand, ValueEnum};
+use rayon::prelude::*;
+use regex::Regex;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -78,113 +78,158 @@ struct SoundTargetEntry {
 
 /// (output_filename, list of candidate CASC paths to try in order)
 const SOUND_TARGETS: &[(&str, &[&str])] = &[
-    ("marine_yes1.ogg", &[
-        "sound\\Terran\\marine\\tmayes00.wav",
-        "sound\\terran\\marine\\tmayes00.wav",
-        "sound\\Terran\\Marine\\tmayes00.wav",
-    ]),
-    ("marine_move1.ogg", &[
-        "sound\\Terran\\marine\\tmamov00.wav",
-        "sound\\terran\\marine\\tmamov00.wav",
-        "sound\\Terran\\marine\\tmardy00.wav",
-        "sound\\terran\\marine\\tmardy00.wav",
-    ]),
-    ("marine_die.ogg", &[
-        "sound\\Terran\\marine\\tmadth00.wav",
-        "sound\\terran\\marine\\tmadth00.wav",
-        "sound\\Terran\\Marine\\tmadth00.wav",
-    ]),
-    ("marine_attack.ogg", &[
-        "sound\\Terran\\marine\\tmaatt00.wav",
-        "sound\\terran\\marine\\tmaatt00.wav",
-        "sound\\Weapons\\Terran\\tgun.wav",
-        "sound\\Weapons\\terran\\tgun.wav",
-        "sound\\weapons\\terran\\tgun.wav",
-        "sound\\Terran\\Weapons\\tgun.wav",
-        "sound\\Terran\\weapons\\tgun.wav",
-        "sound\\Terran\\marine\\tmasti00.wav",
-        "sound\\terran\\marine\\tmasti00.wav",
-        "sound\\Terran\\marine\\tmawht00.wav",
-        "sound\\terran\\marine\\tmawht00.wav",
-    ]),
-    ("zergling_attack.ogg", &[
-        "\\zerg\\zergling\\zlatt00.wav",
-        "\\zerg\\Zergling\\ZlAtt00.wav",
-        "\\Zerg\\Zergling\\ZlAtt00.wav",
-        "\\Zerg\\zergling\\zlatt00.wav",
-        "\\sound\\zerg\\zergling\\zlatt00.wav",
-        "\\sound\\Zerg\\Zergling\\ZlAtt00.wav",
-        "sound\\Zerg\\Zergling\\ZlAtt00.wav",
-        "sound/Zerg/Zergling/ZlAtt00.wav",
-        "zerg\\zergling\\zlatt00.wav",
-        "zerg/zergling/zlatt00.wav",
-        "\\zerg\\zergling\\zlwht00.wav",
-        "\\Zerg\\Zergling\\ZlWht00.wav",
-        "zerg\\zergling\\zlwht00.wav",
-        "zerg/zergling/zlwht00.wav",
-        "\\zerg\\zergling\\zlatt00.wav",
-        "\\zerg\\Zergling\\ZlAtt00.wav",
-    ]),
-    ("zergling_die.ogg", &[
-        "\\zerg\\zergling\\zldth00.wav",
-        "\\zerg\\Zergling\\ZlDth00.wav",
-        "\\Zerg\\Zergling\\ZlDth00.wav",
-        "\\sound\\zerg\\zergling\\zldth00.wav",
-        "sound\\Zerg\\Zergling\\ZlDth00.wav",
-        "sound/Zerg/Zergling/ZlDth00.wav",
-        "zerg\\zergling\\zldth00.wav",
-        "zerg/zergling/zldth00.wav",
-        "\\zerg\\zergling\\zldth00.wav",
-        "\\zerg\\Zergling\\ZlDth00.wav",
-    ]),
-    ("button.ogg", &[
-        "sound\\Misc\\button.wav",
-        "sound\\misc\\button.wav",
-        "sound\\Glue\\button.wav",
-        "sound\\UI\\button.wav",
-        "sound\\misc\\buttonclk.wav",
-        "sound\\Misc\\Klink.wav",
-        "sound\\misc\\klink.wav",
-    ]),
-    ("mouseover.ogg", &[
-        "sound\\Glue\\mouseover.wav",
-        "sound\\Glue\\swishlock.wav",
-        "sound\\glue\\mouseover.wav",
-        "sound\\glue\\swishlock.wav",
-        "\\glue\\mouseover.wav",
-        "glue\\mouseover.wav",
-    ]),
-    ("hydralisk_yes1.ogg", &[
-        "sound\\Zerg\\hydra\\zhyyes00.wav",
-        "sound\\zerg\\hydra\\zhyyes00.wav",
-        "sound\\Zerg\\hydra\\zhyyes01.wav",
-    ]),
-    ("hydralisk_ready.ogg", &[
-        "sound\\Zerg\\hydra\\zhyrdy00.wav",
-        "sound\\zerg\\hydra\\zhyrdy00.wav",
-    ]),
-    ("hydralisk_attack.ogg", &[
-        "sound\\Zerg\\hydra\\spifir00.wav",
-        "sound\\zerg\\hydra\\spifir00.wav",
-    ]),
-    ("ghost_yes1.ogg", &[
-        "sound\\Terran\\ghost\\tghyes01.wav",
-        "sound\\terran\\ghost\\tghyes01.wav",
-        "sound\\Terran\\ghost\\tghyes00.wav",
-    ]),
-    ("ghost_ready.ogg", &[
-        "sound\\Terran\\ghost\\tghrdy00.wav",
-        "sound\\terran\\ghost\\tghrdy00.wav",
-    ]),
-    ("scv_yes1.ogg", &[
-        "sound\\Terran\\scv\\tscpss00.wav",
-        "sound\\terran\\scv\\tscpss00.wav",
-        "sound\\Terran\\scv\\tscyes00.wav",
-    ]),
-    ("scv_die.ogg", &[
-        "sound\\Terran\\scv\\tscdth00.wav",
-        "sound\\terran\\scv\\tscdth00.wav",
-    ]),
+    (
+        "marine_yes1.ogg",
+        &[
+            "sound\\Terran\\marine\\tmayes00.wav",
+            "sound\\terran\\marine\\tmayes00.wav",
+            "sound\\Terran\\Marine\\tmayes00.wav",
+        ],
+    ),
+    (
+        "marine_move1.ogg",
+        &[
+            "sound\\Terran\\marine\\tmamov00.wav",
+            "sound\\terran\\marine\\tmamov00.wav",
+            "sound\\Terran\\marine\\tmardy00.wav",
+            "sound\\terran\\marine\\tmardy00.wav",
+        ],
+    ),
+    (
+        "marine_die.ogg",
+        &[
+            "sound\\Terran\\marine\\tmadth00.wav",
+            "sound\\terran\\marine\\tmadth00.wav",
+            "sound\\Terran\\Marine\\tmadth00.wav",
+        ],
+    ),
+    (
+        "marine_attack.ogg",
+        &[
+            "sound\\Terran\\marine\\tmaatt00.wav",
+            "sound\\terran\\marine\\tmaatt00.wav",
+            "sound\\Weapons\\Terran\\tgun.wav",
+            "sound\\Weapons\\terran\\tgun.wav",
+            "sound\\weapons\\terran\\tgun.wav",
+            "sound\\Terran\\Weapons\\tgun.wav",
+            "sound\\Terran\\weapons\\tgun.wav",
+            "sound\\Terran\\marine\\tmasti00.wav",
+            "sound\\terran\\marine\\tmasti00.wav",
+            "sound\\Terran\\marine\\tmawht00.wav",
+            "sound\\terran\\marine\\tmawht00.wav",
+        ],
+    ),
+    (
+        "zergling_attack.ogg",
+        &[
+            "\\zerg\\zergling\\zlatt00.wav",
+            "\\zerg\\Zergling\\ZlAtt00.wav",
+            "\\Zerg\\Zergling\\ZlAtt00.wav",
+            "\\Zerg\\zergling\\zlatt00.wav",
+            "\\sound\\zerg\\zergling\\zlatt00.wav",
+            "\\sound\\Zerg\\Zergling\\ZlAtt00.wav",
+            "sound\\Zerg\\Zergling\\ZlAtt00.wav",
+            "sound/Zerg/Zergling/ZlAtt00.wav",
+            "zerg\\zergling\\zlatt00.wav",
+            "zerg/zergling/zlatt00.wav",
+            "\\zerg\\zergling\\zlwht00.wav",
+            "\\Zerg\\Zergling\\ZlWht00.wav",
+            "zerg\\zergling\\zlwht00.wav",
+            "zerg/zergling/zlwht00.wav",
+            "\\zerg\\zergling\\zlatt00.wav",
+            "\\zerg\\Zergling\\ZlAtt00.wav",
+        ],
+    ),
+    (
+        "zergling_die.ogg",
+        &[
+            "\\zerg\\zergling\\zldth00.wav",
+            "\\zerg\\Zergling\\ZlDth00.wav",
+            "\\Zerg\\Zergling\\ZlDth00.wav",
+            "\\sound\\zerg\\zergling\\zldth00.wav",
+            "sound\\Zerg\\Zergling\\ZlDth00.wav",
+            "sound/Zerg/Zergling/ZlDth00.wav",
+            "zerg\\zergling\\zldth00.wav",
+            "zerg/zergling/zldth00.wav",
+            "\\zerg\\zergling\\zldth00.wav",
+            "\\zerg\\Zergling\\ZlDth00.wav",
+        ],
+    ),
+    (
+        "button.ogg",
+        &[
+            "sound\\Misc\\button.wav",
+            "sound\\misc\\button.wav",
+            "sound\\Glue\\button.wav",
+            "sound\\UI\\button.wav",
+            "sound\\misc\\buttonclk.wav",
+            "sound\\Misc\\Klink.wav",
+            "sound\\misc\\klink.wav",
+        ],
+    ),
+    (
+        "mouseover.ogg",
+        &[
+            "sound\\Glue\\mouseover.wav",
+            "sound\\Glue\\swishlock.wav",
+            "sound\\glue\\mouseover.wav",
+            "sound\\glue\\swishlock.wav",
+            "\\glue\\mouseover.wav",
+            "glue\\mouseover.wav",
+        ],
+    ),
+    (
+        "hydralisk_yes1.ogg",
+        &[
+            "sound\\Zerg\\hydra\\zhyyes00.wav",
+            "sound\\zerg\\hydra\\zhyyes00.wav",
+            "sound\\Zerg\\hydra\\zhyyes01.wav",
+        ],
+    ),
+    (
+        "hydralisk_ready.ogg",
+        &[
+            "sound\\Zerg\\hydra\\zhyrdy00.wav",
+            "sound\\zerg\\hydra\\zhyrdy00.wav",
+        ],
+    ),
+    (
+        "hydralisk_attack.ogg",
+        &[
+            "sound\\Zerg\\hydra\\spifir00.wav",
+            "sound\\zerg\\hydra\\spifir00.wav",
+        ],
+    ),
+    (
+        "ghost_yes1.ogg",
+        &[
+            "sound\\Terran\\ghost\\tghyes01.wav",
+            "sound\\terran\\ghost\\tghyes01.wav",
+            "sound\\Terran\\ghost\\tghyes00.wav",
+        ],
+    ),
+    (
+        "ghost_ready.ogg",
+        &[
+            "sound\\Terran\\ghost\\tghrdy00.wav",
+            "sound\\terran\\ghost\\tghrdy00.wav",
+        ],
+    ),
+    (
+        "scv_yes1.ogg",
+        &[
+            "sound\\Terran\\scv\\tscpss00.wav",
+            "sound\\terran\\scv\\tscpss00.wav",
+            "sound\\Terran\\scv\\tscyes00.wav",
+        ],
+    ),
+    (
+        "scv_die.ogg",
+        &[
+            "sound\\Terran\\scv\\tscdth00.wav",
+            "sound\\terran\\scv\\tscdth00.wav",
+        ],
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -544,9 +589,7 @@ enum ExtractCommands {
         #[arg(long)]
         online: bool,
     },
-
 }
-
 
 #[derive(Subcommand)]
 enum SoundsCommands {
@@ -620,7 +663,6 @@ enum InspectCommands {
         #[arg(long)]
         sizes: bool,
     },
-
 }
 
 // ---------------------------------------------------------------------------
@@ -662,7 +704,11 @@ fn join_within(base: &Path, name: &str) -> Result<PathBuf> {
 /// `session_start` is used only by `IfNewer`: skip the file if it already
 /// exists and its mtime is at or after the session start time (i.e., it was
 /// written during this extraction session and need not be re-extracted).
-fn should_skip(path: &Path, behavior: OverwriteBehavior, session_start: std::time::SystemTime) -> bool {
+fn should_skip(
+    path: &Path,
+    behavior: OverwriteBehavior,
+    session_start: std::time::SystemTime,
+) -> bool {
     match behavior {
         OverwriteBehavior::Never => path.exists(),
         OverwriteBehavior::IfNewer => {
@@ -679,14 +725,10 @@ fn should_skip(path: &Path, behavior: OverwriteBehavior, session_start: std::tim
         }
         OverwriteBehavior::Backup => {
             if path.exists() {
-                let bak = path.with_extension(
-                    format!(
-                        "{}.bak",
-                        path.extension()
-                            .and_then(|e| e.to_str())
-                            .unwrap_or("")
-                    )
-                );
+                let bak = path.with_extension(format!(
+                    "{}.bak",
+                    path.extension().and_then(|e| e.to_str()).unwrap_or("")
+                ));
                 if let Err(e) = fs::rename(path, &bak) {
                     eprintln!("Warning: could not back up {:?}: {}", path, e);
                 }
@@ -723,9 +765,13 @@ fn compile_patterns(patterns: &Option<Vec<String>>) -> Vec<Regex> {
         .as_ref()
         .map(|pats| {
             pats.iter()
-                .filter_map(|p| Regex::new(p).map_err(|e| {
-                    eprintln!("Warning: invalid filter pattern {:?}: {}", p, e);
-                }).ok())
+                .filter_map(|p| {
+                    Regex::new(p)
+                        .map_err(|e| {
+                            eprintln!("Warning: invalid filter pattern {:?}: {}", p, e);
+                        })
+                        .ok()
+                })
                 .collect()
         })
         .unwrap_or_default()
@@ -868,7 +914,7 @@ fn cmd_extract_anim(
     println!("Output:   {:?}\n", output);
 
     let overwrite = config.output_settings.overwrite_behavior;
-    let gen_meta  = config.output_settings.metadata_options.generate_json;
+    let gen_meta = config.output_settings.metadata_options.generate_json;
     let pixels_per_unit = config.output_settings.unity_settings.pixels_per_unit;
 
     // SD quality uses a single file rather than the per-ID loop.
@@ -921,39 +967,63 @@ fn cmd_extract_anim(
                                             );
                                             // Build a name map from the sprite mapping if available:
                                             // "terran/marine" -> "anim/main_000.anim" => id 0 -> "terran/marine"
-                                            let mapping_path = PathBuf::from("mappings/starcraft-remastered.yaml");
-                                            let id_to_name: std::collections::HashMap<usize, String> =
-                                                if mapping_path.exists() {
-                                                    SpriteMapping::load(&mapping_path)
-                                                        .map(|m| m.entries.into_iter().filter_map(|(name, casc_path)| {
-                                                            // Extract numeric ID from "anim/main_NNN.anim"
-                                                            casc_path.trim_end_matches(".anim")
-                                                                .rsplit('_').next()
-                                                                .and_then(|s| s.parse::<usize>().ok())
-                                                                .map(|id| (id, name.replace('/', "_")))
-                                                        }).collect())
-                                                        .unwrap_or_default()
-                                                } else {
-                                                    std::collections::HashMap::new()
-                                                };
+                                            let mapping_path =
+                                                PathBuf::from("mappings/starcraft-remastered.yaml");
+                                            let id_to_name: std::collections::HashMap<
+                                                usize,
+                                                String,
+                                            > = if mapping_path.exists() {
+                                                SpriteMapping::load(&mapping_path)
+                                                    .map(|m| {
+                                                        m.entries
+                                                            .into_iter()
+                                                            .filter_map(|(name, casc_path)| {
+                                                                // Extract numeric ID from "anim/main_NNN.anim"
+                                                                casc_path
+                                                                    .trim_end_matches(".anim")
+                                                                    .rsplit('_')
+                                                                    .next()
+                                                                    .and_then(|s| {
+                                                                        s.parse::<usize>().ok()
+                                                                    })
+                                                                    .map(|id| {
+                                                                        (id, name.replace('/', "_"))
+                                                                    })
+                                                            })
+                                                            .collect()
+                                                    })
+                                                    .unwrap_or_default()
+                                            } else {
+                                                std::collections::HashMap::new()
+                                            };
 
                                             let export_teamcolor = team_color_mask;
                                             let mut exported = 0usize;
                                             for (idx, sprite) in sd.sprites.iter().enumerate() {
-                                                if sprite.dds1_data.is_empty() { continue; }
-                                                let stem = id_to_name.get(&idx)
-                                                    .cloned()
-                                                    .unwrap_or_else(|| format!("mainSD_sprite_{:03}", idx));
-                                                let sprite_path = output.join(format!("{}.png", stem));
-                                                if let Err(e) = casc_extractor::dds_converter::save_dds_as_png(
-                                                    &sprite.dds1_data, &sprite_path
-                                                ) {
+                                                if sprite.dds1_data.is_empty() {
+                                                    continue;
+                                                }
+                                                let stem =
+                                                    id_to_name.get(&idx).cloned().unwrap_or_else(
+                                                        || format!("mainSD_sprite_{:03}", idx),
+                                                    );
+                                                let sprite_path =
+                                                    output.join(format!("{}.png", stem));
+                                                if let Err(e) =
+                                                    casc_extractor::dds_converter::save_dds_as_png(
+                                                        &sprite.dds1_data,
+                                                        &sprite_path,
+                                                    )
+                                                {
                                                     log::debug!("SD sprite export failed: {}", e);
                                                 } else {
                                                     exported += 1;
                                                     // Export team-color layer if requested and available
-                                                    if export_teamcolor && !sprite.layer2_data.is_empty() {
-                                                        let tc_path = output.join(format!("{}_tc.png", stem));
+                                                    if export_teamcolor
+                                                        && !sprite.layer2_data.is_empty()
+                                                    {
+                                                        let tc_path =
+                                                            output.join(format!("{}_tc.png", stem));
                                                         if let Err(e) = casc_extractor::dds_converter::save_dds_as_png(
                                                             &sprite.layer2_data, &tc_path
                                                         ) {
@@ -967,19 +1037,19 @@ fn cmd_extract_anim(
                                         Err(e) => {
                                             let version = if data.len() >= 6 {
                                                 u16::from_le_bytes([data[4], data[5]])
-                                            } else { 0 };
+                                            } else {
+                                                0
+                                            };
                                             println!("  SD ANIM parse error: {}", e);
-                                            println!(
-                                                "  SD ANIM version: 0x{:04X}",
-                                                version
-                                            );
+                                            println!("  SD ANIM version: 0x{:04X}", version);
                                         }
                                     }
                                 }
                             }
                         } else if let Ok(grp) = GrpFile::parse(&data) {
                             let png_path = output.join("mainSD.png");
-                            let compression = png_compression(config.quality_settings.png_compression_level);
+                            let compression =
+                                png_compression(config.quality_settings.png_compression_level);
                             match build_spritesheet(&grp, &png_path, compression) {
                                 Ok(()) => println!(
                                     "  mainSD spritesheet PNG ({} frames)",
@@ -988,11 +1058,8 @@ fn cmd_extract_anim(
                                 Err(e) => println!("  mainSD spritesheet failed: {}", e),
                             }
                         } else {
-                            let hex: Vec<String> = data
-                                .iter()
-                                .take(16)
-                                .map(|b| format!("{:02X}", b))
-                                .collect();
+                            let hex: Vec<String> =
+                                data.iter().take(16).map(|b| format!("{:02X}", b)).collect();
                             println!(
                                 "  SD PNG conversion: unknown format (first 16 bytes: {})",
                                 hex.join(" ")
@@ -1026,7 +1093,9 @@ fn cmd_extract_anim(
         let mut map = HashMap::new();
         for line in yaml.lines() {
             let line = line.trim();
-            if line.is_empty() || line.starts_with('#') { continue; }
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
             if let Some((key, value)) = line.split_once(':') {
                 let key = key.trim();
                 let value = value.split('#').next().unwrap_or("").trim();
@@ -1036,15 +1105,25 @@ fn cmd_extract_anim(
                     let name = key.trim_start_matches("animations/");
                     // Extract the numeric ID from the CASC path
                     let casc = value.trim_start_matches("HD2/").trim_start_matches("SD/");
-                    if let Some(stem) = casc.strip_prefix("anim/main_").and_then(|s| s.strip_suffix(".anim")) {
-                        if let Ok(id) = stem.trim_start_matches('0').parse::<u16>().or_else(|_| stem.parse::<u16>()) {
+                    if let Some(stem) = casc
+                        .strip_prefix("anim/main_")
+                        .and_then(|s| s.strip_suffix(".anim"))
+                    {
+                        if let Ok(id) = stem
+                            .trim_start_matches('0')
+                            .parse::<u16>()
+                            .or_else(|_| stem.parse::<u16>())
+                        {
                             map.insert(id.to_string(), name.to_string());
                         }
                     }
                 }
             }
         }
-        println!("  Using built-in mapping ({} named entries). Pass --raw for numbered output.", map.len());
+        println!(
+            "  Using built-in mapping ({} named entries). Pass --raw for numbered output.",
+            map.len()
+        );
         map
     };
 
@@ -1082,7 +1161,8 @@ fn cmd_extract_anim(
             if let Ok(data) = archive.extract_file(&casc_path) {
                 let output_path = output.join(format!("main_{:03}.anim", id));
                 if !should_skip(&output_path, overwrite, session_start) {
-                    if let Err(e) = File::create(&output_path).and_then(|mut f| f.write_all(&data)) {
+                    if let Err(e) = File::create(&output_path).and_then(|mut f| f.write_all(&data))
+                    {
                         eprintln!("Warning: could not write {:?}: {}", output_path, e);
                     } else {
                         extracted.push((id, output_path, data));
@@ -1120,7 +1200,10 @@ fn cmd_extract_anim(
                             if fs::copy(output_path, &named_path).is_ok() {
                                 let _ = fs::remove_file(output_path);
                             } else {
-                                eprintln!("Warning: could not move to named path {:?}: {}", named_path, e);
+                                eprintln!(
+                                    "Warning: could not move to named path {:?}: {}",
+                                    named_path, e
+                                );
                             }
                         }
                     }
@@ -1161,7 +1244,11 @@ fn cmd_extract_anim(
                             Err(e) => Err(anyhow::anyhow!("  Export failed: {}", e)),
                         }
                     }
-                    Err(e) => Err(anyhow::anyhow!("  {} - Parse error: {}", output_path.display(), e)),
+                    Err(e) => Err(anyhow::anyhow!(
+                        "  {} - Parse error: {}",
+                        output_path.display(),
+                        e
+                    )),
                 }
             })
             .collect();
@@ -1269,8 +1356,7 @@ fn cmd_extract_tileset(
     let prefix = quality.path_prefix();
     let overwrite = config.output_settings.overwrite_behavior;
     let tilesets = [
-        "badlands", "platform", "ashworld", "jungle",
-        "desert", "ice", "twilight", "install",
+        "badlands", "platform", "ashworld", "jungle", "desert", "ice", "twilight", "install",
     ];
 
     // Phase 1 — Sequential: extract raw bytes from the archive (FFI, non-Send).
@@ -1298,17 +1384,22 @@ fn cmd_extract_tileset(
             if convert_to_png {
                 // .dds.vr4 files have a 20-byte VR4 header before the DDS data.
                 // Search within the first 64 bytes for the DDS magic.
-                let dds_offset = data.windows(4).take(64)
-                    .position(|w| w == b"DDS ");
+                let dds_offset = data.windows(4).take(64).position(|w| w == b"DDS ");
                 if let Some(offset) = dds_offset {
                     let png_path = output_path.with_extension("png");
-                    match casc_extractor::dds_converter::save_dds_as_png(&data[offset..], &png_path) {
+                    match casc_extractor::dds_converter::save_dds_as_png(&data[offset..], &png_path)
+                    {
                         Ok(()) => note = " → PNG".to_string(),
                         Err(e) => note = format!(" (PNG failed: {})", e),
                     }
                 }
             }
-            println!("  {} ({:.1} MB){}", output_path.display(), data.len() as f64 / 1_000_000.0, note);
+            println!(
+                "  {} ({:.1} MB){}",
+                output_path.display(),
+                data.len() as f64 / 1_000_000.0,
+                note
+            );
             Ok(())
         })
         .collect();
@@ -1378,7 +1469,12 @@ fn cmd_extract_effect(
                     }
                 }
             }
-            println!("  {} ({:.1} MB){}", output_path.display(), data.len() as f64 / 1_000_000.0, note);
+            println!(
+                "  {} ({:.1} MB){}",
+                output_path.display(),
+                data.len() as f64 / 1_000_000.0,
+                note
+            );
             Ok(())
         })
         .collect();
@@ -1394,7 +1490,11 @@ fn cmd_extract_effect(
 }
 
 /// Build a spritesheet PNG from GRP frames and write it to `output_path`.
-fn build_spritesheet(grp: &GrpFile, output_path: &Path, compression: png::Compression) -> Result<()> {
+fn build_spritesheet(
+    grp: &GrpFile,
+    output_path: &Path,
+    compression: png::Compression,
+) -> Result<()> {
     let frames_per_row = 17usize;
     let rows = (grp.frame_count as usize).div_ceil(frames_per_row);
     let sheet_width = grp.width as u32 * frames_per_row as u32;
@@ -1415,8 +1515,7 @@ fn build_spritesheet(grp: &GrpFile, output_path: &Path, compression: png::Compre
                     let dst_x = x_offset + x;
                     let dst_y = y_offset + y;
                     let dst_idx = (dst_y * sheet_width as usize + dst_x) * 4;
-                    sheet_data[dst_idx..dst_idx + 4]
-                        .copy_from_slice(&rgba[src_idx..src_idx + 4]);
+                    sheet_data[dst_idx..dst_idx + 4].copy_from_slice(&rgba[src_idx..src_idx + 4]);
                 }
             }
         }
@@ -1436,7 +1535,11 @@ fn build_spritesheet(grp: &GrpFile, output_path: &Path, compression: png::Compre
 #[allow(clippy::too_many_arguments)]
 /// Scan the archive file listing for an audio entry whose name contains all
 /// words in `stem_hint` (case-insensitive), and try to extract the first match.
-fn discover_sound(archive: &CascArchive, storage: &CascStorage, stem_hint: &str) -> Option<Vec<u8>> {
+fn discover_sound(
+    archive: &CascArchive,
+    storage: &CascStorage,
+    stem_hint: &str,
+) -> Option<Vec<u8>> {
     let files = storage.list_files().ok()?;
     let hint_lower = stem_hint.to_lowercase();
     // Split hint on '_' to get keywords (e.g. "zergling_attack" -> ["zergling", "att"])
@@ -1451,7 +1554,10 @@ fn discover_sound(archive: &CascArchive, storage: &CascStorage, stem_hint: &str)
             && keywords.iter().all(|kw| fl.contains(kw.as_str()))
     })?;
 
-    archive.extract_file(candidate).ok().filter(|d| !d.is_empty())
+    archive
+        .extract_file(candidate)
+        .ok()
+        .filter(|d| !d.is_empty())
 }
 
 fn cmd_sounds_extract(
@@ -1513,20 +1619,12 @@ fn cmd_sounds_extract(
 
         let mut found = false;
         for casc_path in candidates {
-            let variants = [
-                casc_path.to_string(),
-                casc_path.replace('\\', "/"),
-            ];
+            let variants = [casc_path.to_string(), casc_path.replace('\\', "/")];
             for variant in &variants {
                 match archive.extract_file(variant) {
                     Ok(data) if !data.is_empty() => {
                         fs::write(&dest, &data)?;
-                        println!(
-                            "  {:>7} bytes  {}  ->  {}",
-                            data.len(),
-                            variant,
-                            out_name
-                        );
+                        println!("  {:>7} bytes  {}  ->  {}", data.len(), variant, out_name);
                         found = true;
                         extracted += 1;
                         break;
@@ -1544,11 +1642,7 @@ fn cmd_sounds_extract(
             let stem = out_name.trim_end_matches(".ogg").trim_end_matches(".wav");
             if let Some(data) = discover_sound(archive, storage, stem) {
                 fs::write(&dest, &data)?;
-                println!(
-                    "  {:>7} bytes  (discovered)  ->  {}",
-                    data.len(),
-                    out_name
-                );
+                println!("  {:>7} bytes  (discovered)  ->  {}", data.len(), out_name);
                 extracted += 1;
             } else {
                 println!(
@@ -1601,7 +1695,10 @@ fn cmd_sounds_export_targets(output: &Path) -> Result<()> {
     fs::write(output, json.as_bytes())
         .map_err(|e| anyhow::anyhow!("Failed to write targets to {:?}: {}", output, e))?;
     println!("Sound targets written to {:?}", output);
-    println!("Edit the file then use:  casc-extractor sounds extract --targets {:?}", output);
+    println!(
+        "Edit the file then use:  casc-extractor sounds extract --targets {:?}",
+        output
+    );
     Ok(())
 }
 
@@ -1676,9 +1773,7 @@ fn cmd_sounds_list(install_path: Option<&Path>, search: Option<String>) -> Resul
         .iter()
         .filter(|f| {
             let lower = f.to_lowercase();
-            (lower.contains("zerg")
-                || lower.contains("\\zl")
-                || lower.contains("/zl"))
+            (lower.contains("zerg") || lower.contains("\\zl") || lower.contains("/zl"))
                 && (lower.ends_with(".wav") || lower.ends_with(".ogg"))
         })
         .collect();
@@ -1693,9 +1788,7 @@ fn cmd_sounds_list(install_path: Option<&Path>, search: Option<String>) -> Resul
         .iter()
         .filter(|f| {
             let lower = f.to_lowercase();
-            (lower.contains("misc")
-                || lower.contains("glue")
-                || lower.contains("\\ui"))
+            (lower.contains("misc") || lower.contains("glue") || lower.contains("\\ui"))
                 && (lower.ends_with(".wav") || lower.ends_with(".ogg"))
         })
         .collect();
@@ -1707,11 +1800,7 @@ fn cmd_sounds_list(install_path: Option<&Path>, search: Option<String>) -> Resul
     Ok(())
 }
 
-fn cmd_inspect_sprites(
-    archive: &CascArchive,
-    quality: QualityLevel,
-    max_id: u16,
-) -> Result<()> {
+fn cmd_inspect_sprites(archive: &CascArchive, quality: QualityLevel, max_id: u16) -> Result<()> {
     println!(
         "Scanning anim files at quality {}...\n",
         quality.description()
@@ -1721,8 +1810,11 @@ fn cmd_inspect_sprites(
     if matches!(quality, QualityLevel::Sd) {
         let path = "SD/mainSD.anim";
         match archive.extract_file(path) {
-            Ok(data) => println!("  found  mainSD.anim  ({:.1} MB)", data.len() as f64 / 1_000_000.0),
-            Err(_)   => println!("  not found: {}", path),
+            Ok(data) => println!(
+                "  found  mainSD.anim  ({:.1} MB)",
+                data.len() as f64 / 1_000_000.0
+            ),
+            Err(_) => println!("  not found: {}", path),
         }
         return Ok(());
     }
@@ -1743,10 +1835,7 @@ fn cmd_inspect_sprites(
         }
     }
 
-    println!(
-        "\nFound {} anim files out of {} IDs probed.",
-        found, max_id
-    );
+    println!("\nFound {} anim files out of {} IDs probed.", found, max_id);
     Ok(())
 }
 
@@ -1794,8 +1883,8 @@ fn cmd_config_init(output: &Path) -> Result<()> {
 
 fn cmd_validate_register(file: &Path, suite_path: &Path) -> Result<()> {
     // Compute SHA256 of the file
-    let mut f = File::open(file)
-        .map_err(|e| anyhow::anyhow!("Cannot open file {:?}: {}", file, e))?;
+    let mut f =
+        File::open(file).map_err(|e| anyhow::anyhow!("Cannot open file {:?}: {}", file, e))?;
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 8192];
     loop {
@@ -1865,7 +1954,10 @@ fn cmd_validate_register(file: &Path, suite_path: &Path) -> Result<()> {
 fn cmd_validate_run(dir: &Path, suite_path: &Path, json_output: bool) -> Result<()> {
     if !suite_path.exists() {
         if json_output {
-            println!("{}", serde_json::json!({"total": 0, "passed": 0, "results": []}));
+            println!(
+                "{}",
+                serde_json::json!({"total": 0, "passed": 0, "results": []})
+            );
         } else {
             println!("No suite found at {}", suite_path.display());
         }
@@ -1882,7 +1974,8 @@ fn cmd_validate_run(dir: &Path, suite_path: &Path, json_output: bool) -> Result<
     let mut json_results: Vec<serde_json::Value> = Vec::new();
 
     for entry in &entries {
-        let filename = entry.expected_output
+        let filename = entry
+            .expected_output
             .file_name()
             .unwrap_or(entry.expected_output.as_os_str());
         let candidate = dir.join(filename);
@@ -1972,7 +2065,8 @@ fn cmd_extract_tileset_megatile(
     //    stores indices into the full HD4 tile array (up to 14316 tiles).
     //    Using HD2 (~3759 tiles) would leave most indices out of range.
     let vr4_path = format!("tileset/{}.dds.vr4", tileset);
-    let vr4_raw = archive.extract_file(&vr4_path)
+    let vr4_raw = archive
+        .extract_file(&vr4_path)
         .with_context(|| format!("VR4 not found: {}", vr4_path))?;
 
     // Each VR4 entry IS a full megatile.
@@ -1983,7 +2077,8 @@ fn cmd_extract_tileset_megatile(
 
     // 2. Load VX4EX — 1 entry per megatile (4 bytes): vr4_idx = entry>>1, flip_x = entry&1
     let vx4_path = format!("tileset/{}.vx4ex", tileset);
-    let vx4_raw = archive.extract_file(&vx4_path)
+    let vx4_raw = archive
+        .extract_file(&vx4_path)
         .with_context(|| format!("VX4EX not found: {}", vx4_path))?;
 
     let n_megatiles_vx4 = vx4_raw.len() / 4; // 4 bytes per megatile entry
@@ -2000,32 +2095,50 @@ fn cmd_extract_tileset_megatile(
     let atlas_h = rows * tile_size;
     let mut atlas: RgbaImage = ImageBuffer::new(atlas_w, atlas_h);
 
-    println!("Building megatile atlas: {}×{} ({} megatiles)", atlas_w, atlas_h, n_megatiles);
+    println!(
+        "Building megatile atlas: {}×{} ({} megatiles)",
+        atlas_w, atlas_h, n_megatiles
+    );
 
     for mega_idx in 0..n_megatiles as usize {
         let vx4_offset = mega_idx * 4;
-        if vx4_offset + 4 > vx4_raw.len() { continue; }
+        if vx4_offset + 4 > vx4_raw.len() {
+            continue;
+        }
         let entry = u32::from_le_bytes([
-            vx4_raw[vx4_offset], vx4_raw[vx4_offset+1],
-            vx4_raw[vx4_offset+2], vx4_raw[vx4_offset+3],
+            vx4_raw[vx4_offset],
+            vx4_raw[vx4_offset + 1],
+            vx4_raw[vx4_offset + 2],
+            vx4_raw[vx4_offset + 3],
         ]);
         let vr4_idx = (entry >> 1) as usize;
-        let flip_x  = (entry & 1) == 1;
+        let flip_x = (entry & 1) == 1;
 
-        if vr4_idx >= vr4_tile_count { continue; }
+        if vr4_idx >= vr4_tile_count {
+            continue;
+        }
 
-        let Some(tile_bytes) = layout.tile_bytes(&vr4_raw, vr4_idx) else { continue };
+        let Some(tile_bytes) = layout.tile_bytes(&vr4_raw, vr4_idx) else {
+            continue;
+        };
         let decoded = decode_dxt1_nxn(tile_bytes, tile_w as usize, tile_h as usize);
 
         let mut mini: RgbaImage = ImageBuffer::from_raw(tile_w, tile_h, decoded)
             .unwrap_or_else(|| ImageBuffer::new(tile_w, tile_h));
-        if flip_x { mini = image::imageops::flip_horizontal(&mini); }
+        if flip_x {
+            mini = image::imageops::flip_horizontal(&mini);
+        }
 
         // Scale the native tile → tile_size×tile_size for the final atlas
         let mega_scaled = if tile_size == tile_w {
             mini
         } else {
-            image::imageops::resize(&mini, tile_size, tile_size, image::imageops::FilterType::Lanczos3)
+            image::imageops::resize(
+                &mini,
+                tile_size,
+                tile_size,
+                image::imageops::FilterType::Lanczos3,
+            )
         };
 
         let ax = ((mega_idx as u32 % cols) * tile_size) as i64;
@@ -2089,7 +2202,10 @@ fn vr4_layout(vr4_raw: &[u8]) -> Result<Vr4Layout> {
 
     let rd = |off: usize| -> u32 {
         u32::from_le_bytes([
-            vr4_raw[off], vr4_raw[off + 1], vr4_raw[off + 2], vr4_raw[off + 3],
+            vr4_raw[off],
+            vr4_raw[off + 1],
+            vr4_raw[off + 2],
+            vr4_raw[off + 3],
         ])
     };
     let tile_h = rd(first_dds + 12);
@@ -2103,7 +2219,13 @@ fn vr4_layout(vr4_raw: &[u8]) -> Result<Vr4Layout> {
     let stride = DDS_HEADER + payload + PADDING;
     let tile_count = vr4_raw.len().saturating_sub(first_dds) / stride;
 
-    Ok(Vr4Layout { first_dds, stride, tile_w, tile_h, tile_count })
+    Ok(Vr4Layout {
+        first_dds,
+        stride,
+        tile_w,
+        tile_h,
+        tile_count,
+    })
 }
 
 impl Vr4Layout {
@@ -2123,13 +2245,20 @@ fn decode_dxt1_nxn(data: &[u8], w: usize, h: usize) -> Vec<u8> {
     for by in (0..h).step_by(4) {
         for bx in (0..w).step_by(4) {
             let base = block_idx * 8;
-            if base + 8 > data.len() { break; }
-            let c0_raw = u16::from_le_bytes([data[base], data[base+1]]);
-            let c1_raw = u16::from_le_bytes([data[base+2], data[base+3]]);
-            let bits = u32::from_le_bytes([data[base+4], data[base+5], data[base+6], data[base+7]]);
+            if base + 8 > data.len() {
+                break;
+            }
+            let c0_raw = u16::from_le_bytes([data[base], data[base + 1]]);
+            let c1_raw = u16::from_le_bytes([data[base + 2], data[base + 3]]);
+            let bits = u32::from_le_bytes([
+                data[base + 4],
+                data[base + 5],
+                data[base + 6],
+                data[base + 7],
+            ]);
             let c0 = rgb565_to_rgba(c0_raw);
             let c1 = rgb565_to_rgba(c1_raw);
-            let colors: [[u8;4]; 4] = if c0_raw > c1_raw {
+            let colors: [[u8; 4]; 4] = if c0_raw > c1_raw {
                 [c0, c1, lerp_color(c0, c1, 1, 3), lerp_color(c0, c1, 2, 3)]
             } else {
                 [c0, c1, lerp_color(c0, c1, 1, 2), [0, 0, 0, 0]]
@@ -2140,7 +2269,7 @@ fn decode_dxt1_nxn(data: &[u8], w: usize, h: usize) -> Vec<u8> {
                     let color_idx = ((bits >> bit_shift) & 0x3) as usize;
                     let dst = ((by + py) * w + (bx + px)) * 4;
                     if dst + 4 <= pixels.len() {
-                        pixels[dst..dst+4].copy_from_slice(&colors[color_idx]);
+                        pixels[dst..dst + 4].copy_from_slice(&colors[color_idx]);
                     }
                 }
             }
@@ -2153,17 +2282,22 @@ fn decode_dxt1_nxn(data: &[u8], w: usize, h: usize) -> Vec<u8> {
 #[inline]
 fn rgb565_to_rgba(c: u16) -> [u8; 4] {
     let r = ((c >> 11) & 0x1f) as u8;
-    let g = ((c >> 5)  & 0x3f) as u8;
-    let b = ( c        & 0x1f) as u8;
-    [(r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2), 255]
+    let g = ((c >> 5) & 0x3f) as u8;
+    let b = (c & 0x1f) as u8;
+    [
+        (r << 3) | (r >> 2),
+        (g << 2) | (g >> 4),
+        (b << 3) | (b >> 2),
+        255,
+    ]
 }
 
 #[inline]
-fn lerp_color(a: [u8;4], b: [u8;4], num: u32, den: u32) -> [u8;4] {
+fn lerp_color(a: [u8; 4], b: [u8; 4], num: u32, den: u32) -> [u8; 4] {
     [
-        ((a[0] as u32 * (den-num) + b[0] as u32 * num) / den) as u8,
-        ((a[1] as u32 * (den-num) + b[1] as u32 * num) / den) as u8,
-        ((a[2] as u32 * (den-num) + b[2] as u32 * num) / den) as u8,
+        ((a[0] as u32 * (den - num) + b[0] as u32 * num) / den) as u8,
+        ((a[1] as u32 * (den - num) + b[1] as u32 * num) / den) as u8,
+        ((a[2] as u32 * (den - num) + b[2] as u32 * num) / den) as u8,
         255,
     ]
 }
@@ -2182,14 +2316,19 @@ fn cmd_extract_tileset_atlas(
 
     let prefix = quality.path_prefix();
     let path = format!("{}tileset/{}.dds.vr4", prefix, tileset);
-    let data = archive.extract_file(&path)
+    let data = archive
+        .extract_file(&path)
         .with_context(|| format!("Failed to extract {}", path))?;
 
     let layout = vr4_layout(&data)?;
     let (tile_w, tile_h) = (layout.tile_w, layout.tile_h);
 
     let total_tiles = layout.tile_count as u32;
-    let n_tiles = if max_tiles == 0 { total_tiles } else { max_tiles.min(total_tiles) };
+    let n_tiles = if max_tiles == 0 {
+        total_tiles
+    } else {
+        max_tiles.min(total_tiles)
+    };
 
     println!(
         "Tileset: {} ({} total {}×{} tiles, extracting {})",
@@ -2203,7 +2342,9 @@ fn cmd_extract_tileset_atlas(
     let mut atlas: RgbaImage = ImageBuffer::new(atlas_w, atlas_h);
 
     for i in 0..n_tiles {
-        let Some(tile_bytes) = layout.tile_bytes(&data, i as usize) else { break };
+        let Some(tile_bytes) = layout.tile_bytes(&data, i as usize) else {
+            break;
+        };
 
         let decoded = decode_dxt1_nxn(tile_bytes, tile_w as usize, tile_h as usize);
 
@@ -2213,7 +2354,12 @@ fn cmd_extract_tileset_atlas(
         } else {
             let src: RgbaImage = ImageBuffer::from_raw(tile_w, tile_h, decoded)
                 .ok_or_else(|| anyhow::anyhow!("Failed to create tile image"))?;
-            image::imageops::resize(&src, tile_size, tile_size, image::imageops::FilterType::Lanczos3)
+            image::imageops::resize(
+                &src,
+                tile_size,
+                tile_size,
+                image::imageops::FilterType::Lanczos3,
+            )
         };
 
         let ax = (i % cols) * tile_size;
@@ -2226,7 +2372,10 @@ fn cmd_extract_tileset_atlas(
     let filename = format!("{}_{}_atlas.png", tileset, tile_size);
     let out_path = output.join(&filename);
     atlas.save(&out_path)?;
-    println!("Saved: {:?} ({}x{}, {} tiles)", out_path, atlas_w, atlas_h, n_tiles);
+    println!(
+        "Saved: {:?} ({}x{}, {} tiles)",
+        out_path, atlas_w, atlas_h, n_tiles
+    );
 
     let meta = serde_json::json!({
         "tileset": tileset,
@@ -2280,15 +2429,21 @@ fn acquire_chk_bytes(
         let scm_path = scm_path.expect("clap requires --scm when --chk absent");
         let mut archive_mpq = Archive::open(scm_path)
             .with_context(|| format!("Failed to open MPQ: {:?}", scm_path))?;
-        let chk_file = archive_mpq.open_file("staredit\\scenario.chk")
+        let chk_file = archive_mpq
+            .open_file("staredit\\scenario.chk")
             .or_else(|_| archive_mpq.open_file("staredit/scenario.chk"))
             .or_else(|_| archive_mpq.open_file("scenario.chk"))
             .with_context(|| "CHK not found in MPQ")?;
         let chk_size = chk_file.size() as usize;
         let mut chk_bytes = vec![0u8; chk_size];
-        chk_file.read(&mut archive_mpq, &mut chk_bytes)
+        chk_file
+            .read(&mut archive_mpq, &mut chk_bytes)
             .context("Failed to read CHK")?;
-        let stem = scm_path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+        let stem = scm_path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         Ok((chk_bytes, stem))
     }
 }
@@ -2317,11 +2472,13 @@ fn cmd_extract_map_terrain(
 
     let mut pos = 0;
     while pos + 8 <= chk_bytes.len() {
-        let tag = &chk_bytes[pos..pos+4];
-        let size = u32::from_le_bytes(chk_bytes[pos+4..pos+8].try_into().unwrap()) as usize;
+        let tag = &chk_bytes[pos..pos + 4];
+        let size = u32::from_le_bytes(chk_bytes[pos + 4..pos + 8].try_into().unwrap()) as usize;
         pos += 8;
-        if pos + size > chk_bytes.len() { break; }
-        let data = &chk_bytes[pos..pos+size];
+        if pos + size > chk_bytes.len() {
+            break;
+        }
+        let data = &chk_bytes[pos..pos + size];
 
         match tag {
             b"ERA " if size >= 2 => {
@@ -2333,8 +2490,8 @@ fn cmd_extract_map_terrain(
             }
             b"MTXM" => {
                 for i in (0..size).step_by(2) {
-                    if i+2 <= size {
-                        mtxm.push(u16::from_le_bytes(data[i..i+2].try_into().unwrap()));
+                    if i + 2 <= size {
+                        mtxm.push(u16::from_le_bytes(data[i..i + 2].try_into().unwrap()));
                     }
                 }
             }
@@ -2343,7 +2500,13 @@ fn cmd_extract_map_terrain(
         pos += size;
     }
 
-    println!("Map: {}×{} tiles, ERA={} (tileset), {} MTXM entries", dim_w, dim_h, era, mtxm.len());
+    println!(
+        "Map: {}×{} tiles, ERA={} (tileset), {} MTXM entries",
+        dim_w,
+        dim_h,
+        era,
+        mtxm.len()
+    );
 
     // A truncated MTXM cannot describe the full dim_w×dim_h grid; the walk-map and
     // minimap loops below index mtxm[ty*dim_w + tx] over that full grid, so bail out
@@ -2363,7 +2526,9 @@ fn cmd_extract_map_terrain(
 
     // 2. Collect all unique megatile IDs. No cap needed — we use a single atlas PNG,
     // not a GPU texture array, so there is no hardware layer limit.
-    let mut unique_ids: Vec<u16> = mtxm.iter().copied()
+    let mut unique_ids: Vec<u16> = mtxm
+        .iter()
+        .copied()
         .collect::<std::collections::HashSet<u16>>()
         .into_iter()
         .collect();
@@ -2373,7 +2538,8 @@ fn cmd_extract_map_terrain(
 
     // 3. Load CV5, VX4EX, classic VR4 (8×8 palette tiles) + WPE palette from CASC
     // CV5: 52 bytes/group. MTXM → (group=id>>4, tile=id&0xf) → CV5[group].tiles[tile] = vx4_idx
-    let cv5_data = archive.extract_file(&format!("tileset/{}.cv5", tileset_name))
+    let cv5_data = archive
+        .extract_file(&format!("tileset/{}.cv5", tileset_name))
         .with_context(|| format!("CV5 not found for tileset {}", tileset_name))?;
     const CV5_ENTRY_BYTES: usize = 52;
     const CV5_TILES_OFFSET: usize = 20;
@@ -2381,46 +2547,62 @@ fn cmd_extract_map_terrain(
 
     let mtxm_to_vx4 = |mega_id: u16| -> Option<usize> {
         let group = (mega_id >> 4) as usize;
-        let tile  = (mega_id & 0xf) as usize;
+        let tile = (mega_id & 0xf) as usize;
         let off = group * CV5_ENTRY_BYTES + CV5_TILES_OFFSET + tile * 2;
-        if off + 2 > cv5_data.len() { return None; }
-        Some(u16::from_le_bytes(cv5_data[off..off+2].try_into().unwrap()) as usize)
+        if off + 2 > cv5_data.len() {
+            return None;
+        }
+        Some(u16::from_le_bytes(cv5_data[off..off + 2].try_into().unwrap()) as usize)
     };
 
-    let vx4_data = archive.extract_file(&format!("tileset/{}.vx4ex", tileset_name))
+    let vx4_data = archive
+        .extract_file(&format!("tileset/{}.vx4ex", tileset_name))
         .with_context(|| format!("VX4EX not found for tileset {}", tileset_name))?;
 
     // Classic VR4: 64 bytes/tile = 8×8 palette index pixels. WPE: 256×4 bytes BGR0 palette.
-    let classic_vr4 = archive.extract_file(&format!("tileset/{}.vr4", tileset_name))
+    let classic_vr4 = archive
+        .extract_file(&format!("tileset/{}.vr4", tileset_name))
         .with_context(|| format!("Classic VR4 not found for tileset {}", tileset_name))?;
-    let wpe_data = archive.extract_file(&format!("tileset/{}.wpe", tileset_name))
+    let wpe_data = archive
+        .extract_file(&format!("tileset/{}.wpe", tileset_name))
         .with_context(|| format!("WPE palette not found for tileset {}", tileset_name))?;
 
     // Build RGBA palette lookup from WPE (RGB0 format — 3 colour bytes + 1 pad)
-    let palette: Vec<[u8;4]> = (0..256usize).map(|i| {
-        let base = i * 4;
-        if base + 4 <= wpe_data.len() {
-            [wpe_data[base], wpe_data[base+1], wpe_data[base+2], 255]
-        } else { [0, 0, 0, 255] }
-    }).collect();
+    let palette: Vec<[u8; 4]> = (0..256usize)
+        .map(|i| {
+            let base = i * 4;
+            if base + 4 <= wpe_data.len() {
+                [wpe_data[base], wpe_data[base + 1], wpe_data[base + 2], 255]
+            } else {
+                [0, 0, 0, 255]
+            }
+        })
+        .collect();
     let classic_tile_count = classic_vr4.len() / 64;
-    println!("Classic VR4: {} tiles. WPE: {} palette entries.", classic_tile_count, wpe_data.len()/4);
+    println!(
+        "Classic VR4: {} tiles. WPE: {} palette entries.",
+        classic_tile_count,
+        wpe_data.len() / 4
+    );
 
     // Decode one 8×8 classic VR4 tile → 32-byte RGBA pixels
     let decode_mini = |vr4_idx: usize| -> Vec<u8> {
         let mut out = vec![0u8; 8 * 8 * 4];
         let base = vr4_idx * 64;
-        if base + 64 > classic_vr4.len() { return out; }
+        if base + 64 > classic_vr4.len() {
+            return out;
+        }
         for i in 0..64 {
             let c = palette[classic_vr4[base + i] as usize];
-            out[i*4..i*4+4].copy_from_slice(&c);
+            out[i * 4..i * 4 + 4].copy_from_slice(&c);
         }
         out
     };
 
     // Load VF4 (walkability flags): 16 × u16 per megatile, bit 0x0001 = walkable mini-tile.
     // A megatile is walkable if ANY of its 16 mini-tiles has bit 0x0001 set.
-    let vf4_data = archive.extract_file(&format!("tileset/{}.vf4", tileset_name))
+    let vf4_data = archive
+        .extract_file(&format!("tileset/{}.vf4", tileset_name))
         .with_context(|| format!("VF4 not found for tileset {}", tileset_name))?;
     const VF4_ENTRY_BYTES: usize = 32; // 16 × u16
 
@@ -2430,23 +2612,37 @@ fn cmd_extract_map_terrain(
             None => return false,
         };
         let vf4_off = vx4_idx * VF4_ENTRY_BYTES;
-        if vf4_off + VF4_ENTRY_BYTES > vf4_data.len() { return false; }
+        if vf4_off + VF4_ENTRY_BYTES > vf4_data.len() {
+            return false;
+        }
         // Any mini-tile walkable (bit 0x0001) → megatile is walkable
         for i in 0..16 {
-            let flags = u16::from_le_bytes(vf4_data[vf4_off + i*2 .. vf4_off + i*2 + 2].try_into().unwrap());
-            if flags & 0x0001 != 0 { return true; }
+            let flags = u16::from_le_bytes(
+                vf4_data[vf4_off + i * 2..vf4_off + i * 2 + 2]
+                    .try_into()
+                    .unwrap(),
+            );
+            if flags & 0x0001 != 0 {
+                return true;
+            }
         }
         false
     };
 
     // Build walkable set for all MTXM values in this map
-    let walkable_ids: Vec<u32> = mtxm.iter().copied()
+    let walkable_ids: Vec<u32> = mtxm
+        .iter()
+        .copied()
         .collect::<std::collections::HashSet<u16>>()
         .into_iter()
         .filter(|&id| is_walkable(id))
         .map(|id| id as u32)
         .collect();
-    println!("Walkable megatile IDs: {}/{}", walkable_ids.len(), mtxm.iter().collect::<std::collections::HashSet<_>>().len());
+    println!(
+        "Walkable megatile IDs: {}/{}",
+        walkable_ids.len(),
+        mtxm.iter().collect::<std::collections::HashSet<_>>().len()
+    );
 
     // Build per-mini-tile walk map at 4× tile resolution (WalkPosition grid).
     // Each 32×32 tile is divided into 4×4 mini-tiles of 8×8px each.
@@ -2463,12 +2659,16 @@ fn cmd_extract_map_terrain(
                 None => continue,
             };
             let vf4_off = vx4_idx * VF4_ENTRY_BYTES;
-            if vf4_off + VF4_ENTRY_BYTES > vf4_data.len() { continue; }
+            if vf4_off + VF4_ENTRY_BYTES > vf4_data.len() {
+                continue;
+            }
             for mini_row in 0..4usize {
                 for mini_col in 0..4usize {
                     let i = mini_row * 4 + mini_col;
                     let flags = u16::from_le_bytes(
-                        vf4_data[vf4_off + i*2 .. vf4_off + i*2 + 2].try_into().unwrap()
+                        vf4_data[vf4_off + i * 2..vf4_off + i * 2 + 2]
+                            .try_into()
+                            .unwrap(),
                     );
                     if flags & 0x0001 != 0 {
                         let wx = tx * 4 + mini_col;
@@ -2497,34 +2697,58 @@ fn cmd_extract_map_terrain(
     // [id, level] table lets a consumer derive any map's heights from the
     // MTXM it already holds, and stays valid if the map is re-cropped.
     let ground_level = |mega_id: u16| -> u8 {
-        let Some(vx4_idx) = mtxm_to_vx4(mega_id) else { return 0 };
+        let Some(vx4_idx) = mtxm_to_vx4(mega_id) else {
+            return 0;
+        };
         let vf4_off = vx4_idx * VF4_ENTRY_BYTES;
-        if vf4_off + VF4_ENTRY_BYTES > vf4_data.len() { return 0; }
+        if vf4_off + VF4_ENTRY_BYTES > vf4_data.len() {
+            return 0;
+        }
         let (mut middle_count, mut high_count, mut very_high_count) = (0u32, 0u32, 0u32);
         for i in 0..16usize {
             let flags = u16::from_le_bytes(
-                vf4_data[vf4_off + i*2 .. vf4_off + i*2 + 2].try_into().unwrap()
+                vf4_data[vf4_off + i * 2..vf4_off + i * 2 + 2]
+                    .try_into()
+                    .unwrap(),
             );
-            if flags & 0x0002 != 0 { middle_count += 1; }
-            if flags & 0x0004 != 0 { high_count += 1; }
-            if flags & 0x0008 != 0 { very_high_count += 1; }
+            if flags & 0x0002 != 0 {
+                middle_count += 1;
+            }
+            if flags & 0x0004 != 0 {
+                high_count += 1;
+            }
+            if flags & 0x0008 != 0 {
+                very_high_count += 1;
+            }
         }
-        if very_high_count > 0 { 3 }
-        else if high_count >= 12 { 2 }
-        else if middle_count + high_count >= 12 { 1 }
-        else { 0 }
+        if very_high_count > 0 {
+            3
+        } else if high_count >= 12 {
+            2
+        } else if middle_count + high_count >= 12 {
+            1
+        } else {
+            0
+        }
     };
-    let mut height_levels: Vec<[u32; 2]> = unique_ids.iter()
+    let mut height_levels: Vec<[u32; 2]> = unique_ids
+        .iter()
         .map(|&id| [id as u32, ground_level(id) as u32])
-        .filter(|&[_, lvl]| lvl != 0)   // level 0 is the default; omit for compactness
+        .filter(|&[_, lvl]| lvl != 0) // level 0 is the default; omit for compactness
         .collect();
     height_levels.sort_unstable();
     let level_hist = unique_ids.iter().fold([0u32; 4], |mut acc, &id| {
         acc[ground_level(id) as usize] += 1;
         acc
     });
-    println!("Ground levels over {} unique megatiles: low={} mid={} high={} very_high={}",
-        unique_ids.len(), level_hist[0], level_hist[1], level_hist[2], level_hist[3]);
+    println!(
+        "Ground levels over {} unique megatiles: low={} mid={} high={} very_high={}",
+        unique_ids.len(),
+        level_hist[0],
+        level_hist[1],
+        level_hist[2],
+        level_hist[3]
+    );
 
     // Pipeline: MTXM → CV5 → VX4EX → 16 classic VR4 mini-tiles (8×8) → 32×32 megatile.
     // 4. Build atlas: 4×4 classic 8×8 mini-tiles → 32×32 megatile → scaled to tile_size
@@ -2552,25 +2776,43 @@ fn cmd_extract_map_terrain(
         for mini_row in 0..4usize {
             for mini_col in 0..4usize {
                 let entry_offset = vx4_offset + (mini_row * 4 + mini_col) * 4;
-                if entry_offset + 4 > vx4_data.len() { continue; }
-                let entry = u32::from_le_bytes(vx4_data[entry_offset..entry_offset+4].try_into().unwrap());
+                if entry_offset + 4 > vx4_data.len() {
+                    continue;
+                }
+                let entry = u32::from_le_bytes(
+                    vx4_data[entry_offset..entry_offset + 4].try_into().unwrap(),
+                );
                 let vr4_idx = (entry >> 1) as usize;
-                let flip_x  = (entry & 1) == 1;
-                if vr4_idx >= classic_tile_count { continue; }
+                let flip_x = (entry & 1) == 1;
+                if vr4_idx >= classic_tile_count {
+                    continue;
+                }
 
                 let pixels = decode_mini(vr4_idx);
-                let mut mini: RgbaImage = ImageBuffer::from_raw(8, 8, pixels)
-                    .unwrap_or_else(|| ImageBuffer::new(8, 8));
-                if flip_x { mini = image::imageops::flip_horizontal(&mini); }
+                let mut mini: RgbaImage =
+                    ImageBuffer::from_raw(8, 8, pixels).unwrap_or_else(|| ImageBuffer::new(8, 8));
+                if flip_x {
+                    mini = image::imageops::flip_horizontal(&mini);
+                }
                 // Place at correct 8×8 position within the 32×32 megatile
-                image::imageops::overlay(&mut mega_img, &mini, (mini_col * 8) as i64, (mini_row * 8) as i64);
+                image::imageops::overlay(
+                    &mut mega_img,
+                    &mini,
+                    (mini_col * 8) as i64,
+                    (mini_row * 8) as i64,
+                );
             }
         }
 
         let scaled = if tile_size == MEGA_W {
             mega_img
         } else {
-            image::imageops::resize(&mega_img, tile_size, tile_size, image::imageops::FilterType::Nearest)
+            image::imageops::resize(
+                &mega_img,
+                tile_size,
+                tile_size,
+                image::imageops::FilterType::Nearest,
+            )
         };
 
         let ax = (atlas_idx as u32 % cols) * tile_size;
@@ -2579,8 +2821,15 @@ fn cmd_extract_map_terrain(
     }
 
     // 5. Save atlas and mapping
-    let safe_name: String = map_stem.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+    let safe_name: String = map_stem
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
 
     let png_path = output.join(format!("{}_terrain.png", safe_name));
@@ -2588,12 +2837,16 @@ fn cmd_extract_map_terrain(
 
     // 6. Generate minimap thumbnail: 1 pixel per tile, sampled from the atlas.
     // This matches BW's minimap which shows terrain colors at low resolution.
-    let walkable_set_u16: std::collections::HashSet<u16> = walkable_ids.iter().map(|&x| x as u16).collect();
+    let walkable_set_u16: std::collections::HashSet<u16> =
+        walkable_ids.iter().map(|&x| x as u16).collect();
     let mut minimap: RgbaImage = ImageBuffer::new(dim_w as u32, dim_h as u32);
     for ty in 0..dim_h as u32 {
         for tx in 0..dim_w as u32 {
             let mega_id = mtxm[(ty * dim_w as u32 + tx) as usize];
-            let pixel = if let Some(&atlas_idx) = id_to_atlas.get(mega_id as usize).filter(|&&v| v != u32::MAX) {
+            let pixel = if let Some(&atlas_idx) = id_to_atlas
+                .get(mega_id as usize)
+                .filter(|&&v| v != u32::MAX)
+            {
                 let ac = atlas_idx % cols;
                 let ar = atlas_idx / cols;
                 // Sample centre pixel of the atlas tile
@@ -2601,9 +2854,9 @@ fn cmd_extract_map_terrain(
                 let py = ar * tile_size + tile_size / 2;
                 *atlas.get_pixel(px.min(atlas_w - 1), py.min(atlas_h - 1))
             } else if walkable_set_u16.contains(&mega_id) {
-                image::Rgba([30u8, 60, 30, 255])  // walkable fallback: dark green
+                image::Rgba([30u8, 60, 30, 255]) // walkable fallback: dark green
             } else {
-                image::Rgba([40u8, 35, 30, 255])  // cliff fallback: dark brown
+                image::Rgba([40u8, 35, 30, 255]) // cliff fallback: dark brown
             };
             minimap.put_pixel(tx, ty, pixel);
         }
@@ -2635,7 +2888,10 @@ fn cmd_extract_map_terrain(
     let json_path = output.join(format!("{}_terrain.json", safe_name));
     fs::write(&json_path, serde_json::to_string_pretty(&meta)?)?;
 
-    println!("Saved: {:?} ({}×{}, {} tiles)", png_path, atlas_w, atlas_h, n_tiles);
+    println!(
+        "Saved: {:?} ({}×{}, {} tiles)",
+        png_path, atlas_w, atlas_h, n_tiles
+    );
     println!("Saved minimap: {:?} ({}×{})", mm_path, dim_w, dim_h);
     println!("Saved: {:?}", json_path);
     Ok(())
@@ -2654,17 +2910,19 @@ fn cmd_extract_map_terrain_dual(
     fs::create_dir_all(output)?;
 
     // 1. Parse SCM to get ERA (tileset) and MTXM (megatile IDs)
-    let mut archive_mpq = Archive::open(scm_path)
-        .with_context(|| format!("Failed to open MPQ: {:?}", scm_path))?;
+    let mut archive_mpq =
+        Archive::open(scm_path).with_context(|| format!("Failed to open MPQ: {:?}", scm_path))?;
 
-    let chk_file = archive_mpq.open_file("staredit\\scenario.chk")
+    let chk_file = archive_mpq
+        .open_file("staredit\\scenario.chk")
         .or_else(|_| archive_mpq.open_file("staredit/scenario.chk"))
         .or_else(|_| archive_mpq.open_file("scenario.chk"))
         .with_context(|| "CHK not found in MPQ")?;
 
     let chk_size = chk_file.size() as usize;
     let mut chk_bytes = vec![0u8; chk_size];
-    chk_file.read(&mut archive_mpq, &mut chk_bytes)
+    chk_file
+        .read(&mut archive_mpq, &mut chk_bytes)
         .context("Failed to read CHK")?;
 
     let mut era: u16 = 4;
@@ -2674,11 +2932,13 @@ fn cmd_extract_map_terrain_dual(
 
     let mut pos = 0;
     while pos + 8 <= chk_bytes.len() {
-        let tag = &chk_bytes[pos..pos+4];
-        let size = u32::from_le_bytes(chk_bytes[pos+4..pos+8].try_into().unwrap()) as usize;
+        let tag = &chk_bytes[pos..pos + 4];
+        let size = u32::from_le_bytes(chk_bytes[pos + 4..pos + 8].try_into().unwrap()) as usize;
         pos += 8;
-        if pos + size > chk_bytes.len() { break; }
-        let data = &chk_bytes[pos..pos+size];
+        if pos + size > chk_bytes.len() {
+            break;
+        }
+        let data = &chk_bytes[pos..pos + size];
 
         match tag {
             b"ERA " if size >= 2 => {
@@ -2690,8 +2950,8 @@ fn cmd_extract_map_terrain_dual(
             }
             b"MTXM" => {
                 for i in (0..size).step_by(2) {
-                    if i+2 <= size {
-                        mtxm.push(u16::from_le_bytes(data[i..i+2].try_into().unwrap()));
+                    if i + 2 <= size {
+                        mtxm.push(u16::from_le_bytes(data[i..i + 2].try_into().unwrap()));
                     }
                 }
             }
@@ -2700,12 +2960,20 @@ fn cmd_extract_map_terrain_dual(
         pos += size;
     }
 
-    println!("Map: {}×{} tiles, ERA={} (tileset), {} MTXM entries", dim_w, dim_h, era, mtxm.len());
+    println!(
+        "Map: {}×{} tiles, ERA={} (tileset), {} MTXM entries",
+        dim_w,
+        dim_h,
+        era,
+        mtxm.len()
+    );
 
     let tileset_name = tileset_name_from_era(era);
 
     // 2. Collect unique megatile IDs
-    let mut unique_ids: Vec<u16> = mtxm.iter().copied()
+    let mut unique_ids: Vec<u16> = mtxm
+        .iter()
+        .copied()
         .collect::<std::collections::HashSet<u16>>()
         .into_iter()
         .collect();
@@ -2717,7 +2985,8 @@ fn cmd_extract_map_terrain_dual(
     // A MTXM id is not a VX4EX index: it resolves through CV5 first, as
     // MTXM → (group = id >> 4, tile = id & 0xf) → CV5[group].tiles[tile].
     // Indexing VX4EX directly leaves ~70% of lookups out of range.
-    let cv5_data = archive.extract_file(&format!("tileset/{}.cv5", tileset_name))
+    let cv5_data = archive
+        .extract_file(&format!("tileset/{}.cv5", tileset_name))
         .with_context(|| format!("CV5 not found for tileset {}", tileset_name))?;
     const CV5_ENTRY_BYTES: usize = 52;
     const CV5_TILES_OFFSET: usize = 20;
@@ -2725,11 +2994,14 @@ fn cmd_extract_map_terrain_dual(
         let group = (mega_id >> 4) as usize;
         let tile = (mega_id & 0xf) as usize;
         let off = group * CV5_ENTRY_BYTES + CV5_TILES_OFFSET + tile * 2;
-        if off + 2 > cv5_data.len() { return None; }
-        Some(u16::from_le_bytes(cv5_data[off..off+2].try_into().unwrap()) as usize)
+        if off + 2 > cv5_data.len() {
+            return None;
+        }
+        Some(u16::from_le_bytes(cv5_data[off..off + 2].try_into().unwrap()) as usize)
     };
 
-    let vr4_raw = archive.extract_file(&format!("tileset/{}.dds.vr4", tileset_name))
+    let vr4_raw = archive
+        .extract_file(&format!("tileset/{}.dds.vr4", tileset_name))
         .with_context(|| format!("VR4 not found for tileset {}", tileset_name))?;
 
     let layout = vr4_layout(&vr4_raw)?;
@@ -2753,9 +3025,15 @@ fn cmd_extract_map_terrain_dual(
         // In the HD tilesets each VR4 entry is already a whole 128×128 megatile,
         // addressed straight by the CV5-resolved index — there is no 4×4 mini-tile
         // assembly step (that is the classic 8×8-per-mini-tile SD layout).
-        let Some(vr4_idx) = cv5_lookup(mega_id) else { continue };
-        if vr4_idx >= vr4_tile_count { continue; }
-        let Some(tile_bytes) = layout.tile_bytes(&vr4_raw, vr4_idx) else { continue };
+        let Some(vr4_idx) = cv5_lookup(mega_id) else {
+            continue;
+        };
+        if vr4_idx >= vr4_tile_count {
+            continue;
+        }
+        let Some(tile_bytes) = layout.tile_bytes(&vr4_raw, vr4_idx) else {
+            continue;
+        };
         let decoded = decode_dxt1_nxn(tile_bytes, vr4_w as usize, vr4_h as usize);
         let mega_img: RgbaImage = ImageBuffer::from_raw(vr4_w, vr4_h, decoded)
             .unwrap_or_else(|| ImageBuffer::new(vr4_w, vr4_h));
@@ -2763,10 +3041,17 @@ fn cmd_extract_map_terrain_dual(
         let scaled = if tile_size == vr4_w {
             mega_img
         } else {
-            image::imageops::resize(&mega_img, tile_size, tile_size, image::imageops::FilterType::Lanczos3)
+            image::imageops::resize(
+                &mega_img,
+                tile_size,
+                tile_size,
+                image::imageops::FilterType::Lanczos3,
+            )
         };
         let mut base = scaled.clone();
-        for px in base.pixels_mut() { px[3] = 255; }
+        for px in base.pixels_mut() {
+            px[3] = 255;
+        }
 
         let ax = (atlas_idx as u32 % cols) * tile_size;
         let ay = (atlas_idx as u32 / cols) * tile_size;
@@ -2777,12 +3062,22 @@ fn cmd_extract_map_terrain_dual(
     // 5. Compute alpha stats for diffuse
     let total_pixels = (atlas_w * atlas_h) as u64;
     let transparent_pixels = atlas_diffuse.pixels().filter(|p| p[3] == 0).count() as u64;
-    let semi_pixels = atlas_diffuse.pixels().filter(|p| p[3] > 0 && p[3] < 255).count() as u64;
+    let semi_pixels = atlas_diffuse
+        .pixels()
+        .filter(|p| p[3] > 0 && p[3] < 255)
+        .count() as u64;
 
     // 6. Save outputs
     let map_stem = scm_path.file_stem().unwrap_or_default().to_string_lossy();
-    let safe_name: String = map_stem.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+    let safe_name: String = map_stem
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
 
     let diffuse_path = output.join(format!("{}_diffuse.png", safe_name));
@@ -2812,11 +3107,19 @@ fn cmd_extract_map_terrain_dual(
     });
     fs::write(&json_path, serde_json::to_string_pretty(&meta)?)?;
 
-    println!("Saved diffuse: {:?} ({}×{}, {} tiles)", diffuse_path, atlas_w, atlas_h, n_tiles);
+    println!(
+        "Saved diffuse: {:?} ({}×{}, {} tiles)",
+        diffuse_path, atlas_w, atlas_h, n_tiles
+    );
     println!("Saved base:    {:?}", base_path);
     println!("Saved JSON:    {:?}", json_path);
-    println!("Diffuse alpha: {} transparent, {} semi, {} opaque (of {} total pixels)",
-        transparent_pixels, semi_pixels, total_pixels - transparent_pixels - semi_pixels, total_pixels);
+    println!(
+        "Diffuse alpha: {} transparent, {} semi, {} opaque (of {} total pixels)",
+        transparent_pixels,
+        semi_pixels,
+        total_pixels - transparent_pixels - semi_pixels,
+        total_pixels
+    );
     Ok(())
 }
 
@@ -2866,7 +3169,8 @@ fn cmd_extract_raw(
                         if !fl.contains(&pattern_lower) {
                             return false;
                         }
-                        let is_localised = fl.starts_with("locales\\") || fl.starts_with("locales/");
+                        let is_localised =
+                            fl.starts_with("locales\\") || fl.starts_with("locales/");
                         !is_localised || fl.contains(&locale_lower)
                     })
                     .collect()
@@ -2917,9 +3221,7 @@ fn cmd_extract_raw(
         // Resolve data: live archive first, then embedded fallback.
         let resolved: Option<(Vec<u8>, bool)> = match archive.extract_file(casc_path) {
             Ok(data) => Some((data, false)),
-            Err(_) => {
-                fallbacks::get(casc_path).map(|embedded| (embedded.to_vec(), true))
-            }
+            Err(_) => fallbacks::get(casc_path).map(|embedded| (embedded.to_vec(), true)),
         };
 
         match resolved {
@@ -2930,13 +3232,13 @@ fn cmd_extract_raw(
                     let normalised = casc_path.replace('\\', std::path::MAIN_SEPARATOR_STR);
                     let rel = PathBuf::from(normalised);
                     // Strip a leading separator if present (makes join work correctly).
-                    let rel = rel.strip_prefix(std::path::MAIN_SEPARATOR_STR).unwrap_or(&rel).to_path_buf();
+                    let rel = rel
+                        .strip_prefix(std::path::MAIN_SEPARATOR_STR)
+                        .unwrap_or(&rel)
+                        .to_path_buf();
                     output.join(rel)
                 } else {
-                    let filename = casc_path
-                        .rsplit(['\\', '/'])
-                        .next()
-                        .unwrap_or(casc_path);
+                    let filename = casc_path.rsplit(['\\', '/']).next().unwrap_or(casc_path);
                     output.join(filename)
                 };
 
@@ -3026,7 +3328,8 @@ fn main() -> Result<()> {
     env_logger::init();
 
     // Resolve output directory: CLI flag > config file > hard-coded default.
-    let output = cli.output
+    let output = cli
+        .output
         .unwrap_or_else(|| config.output_settings.output_directory.clone());
 
     match cli.command {
@@ -3085,7 +3388,13 @@ fn main() -> Result<()> {
                             config.quality_settings.format_filter,
                             FormatFilterOption::Png | FormatFilterOption::Images
                         );
-                    cmd_extract_tileset(&archive, &output.join("tilesets"), quality, convert_to_png, &config)?;
+                    cmd_extract_tileset(
+                        &archive,
+                        &output.join("tilesets"),
+                        quality,
+                        convert_to_png,
+                        &config,
+                    )?;
                 }
                 ExtractCommands::Effect {
                     quality,
@@ -3096,7 +3405,13 @@ fn main() -> Result<()> {
                             config.quality_settings.format_filter,
                             FormatFilterOption::Png | FormatFilterOption::Images
                         );
-                    cmd_extract_effect(&archive, &output.join("effects"), quality, convert_to_png, &config)?;
+                    cmd_extract_effect(
+                        &archive,
+                        &output.join("effects"),
+                        quality,
+                        convert_to_png,
+                        &config,
+                    )?;
                 }
                 ExtractCommands::TilesetAtlas {
                     tileset,
@@ -3107,7 +3422,9 @@ fn main() -> Result<()> {
                     output: atlas_output,
                 } => {
                     let out = atlas_output.unwrap_or_else(|| output.join("tileset-atlas"));
-                    cmd_extract_tileset_atlas(&archive, &tileset, quality, cols, max_tiles, tile_size, &out)?;
+                    cmd_extract_tileset_atlas(
+                        &archive, &tileset, quality, cols, max_tiles, tile_size, &out,
+                    )?;
                 }
                 ExtractCommands::TilesetMegatile {
                     tileset,
@@ -3118,17 +3435,42 @@ fn main() -> Result<()> {
                     output: mega_output,
                 } => {
                     let out = mega_output.unwrap_or_else(|| output.join("tileset-megatile"));
-                    cmd_extract_tileset_megatile(&archive, &tileset, quality, max_tiles, tile_size, cols, &out)?;
+                    cmd_extract_tileset_megatile(
+                        &archive, &tileset, quality, max_tiles, tile_size, cols, &out,
+                    )?;
                 }
-                ExtractCommands::MapTerrain { scm, chk, name, cols, tile_size, output: terrain_output } => {
+                ExtractCommands::MapTerrain {
+                    scm,
+                    chk,
+                    name,
+                    cols,
+                    tile_size,
+                    output: terrain_output,
+                } => {
                     let out = terrain_output.unwrap_or_else(|| output.join("map-terrain"));
-                    cmd_extract_map_terrain(&archive, scm.as_deref(), chk.as_deref(), name.as_deref(), cols, tile_size, &out)?;
+                    cmd_extract_map_terrain(
+                        &archive,
+                        scm.as_deref(),
+                        chk.as_deref(),
+                        name.as_deref(),
+                        cols,
+                        tile_size,
+                        &out,
+                    )?;
                 }
-                ExtractCommands::MapTerrainDual { scm, cols, tile_size, output: terrain_output } => {
+                ExtractCommands::MapTerrainDual {
+                    scm,
+                    cols,
+                    tile_size,
+                    output: terrain_output,
+                } => {
                     let out = terrain_output.unwrap_or_else(|| output.join("map-terrain"));
                     cmd_extract_map_terrain_dual(&archive, &scm, cols, tile_size, &out)?;
                 }
-                ExtractCommands::Mainmenu { output: mm_output, convert_dds } => {
+                ExtractCommands::Mainmenu {
+                    output: mm_output,
+                    convert_dds,
+                } => {
                     let out = mm_output.unwrap_or_else(|| output.join("ui/mainmenu"));
                     cmd_extract_mainmenu(&archive, &out, convert_dds)?;
                 }
@@ -3136,11 +3478,17 @@ fn main() -> Result<()> {
                     let out = dat_output.unwrap_or_else(|| output.join("dat"));
                     cmd_extract_dat(&archive, &out)?;
                 }
-                ExtractCommands::Cmdicons { output: cmd_output, tint, save_raw } => {
+                ExtractCommands::Cmdicons {
+                    output: cmd_output,
+                    tint,
+                    save_raw,
+                } => {
                     let out = cmd_output.unwrap_or_else(|| output.join("ui/cmdicons"));
-                    let tint_rgb = [tint.first().copied().unwrap_or(255),
-                                    tint.get(1).copied().unwrap_or(254),
-                                    tint.get(2).copied().unwrap_or(84)];
+                    let tint_rgb = [
+                        tint.first().copied().unwrap_or(255),
+                        tint.get(1).copied().unwrap_or(254),
+                        tint.get(2).copied().unwrap_or(84),
+                    ];
                     cmd_extract_cmdicons(&archive, &out, tint_rgb, save_raw)?;
                 }
                 ExtractCommands::Raw {
@@ -3161,9 +3509,9 @@ fn main() -> Result<()> {
                         fs::create_dir_all(&cache_dir).with_context(|| {
                             format!("creating online cache directory {}", cache_dir.display())
                         })?;
-                        let cache_str = cache_dir
-                            .to_str()
-                            .ok_or_else(|| anyhow::anyhow!("Cache path is not valid UTF-8: {:?}", cache_dir))?;
+                        let cache_str = cache_dir.to_str().ok_or_else(|| {
+                            anyhow::anyhow!("Cache path is not valid UTF-8: {:?}", cache_dir)
+                        })?;
                         let region = detect_cdn_region(cli.install_path.as_deref())
                             .unwrap_or_else(|| ONLINE_REGION_FALLBACK.to_string());
                         // Fields are separated by CASC_PARAM_SEPARATOR ('*'), not ':'
@@ -3203,19 +3551,38 @@ fn main() -> Result<()> {
 
         // ------------------------------------------------------------------
         Commands::Sounds { action } => match action {
-            SoundsCommands::Extract { sounds_output, targets, fail_on_incomplete } => {
+            SoundsCommands::Extract {
+                sounds_output,
+                targets,
+                fail_on_incomplete,
+            } => {
                 let out = sounds_output.unwrap_or_else(|| output.join("sounds"));
                 let archive = open_casc_archive(cli.install_path.as_deref())?;
                 let storage = open_casc_storage(cli.install_path.as_deref())?;
-                cmd_sounds_extract(&archive, &storage, &out, targets.as_deref(), fail_on_incomplete)?;
+                cmd_sounds_extract(
+                    &archive,
+                    &storage,
+                    &out,
+                    targets.as_deref(),
+                    fail_on_incomplete,
+                )?;
             }
             SoundsCommands::List { search } => {
                 cmd_sounds_list(cli.install_path.as_deref(), search)?;
             }
-            SoundsCommands::Probe { filter, fail_on_incomplete } => {
-                cmd_sounds_probe(cli.install_path.as_deref(), filter.as_deref(), fail_on_incomplete)?;
+            SoundsCommands::Probe {
+                filter,
+                fail_on_incomplete,
+            } => {
+                cmd_sounds_probe(
+                    cli.install_path.as_deref(),
+                    filter.as_deref(),
+                    fail_on_incomplete,
+                )?;
             }
-            SoundsCommands::ExportTargets { output: targets_output } => {
+            SoundsCommands::ExportTargets {
+                output: targets_output,
+            } => {
                 cmd_sounds_export_targets(&targets_output)?;
             }
         },
@@ -3285,12 +3652,13 @@ fn cmd_extract_cmdicons(
 ) -> anyhow::Result<()> {
     use texture2ddecoder::decode_bc1;
 
-    let raw = archive.extract_file("unit\\cmdicons\\cmdicons.dds.grp")
+    let raw = archive
+        .extract_file("unit\\cmdicons\\cmdicons.dds.grp")
         .map_err(|e| anyhow::anyhow!("cmdicons.dds.grp not found: {}", e))?;
 
-    let total    = u16::from_le_bytes([raw[4], raw[5]]) as usize;
-    let max_w    = u16::from_le_bytes([raw[12], raw[13]]) as usize;
-    let max_h    = u16::from_le_bytes([raw[14], raw[15]]) as usize;
+    let total = u16::from_le_bytes([raw[4], raw[5]]) as usize;
+    let max_w = u16::from_le_bytes([raw[12], raw[13]]) as usize;
+    let max_h = u16::from_le_bytes([raw[14], raw[15]]) as usize;
 
     // Find all DDS frame start positions
     let mut positions: Vec<usize> = Vec::new();
@@ -3300,59 +3668,97 @@ fn cmd_extract_cmdicons(
         i = rel + i + 1;
     }
     if positions.len() != total {
-        println!("  Warning: found {} DDS frames, expected {}", positions.len(), total);
+        println!(
+            "  Warning: found {} DDS frames, expected {}",
+            positions.len(),
+            total
+        );
     }
-    println!("  {} frames, max {}x{}, tint {:?}", positions.len(), max_w, max_h, tint);
+    println!(
+        "  {} frames, max {}x{}, tint {:?}",
+        positions.len(),
+        max_w,
+        max_h,
+        tint
+    );
 
-    let cols  = 17usize;
-    let rows  = total.div_ceil(cols);
-    let sw    = max_w * cols;
-    let sh    = max_h * rows;
+    let cols = 17usize;
+    let rows = total.div_ceil(cols);
+    let sw = max_w * cols;
+    let sh = max_h * rows;
     let blank = vec![0u8; sw * sh * 4];
 
     let mut tinted_sheet = blank.clone();
-    let mut raw_sheet    = if save_raw { blank.clone() } else { Vec::new() };
+    let mut raw_sheet = if save_raw { blank.clone() } else { Vec::new() };
 
     for (slot, &pos) in positions.iter().enumerate() {
-        if slot >= total { break; }
+        if slot >= total {
+            break;
+        }
         let end = positions.get(slot + 1).copied().unwrap_or(raw.len());
         let frame_data = &raw[pos..end];
 
-        if frame_data.len() < 128 { continue; }
-        let fw = u32::from_le_bytes([frame_data[16],frame_data[17],frame_data[18],frame_data[19]]) as usize;
-        let fh = u32::from_le_bytes([frame_data[12],frame_data[13],frame_data[14],frame_data[15]]) as usize;
-        if fw == 0 || fh == 0 { continue; }
+        if frame_data.len() < 128 {
+            continue;
+        }
+        let fw = u32::from_le_bytes([
+            frame_data[16],
+            frame_data[17],
+            frame_data[18],
+            frame_data[19],
+        ]) as usize;
+        let fh = u32::from_le_bytes([
+            frame_data[12],
+            frame_data[13],
+            frame_data[14],
+            frame_data[15],
+        ]) as usize;
+        if fw == 0 || fh == 0 {
+            continue;
+        }
 
         let expected = fw.div_ceil(4) * fh.div_ceil(4) * 8;
-        if frame_data.len() < 128 + expected { continue; }
+        if frame_data.len() < 128 + expected {
+            continue;
+        }
 
         let mut px = vec![0u32; fw * fh];
-        if decode_bc1(&frame_data[128..128+expected], fw, fh, &mut px).is_err() { continue; }
+        if decode_bc1(&frame_data[128..128 + expected], fw, fh, &mut px).is_err() {
+            continue;
+        }
 
         // Centre the (possibly smaller) frame in the max_w × max_h cell
-        let col = slot % cols; let row = slot / cols;
-        let xo  = col * max_w + (max_w - fw) / 2;
-        let yo  = row * max_h + (max_h - fh) / 2;
+        let col = slot % cols;
+        let row = slot / cols;
+        let xo = col * max_w + (max_w - fw) / 2;
+        let yo = row * max_h + (max_h - fh) / 2;
 
-        for y in 0..fh { for x in 0..fw {
-            let p   = px[y * fw + x];
-            let r   = (p & 0xFF) as u8;
-            let g   = ((p >> 8)  & 0xFF) as u8;
-            let b   = ((p >> 16) & 0xFF) as u8;
-            let a   = ((p >> 24) & 0xFF) as u8;
-            let lum = (r as u32 + g as u32 + b as u32) / 3;
-            let di  = ((yo + y) * sw + xo + x) * 4;
-            if di + 4 > tinted_sheet.len() { continue; }
-            // Tinted
-            tinted_sheet[di]   = (tint[0] as u32 * lum / 255) as u8;
-            tinted_sheet[di+1] = (tint[1] as u32 * lum / 255) as u8;
-            tinted_sheet[di+2] = (tint[2] as u32 * lum / 255) as u8;
-            tinted_sheet[di+3] = a;
-            // Raw greyscale
-            if save_raw && di + 4 <= raw_sheet.len() {
-                raw_sheet[di] = r; raw_sheet[di+1] = g; raw_sheet[di+2] = b; raw_sheet[di+3] = a;
+        for y in 0..fh {
+            for x in 0..fw {
+                let p = px[y * fw + x];
+                let r = (p & 0xFF) as u8;
+                let g = ((p >> 8) & 0xFF) as u8;
+                let b = ((p >> 16) & 0xFF) as u8;
+                let a = ((p >> 24) & 0xFF) as u8;
+                let lum = (r as u32 + g as u32 + b as u32) / 3;
+                let di = ((yo + y) * sw + xo + x) * 4;
+                if di + 4 > tinted_sheet.len() {
+                    continue;
+                }
+                // Tinted
+                tinted_sheet[di] = (tint[0] as u32 * lum / 255) as u8;
+                tinted_sheet[di + 1] = (tint[1] as u32 * lum / 255) as u8;
+                tinted_sheet[di + 2] = (tint[2] as u32 * lum / 255) as u8;
+                tinted_sheet[di + 3] = a;
+                // Raw greyscale
+                if save_raw && di + 4 <= raw_sheet.len() {
+                    raw_sheet[di] = r;
+                    raw_sheet[di + 1] = g;
+                    raw_sheet[di + 2] = b;
+                    raw_sheet[di + 3] = a;
+                }
             }
-        }}
+        }
     }
 
     std::fs::create_dir_all(output)?;
@@ -3367,7 +3773,14 @@ fn cmd_extract_cmdicons(
 
     let tinted_path = output.join("cmdicons.png");
     write_png(&tinted_path, &tinted_sheet)?;
-    println!("  Saved {}  ({}×{}, {} slots, tint {:?})", tinted_path.display(), sw, sh, total, tint);
+    println!(
+        "  Saved {}  ({}×{}, {} slots, tint {:?})",
+        tinted_path.display(),
+        sw,
+        sh,
+        total,
+        tint
+    );
 
     if save_raw {
         let raw_path = output.join("cmdicons_raw.png");
@@ -3396,7 +3809,10 @@ fn cmd_extract_cmdicons(
             "width": max_w, "height": max_h
         })).collect::<Vec<_>>()
     });
-    std::fs::write(output.join("cmdicons.json"), serde_json::to_string_pretty(&meta)?)?;
+    std::fs::write(
+        output.join("cmdicons.json"),
+        serde_json::to_string_pretty(&meta)?,
+    )?;
     println!("  Saved {}", output.join("cmdicons.json").display());
     Ok(())
 }
@@ -3414,31 +3830,37 @@ fn cmd_extract_mainmenu(
     std::fs::create_dir_all(output)?;
 
     let assets: &[(&str, &str)] = &[
-        ("HD2\\glue\\title\\title.DDS",                 "title.dds"),
-        ("HD2\\glue\\mainmenu\\titleframe_bg.DDS",      "titleframe_bg.dds"),
-        ("HD2\\glue\\mainmenu\\titleframe_overlay.DDS", "titleframe_overlay.dds"),
-        ("HD2\\glue\\mainmenu\\etail.DDS",              "etail.dds"),
-        ("HD2\\glue\\mainmenu\\pintro.DDS",             "pintro.dds"),
-        ("HD2\\glue\\mainmenu\\pcredit.DDS",            "pcredit.dds"),
-        ("HD2\\glue\\mainmenu\\Lock.DDS",               "lock.dds"),
-        ("HD2\\glue\\mainmenu\\single.webm",            "single.webm"),
-        ("HD2\\glue\\mainmenu\\singleon.webm",          "singleon.webm"),
-        ("HD2\\glue\\mainmenu\\multi.webm",             "multi.webm"),
-        ("HD2\\glue\\mainmenu\\multion.webm",           "multion.webm"),
-        ("HD2\\glue\\mainmenu\\exit.webm",              "exit.webm"),
-        ("HD2\\glue\\mainmenu\\exiton.webm",            "exiton.webm"),
-        ("HD2\\glue\\mainmenu\\editor.webm",            "editor.webm"),
-        ("HD2\\glue\\mainmenu\\editoron.webm",          "editoron.webm"),
-        ("sound\\glue\\mouseover.wav",                  "sfx_mouseover.wav"),
-        ("sound\\glue\\mousedown2.wav",                 "sfx_click.wav"),
-        ("sound\\glue\\swishin.wav",                    "sfx_swishin.wav"),
-        ("sound\\glue\\swishout.wav",                   "sfx_swishout.wav"),
-        ("sound\\glue\\swishlock.wav",                  "sfx_swishlock.wav"),
-        ("sound\\glue\\bnetclick.wav",                  "sfx_bnetclick.wav"),
-        ("sound\\glue\\countdown.wav",                  "sfx_countdown.wav"),
-        ("Music\\terran1.ogg",                          "music_terran.ogg"),
-        ("Music\\zerg1.ogg",                            "music_zerg.ogg"),
-        ("Music\\protoss1.ogg",                         "music_protoss.ogg"),
+        ("HD2\\glue\\title\\title.DDS", "title.dds"),
+        (
+            "HD2\\glue\\mainmenu\\titleframe_bg.DDS",
+            "titleframe_bg.dds",
+        ),
+        (
+            "HD2\\glue\\mainmenu\\titleframe_overlay.DDS",
+            "titleframe_overlay.dds",
+        ),
+        ("HD2\\glue\\mainmenu\\etail.DDS", "etail.dds"),
+        ("HD2\\glue\\mainmenu\\pintro.DDS", "pintro.dds"),
+        ("HD2\\glue\\mainmenu\\pcredit.DDS", "pcredit.dds"),
+        ("HD2\\glue\\mainmenu\\Lock.DDS", "lock.dds"),
+        ("HD2\\glue\\mainmenu\\single.webm", "single.webm"),
+        ("HD2\\glue\\mainmenu\\singleon.webm", "singleon.webm"),
+        ("HD2\\glue\\mainmenu\\multi.webm", "multi.webm"),
+        ("HD2\\glue\\mainmenu\\multion.webm", "multion.webm"),
+        ("HD2\\glue\\mainmenu\\exit.webm", "exit.webm"),
+        ("HD2\\glue\\mainmenu\\exiton.webm", "exiton.webm"),
+        ("HD2\\glue\\mainmenu\\editor.webm", "editor.webm"),
+        ("HD2\\glue\\mainmenu\\editoron.webm", "editoron.webm"),
+        ("sound\\glue\\mouseover.wav", "sfx_mouseover.wav"),
+        ("sound\\glue\\mousedown2.wav", "sfx_click.wav"),
+        ("sound\\glue\\swishin.wav", "sfx_swishin.wav"),
+        ("sound\\glue\\swishout.wav", "sfx_swishout.wav"),
+        ("sound\\glue\\swishlock.wav", "sfx_swishlock.wav"),
+        ("sound\\glue\\bnetclick.wav", "sfx_bnetclick.wav"),
+        ("sound\\glue\\countdown.wav", "sfx_countdown.wav"),
+        ("Music\\terran1.ogg", "music_terran.ogg"),
+        ("Music\\zerg1.ogg", "music_zerg.ogg"),
+        ("Music\\protoss1.ogg", "music_protoss.ogg"),
     ];
 
     let (mut ok, mut fail) = (0usize, 0usize);
@@ -3449,10 +3871,16 @@ fn cmd_extract_mainmenu(
                     let png_name = out_name.replace(".dds", ".png");
                     let png_path = output.join(&png_name);
                     match save_dds_as_png(&data, &png_path) {
-                        Ok(()) => { println!("  ✓ {} → {}", casc_path, png_name); ok += 1; }
+                        Ok(()) => {
+                            println!("  ✓ {} → {}", casc_path, png_name);
+                            ok += 1;
+                        }
                         Err(e) => {
                             std::fs::write(output.join(out_name), &data)?;
-                            println!("  ⚠ {} → {} (PNG failed: {}, saved raw DDS)", casc_path, out_name, e);
+                            println!(
+                                "  ⚠ {} → {} (PNG failed: {}, saved raw DDS)",
+                                casc_path, out_name, e
+                            );
                             ok += 1;
                         }
                     }
@@ -3462,8 +3890,14 @@ fn cmd_extract_mainmenu(
                     ok += 1;
                 }
             }
-            Ok(_) => { println!("  ⚠ empty: {}", casc_path); fail += 1; }
-            Err(_) => { println!("  ✗ not found: {}", casc_path); fail += 1; }
+            Ok(_) => {
+                println!("  ⚠ empty: {}", casc_path);
+                fail += 1;
+            }
+            Err(_) => {
+                println!("  ✗ not found: {}", casc_path);
+                fail += 1;
+            }
         }
     }
     println!("  {} extracted, {} not found → {:?}", ok, fail, output);
@@ -3480,16 +3914,19 @@ fn cmd_extract_dat(
     std::fs::create_dir_all(output)?;
 
     let files: &[(&str, &[&str])] = &[
-        ("units.dat",    &["arr\\units.dat",    "arr/units.dat"]),
+        ("units.dat", &["arr\\units.dat", "arr/units.dat"]),
         ("upgrades.dat", &["arr\\upgrades.dat", "arr/upgrades.dat"]),
-        ("images.dat",   &["arr\\images.dat",   "arr/images.dat"]),
-        ("orders.dat",   &["arr\\orders.dat",   "arr/orders.dat"]),
+        ("images.dat", &["arr\\images.dat", "arr/images.dat"]),
+        ("orders.dat", &["arr\\orders.dat", "arr/orders.dat"]),
         ("techdata.dat", &["arr\\techdata.dat", "arr/techdata.dat"]),
-        ("weapons.dat",  &["arr\\weapons.dat",  "arr/weapons.dat"]),
-        ("flingy.dat",   &["arr\\flingy.dat",   "arr/flingy.dat"]),
-        ("sprites.dat",  &["arr\\sprites.dat",  "arr/sprites.dat"]),
-        ("iscript.bin",  &["scripts\\iscript.bin", "scripts/iscript.bin"]),
-        ("images.tbl",   &["arr\\images.tbl",   "arr/images.tbl"]),
+        ("weapons.dat", &["arr\\weapons.dat", "arr/weapons.dat"]),
+        ("flingy.dat", &["arr\\flingy.dat", "arr/flingy.dat"]),
+        ("sprites.dat", &["arr\\sprites.dat", "arr/sprites.dat"]),
+        (
+            "iscript.bin",
+            &["scripts\\iscript.bin", "scripts/iscript.bin"],
+        ),
+        ("images.tbl", &["arr\\images.tbl", "arr/images.tbl"]),
         ("stat_txt.tbl", &["rez\\stat_txt.tbl", "rez/stat_txt.tbl"]),
     ];
 
@@ -3501,11 +3938,16 @@ fn cmd_extract_dat(
                 if !d.is_empty() {
                     std::fs::write(output.join(name), &d)?;
                     println!("  ✓ {} → {} ({} bytes)", p, name, d.len());
-                    ok += 1; found = true; break;
+                    ok += 1;
+                    found = true;
+                    break;
                 }
             }
         }
-        if !found { println!("  ✗ not found: {}", name); fail += 1; }
+        if !found {
+            println!("  ✗ not found: {}", name);
+            fail += 1;
+        }
     }
     println!("  {} extracted, {} not found → {:?}", ok, fail, output);
     Ok(())
@@ -3520,7 +3962,8 @@ fn cmd_inspect_files(
     sizes: bool,
 ) -> anyhow::Result<()> {
     let storage = open_casc_storage(install_path)?;
-    let files = storage.list_files()
+    let files = storage
+        .list_files()
         .map_err(|e| anyhow::anyhow!("list_files failed: {}", e))?;
 
     let pattern = search.map(|s| s.to_lowercase());
@@ -3552,49 +3995,54 @@ fn cmd_sounds_probe(
     let archive = open_casc_archive(install_path)?;
 
     let candidates: &[(&str, &str)] = &[
-        ("hydralisk_attack",  "sound\\Zerg\\Hydralisk\\HydAtt00.wav"),
-        ("hydralisk_die",     "sound\\Zerg\\Hydralisk\\HydDth00.wav"),
-        ("hydralisk_yes",     "sound\\Zerg\\Hydralisk\\HydYes00.wav"),
-        ("hydralisk_what",    "sound\\Zerg\\Hydralisk\\HydWht00.wav"),
-        ("zealot_attack",     "sound\\Protoss\\Zealot\\ZeaAtt00.wav"),
-        ("zealot_die",        "sound\\Protoss\\Zealot\\ZeaDth00.wav"),
-        ("zealot_yes",        "sound\\Protoss\\Zealot\\ZeaYes00.wav"),
-        ("zealot_what",       "sound\\Protoss\\Zealot\\ZeaWht00.wav"),
-        ("ghost_attack",      "sound\\Terran\\Ghost\\TghAtt00.wav"),
-        ("ghost_die",         "sound\\Terran\\Ghost\\TghDth00.wav"),
-        ("ghost_yes",         "sound\\Terran\\Ghost\\TghYes00.wav"),
-        ("ghost_what",        "sound\\Terran\\Ghost\\TghWht00.wav"),
-        ("siege_attack",      "sound\\Terran\\Vehicle\\TvhAtt00.wav"),
-        ("siege_die",         "sound\\Terran\\Vehicle\\TvhDth00.wav"),
-        ("vulture_attack",    "sound\\Terran\\Vulture\\TVuAtt00.wav"),
-        ("vulture_yes",       "sound\\Terran\\Vulture\\TVuYes00.wav"),
-        ("dragoon_attack",    "sound\\Protoss\\Dragoon\\PDrAtt00.wav"),
-        ("dragoon_die",       "sound\\Protoss\\Dragoon\\PDrDth00.wav"),
-        ("dragoon_yes",       "sound\\Protoss\\Dragoon\\PDrYes00.wav"),
-        ("scv_yes",           "sound\\Terran\\SCV\\TSCYes00.wav"),
-        ("scv_attack",        "sound\\Terran\\SCV\\TSCAtt00.wav"),
-        ("medic_yes",         "sound\\Terran\\Medic\\TMEYes00.wav"),
-        ("medic_what",        "sound\\Terran\\Medic\\TMEWht00.wav"),
-        ("mutalisk_attack",   "sound\\Zerg\\Mutalisk\\MutAtt00.wav"),
-        ("mutalisk_die",      "sound\\Zerg\\Mutalisk\\MutDth00.wav"),
-        ("ultralisk_attack",  "sound\\Zerg\\Ultralisk\\UltAtt00.wav"),
-        ("ultralisk_die",     "sound\\Zerg\\Ultralisk\\UltDth00.wav"),
-        ("ultralisk_yes",     "sound\\Zerg\\Ultralisk\\UltYes00.wav"),
-        ("probe_yes",         "sound\\Protoss\\Probe\\PrbYes00.wav"),
-        ("probe_attack",      "sound\\Protoss\\Probe\\PrbAtt00.wav"),
-        ("weapon_gauss",      "sound\\Weapons\\Terran\\tgun.wav"),
-        ("weapon_tank",       "sound\\Weapons\\Terran\\tTankVulcan.wav"),
-        ("weapon_tank2",      "sound\\Weapons\\Terran\\tTankShot.wav"),
-        ("weapon_needle",     "sound\\Weapons\\Zerg\\zNeedleSpine.wav"),
-        ("weapon_zealot",     "sound\\Weapons\\Protoss\\pZealotHit.wav"),
-        ("weapon_phaser",     "sound\\Weapons\\Protoss\\pPhaserCannon.wav"),
+        ("hydralisk_attack", "sound\\Zerg\\Hydralisk\\HydAtt00.wav"),
+        ("hydralisk_die", "sound\\Zerg\\Hydralisk\\HydDth00.wav"),
+        ("hydralisk_yes", "sound\\Zerg\\Hydralisk\\HydYes00.wav"),
+        ("hydralisk_what", "sound\\Zerg\\Hydralisk\\HydWht00.wav"),
+        ("zealot_attack", "sound\\Protoss\\Zealot\\ZeaAtt00.wav"),
+        ("zealot_die", "sound\\Protoss\\Zealot\\ZeaDth00.wav"),
+        ("zealot_yes", "sound\\Protoss\\Zealot\\ZeaYes00.wav"),
+        ("zealot_what", "sound\\Protoss\\Zealot\\ZeaWht00.wav"),
+        ("ghost_attack", "sound\\Terran\\Ghost\\TghAtt00.wav"),
+        ("ghost_die", "sound\\Terran\\Ghost\\TghDth00.wav"),
+        ("ghost_yes", "sound\\Terran\\Ghost\\TghYes00.wav"),
+        ("ghost_what", "sound\\Terran\\Ghost\\TghWht00.wav"),
+        ("siege_attack", "sound\\Terran\\Vehicle\\TvhAtt00.wav"),
+        ("siege_die", "sound\\Terran\\Vehicle\\TvhDth00.wav"),
+        ("vulture_attack", "sound\\Terran\\Vulture\\TVuAtt00.wav"),
+        ("vulture_yes", "sound\\Terran\\Vulture\\TVuYes00.wav"),
+        ("dragoon_attack", "sound\\Protoss\\Dragoon\\PDrAtt00.wav"),
+        ("dragoon_die", "sound\\Protoss\\Dragoon\\PDrDth00.wav"),
+        ("dragoon_yes", "sound\\Protoss\\Dragoon\\PDrYes00.wav"),
+        ("scv_yes", "sound\\Terran\\SCV\\TSCYes00.wav"),
+        ("scv_attack", "sound\\Terran\\SCV\\TSCAtt00.wav"),
+        ("medic_yes", "sound\\Terran\\Medic\\TMEYes00.wav"),
+        ("medic_what", "sound\\Terran\\Medic\\TMEWht00.wav"),
+        ("mutalisk_attack", "sound\\Zerg\\Mutalisk\\MutAtt00.wav"),
+        ("mutalisk_die", "sound\\Zerg\\Mutalisk\\MutDth00.wav"),
+        ("ultralisk_attack", "sound\\Zerg\\Ultralisk\\UltAtt00.wav"),
+        ("ultralisk_die", "sound\\Zerg\\Ultralisk\\UltDth00.wav"),
+        ("ultralisk_yes", "sound\\Zerg\\Ultralisk\\UltYes00.wav"),
+        ("probe_yes", "sound\\Protoss\\Probe\\PrbYes00.wav"),
+        ("probe_attack", "sound\\Protoss\\Probe\\PrbAtt00.wav"),
+        ("weapon_gauss", "sound\\Weapons\\Terran\\tgun.wav"),
+        ("weapon_tank", "sound\\Weapons\\Terran\\tTankVulcan.wav"),
+        ("weapon_tank2", "sound\\Weapons\\Terran\\tTankShot.wav"),
+        ("weapon_needle", "sound\\Weapons\\Zerg\\zNeedleSpine.wav"),
+        ("weapon_zealot", "sound\\Weapons\\Protoss\\pZealotHit.wav"),
+        (
+            "weapon_phaser",
+            "sound\\Weapons\\Protoss\\pPhaserCannon.wav",
+        ),
     ];
 
     let filter_lc = filter.map(|s| s.to_lowercase());
     let (mut found, mut checked) = (0usize, 0usize);
     for (name, path) in candidates {
         if let Some(ref f) = filter_lc {
-            if !name.contains(f.as_str()) && !path.to_lowercase().contains(f.as_str()) { continue; }
+            if !name.contains(f.as_str()) && !path.to_lowercase().contains(f.as_str()) {
+                continue;
+            }
         }
         checked += 1;
         let variants = [
@@ -3605,12 +4053,20 @@ fn cmd_sounds_probe(
         ];
         let mut hit = false;
         for v in &variants {
-            if archive.extract_file(v).map(|d| !d.is_empty()).unwrap_or(false) {
+            if archive
+                .extract_file(v)
+                .map(|d| !d.is_empty())
+                .unwrap_or(false)
+            {
                 println!("  ✓ {:<25} {}", name, v);
-                found += 1; hit = true; break;
+                found += 1;
+                hit = true;
+                break;
             }
         }
-        if !hit { println!("  ✗ {:<25} {}", name, path); }
+        if !hit {
+            println!("  ✗ {:<25} {}", name, path);
+        }
     }
     println!("  {}/{} found", found, checked);
 
@@ -3635,7 +4091,10 @@ mod tests {
     #[test]
     fn join_within_allows_plain_and_nested_names() {
         let base = Path::new("/out");
-        assert_eq!(join_within(base, "marine.anim").unwrap(), base.join("marine.anim"));
+        assert_eq!(
+            join_within(base, "marine.anim").unwrap(),
+            base.join("marine.anim")
+        );
         assert_eq!(
             join_within(base, "terran/marine.anim").unwrap(),
             base.join("terran").join("marine.anim")
@@ -3777,20 +4236,14 @@ mod tests {
 
     #[test]
     fn compile_patterns_valid_patterns_compile() {
-        let result = compile_patterns(&Some(vec![
-            "terran".to_string(),
-            r".*\.anim$".to_string(),
-        ]));
+        let result = compile_patterns(&Some(vec!["terran".to_string(), r".*\.anim$".to_string()]));
         assert_eq!(result.len(), 2);
     }
 
     #[test]
     fn compile_patterns_invalid_pattern_silently_skipped() {
         // "[invalid" is not a valid regex
-        let result = compile_patterns(&Some(vec![
-            "valid".to_string(),
-            "[invalid".to_string(),
-        ]));
+        let result = compile_patterns(&Some(vec!["valid".to_string(), "[invalid".to_string()]));
         // Only the valid one is compiled
         assert_eq!(result.len(), 1);
         assert!(result[0].is_match("valid_path"));
@@ -3798,10 +4251,7 @@ mod tests {
 
     #[test]
     fn compile_patterns_all_invalid_returns_empty() {
-        let result = compile_patterns(&Some(vec![
-            "[bad".to_string(),
-            "**broken**(".to_string(),
-        ]));
+        let result = compile_patterns(&Some(vec!["[bad".to_string(), "**broken**(".to_string()]));
         assert!(result.is_empty());
     }
 
@@ -3818,7 +4268,11 @@ mod tests {
         // Always behavior never skips, even for existing files
         assert!(!should_skip(&existing, OverwriteBehavior::Always, t));
         // Also false for non-existent paths
-        assert!(!should_skip(&dir.path().join("does_not_exist.txt"), OverwriteBehavior::Always, t));
+        assert!(!should_skip(
+            &dir.path().join("does_not_exist.txt"),
+            OverwriteBehavior::Always,
+            t
+        ));
     }
 
     #[test]

@@ -92,10 +92,7 @@ pub struct ResolutionHandler {
 impl ResolutionHandler {
     /// Create a new resolution handler
     pub fn new(tier: ResolutionTier, output_base: PathBuf) -> Self {
-        Self {
-            tier,
-            output_base,
-        }
+        Self { tier, output_base }
     }
 
     /// Detect resolution tier from file path
@@ -126,7 +123,7 @@ impl ResolutionHandler {
 
     #[cfg(test)]
     /// Get output directory for a specific resolution tier (test-only method)
-    /// 
+    ///
     /// Organizes output into subdirectories:
     /// - output/HD/ for HD sprites
     /// - output/HD2/ for HD2 sprites  
@@ -168,15 +165,15 @@ impl ResolutionFilterStats {
     /// Update statistics with a processed file (test-only method)
     pub fn record_file<P: AsRef<Path>>(&mut self, file_path: P, processed: bool) {
         let detected_tier = ResolutionHandler::detect_tier_from_path(&file_path);
-        
+
         match detected_tier {
             Some(ResolutionTier::HD) => self.hd_count += 1,
             Some(ResolutionTier::HD2) => self.hd2_count += 1,
             Some(ResolutionTier::SD) => self.sd_count += 1,
-            Some(ResolutionTier::All) => {}, // Should not happen
+            Some(ResolutionTier::All) => {} // Should not happen
             None => self.unknown_count += 1,
         }
-        
+
         if processed {
             self.processed_count += 1;
         } else {
@@ -293,9 +290,9 @@ mod tests {
         ) {
             let output_base = PathBuf::from("test_output");
             let handler = ResolutionHandler::new(tier, output_base.clone());
-            
+
             let output_dir = handler.get_output_directory_for_tier(detected_tier);
-            
+
             match tier {
                 ResolutionTier::All => {
                     // When extracting all tiers, should organize by detected tier
@@ -326,11 +323,11 @@ mod tests {
         ) {
             let output_base = PathBuf::from("test_output");
             let handler = ResolutionHandler::new(filter_tier, output_base);
-            
+
             // Test HD path filtering
             let should_process_hd = handler.should_process_file(&hd_path);
             let expected_hd = matches!(filter_tier, ResolutionTier::All | ResolutionTier::HD);
-            prop_assert_eq!(should_process_hd, expected_hd, 
+            prop_assert_eq!(should_process_hd, expected_hd,
                 "HD path '{}' processing with filter {:?} should be {}", hd_path, filter_tier, expected_hd);
 
             // Test HD2 path filtering

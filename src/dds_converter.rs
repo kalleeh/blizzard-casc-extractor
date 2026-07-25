@@ -20,7 +20,10 @@ pub fn dds_to_rgba_pixels(dds_data: &[u8]) -> io::Result<(Vec<u8>, u32, u32)> {
     let width = dds.get_width();
     let height = dds.get_height();
     if width == 0 || height == 0 {
-        return Err(invalid(format!("DDS has zero extent ({}×{})", width, height)));
+        return Err(invalid(format!(
+            "DDS has zero extent ({}×{})",
+            width, height
+        )));
     }
     let pixel_count = (width as usize)
         .checked_mul(height as usize)
@@ -78,7 +81,9 @@ fn apply_bc1_punchthrough_alpha(raw: &[u8], width: usize, height: usize, rgba: &
     for by in 0..blocks_y {
         for bx in 0..blocks_x {
             let base = (by * blocks_x + bx) * 8;
-            let Some(block) = raw.get(base..base + 8) else { return };
+            let Some(block) = raw.get(base..base + 8) else {
+                return;
+            };
 
             let c0 = u16::from_le_bytes([block[0], block[1]]);
             let c1 = u16::from_le_bytes([block[2], block[3]]);
@@ -122,12 +127,12 @@ fn block_format(dds: &Dds) -> Option<BlockFormat> {
         };
     }
     match dds.get_dxgi_format() {
-        Some(DxgiFormat::BC1_UNorm) | Some(DxgiFormat::BC1_UNorm_sRGB) | Some(DxgiFormat::BC1_Typeless) => {
-            Some(BlockFormat::Bc1)
-        }
-        Some(DxgiFormat::BC3_UNorm) | Some(DxgiFormat::BC3_UNorm_sRGB) | Some(DxgiFormat::BC3_Typeless) => {
-            Some(BlockFormat::Bc3)
-        }
+        Some(DxgiFormat::BC1_UNorm)
+        | Some(DxgiFormat::BC1_UNorm_sRGB)
+        | Some(DxgiFormat::BC1_Typeless) => Some(BlockFormat::Bc1),
+        Some(DxgiFormat::BC3_UNorm)
+        | Some(DxgiFormat::BC3_UNorm_sRGB)
+        | Some(DxgiFormat::BC3_Typeless) => Some(BlockFormat::Bc3),
         _ => None,
     }
 }
@@ -193,14 +198,18 @@ mod tests {
         let mut block = Vec::new();
         block.extend_from_slice(&0x0000u16.to_le_bytes()); // color0 (black)
         block.extend_from_slice(&0xFFFFu16.to_le_bytes()); // color1 (white) => c0 <= c1
-        // 2 bits per pixel, little-endian: pixel0=0, pixel1=3, rest 0
+                                                           // 2 bits per pixel, little-endian: pixel0=0, pixel1=3, rest 0
         block.extend_from_slice(&0b1100u32.to_le_bytes());
 
         let dds = dds_with_block(b"DXT1", &block);
         let (rgba, w, h) = dds_to_rgba_pixels(&dds).expect("BC1 decode");
         assert_eq!((w, h), (4, 4));
         assert_eq!(rgba[3], 255, "index 0 must stay opaque");
-        assert_eq!(&rgba[4..8], &[0, 0, 0, 0], "index 3 must be transparent black");
+        assert_eq!(
+            &rgba[4..8],
+            &[0, 0, 0, 0],
+            "index 3 must be transparent black"
+        );
     }
 
     #[test]

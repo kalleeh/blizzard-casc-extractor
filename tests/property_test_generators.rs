@@ -1,10 +1,10 @@
+use byteorder::{LittleEndian, WriteBytesExt};
 /// Property-based test generators for ANIM and GRP formats
 ///
 /// This module provides generators for creating valid ANIM and GRP test data
 /// for comprehensive property-based testing using proptest.
 use proptest::prelude::*;
 use proptest::strategy::ValueTree;
-use byteorder::{LittleEndian, WriteBytesExt};
 use std::io::Write;
 
 /// Generate valid GRP file data with specified parameters.
@@ -15,11 +15,7 @@ use std::io::Write;
 /// - Frame entry table (8 bytes per frame: xOffset, yOffset, unknown, fileOffset)
 /// - Per-frame line offset table (2 bytes per line)
 /// - RLE-encoded line data (repeat-encoded, 2 bytes per line)
-pub fn generate_valid_grp_data(
-    frame_count: u16,
-    width: u16,
-    height: u16,
-) -> Vec<u8> {
+pub fn generate_valid_grp_data(frame_count: u16, width: u16, height: u16) -> Vec<u8> {
     let mut data = Vec::new();
 
     // GRP header (6 bytes)
@@ -61,7 +57,9 @@ pub fn generate_valid_grp_data(
         let mut frame_data = Vec::new();
         let mut line_offset = line_table_size; // first line's data starts after the table
         for (i, blob) in line_blobs.iter().enumerate() {
-            frame_data.write_u16::<LittleEndian>(line_offset as u16).unwrap();
+            frame_data
+                .write_u16::<LittleEndian>(line_offset as u16)
+                .unwrap();
             if i + 1 < line_blobs.len() {
                 line_offset += blob.len();
             }
@@ -82,9 +80,9 @@ pub fn generate_valid_grp_data(
     let mut file_offset = 6 + entry_table_size; // first frame data follows the table
 
     for frame_data in &all_frame_data {
-        data.write_u8(0).unwrap();                                   // xOffset
-        data.write_u8(0).unwrap();                                   // yOffset
-        data.write_u16::<LittleEndian>(0).unwrap();                  // unknown
+        data.write_u8(0).unwrap(); // xOffset
+        data.write_u8(0).unwrap(); // yOffset
+        data.write_u16::<LittleEndian>(0).unwrap(); // unknown
         data.write_u32::<LittleEndian>(file_offset as u32).unwrap(); // fileOffset
         file_offset += frame_data.len();
     }
@@ -100,9 +98,9 @@ pub fn generate_valid_grp_data(
 /// Proptest strategy for generating valid GRP parameters
 pub fn grp_params_strategy() -> impl Strategy<Value = (u16, u16, u16)> {
     (
-        1u16..100,     // frame_count: 1-99 frames
-        1u16..512,     // width: 1-511 pixels
-        1u16..512,     // height: 1-511 pixels
+        1u16..100, // frame_count: 1-99 frames
+        1u16..512, // width: 1-511 pixels
+        1u16..512, // height: 1-511 pixels
     )
 }
 
@@ -132,10 +130,10 @@ pub fn valid_grp_data() -> impl Strategy<Value = GrpTestData> {
 pub fn generate_zlib_compressed_texture(width: u16, height: u16) -> Vec<u8> {
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
-    
+
     let pixel_count = (width as usize) * (height as usize);
     let uncompressed_data = vec![128u8; pixel_count * 4]; // Gray RGBA pixels
-    
+
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(&uncompressed_data).unwrap();
     encoder.finish().unwrap()
@@ -145,7 +143,7 @@ pub fn generate_zlib_compressed_texture(width: u16, height: u16) -> Vec<u8> {
 pub fn generate_lz4_compressed_texture(width: u16, height: u16) -> Vec<u8> {
     let pixel_count = (width as usize) * (height as usize);
     let uncompressed_data = vec![128u8; pixel_count * 4]; // Gray RGBA pixels
-    
+
     lz4_flex::compress_prepend_size(&uncompressed_data)
 }
 
@@ -156,22 +154,22 @@ mod tests {
     #[test]
     fn test_generate_valid_grp_data() {
         let data = generate_valid_grp_data(1, 32, 32);
-        
+
         // Check frame count
         assert_eq!(u16::from_le_bytes([data[0], data[1]]), 1);
-        
+
         // Check dimensions
         assert_eq!(u16::from_le_bytes([data[2], data[3]]), 32);
         assert_eq!(u16::from_le_bytes([data[4], data[5]]), 32);
-        
+
         // Should have reasonable size
         assert!(data.len() > 10); // At least header + offset table + some data
     }
-    
+
     #[test]
     fn test_generate_zlib_compressed_texture() {
         let compressed = generate_zlib_compressed_texture(64, 64);
-        
+
         // Compressed data should be smaller than uncompressed
         let uncompressed_size = 64 * 64 * 4; // RGBA
         assert!(compressed.len() < uncompressed_size);

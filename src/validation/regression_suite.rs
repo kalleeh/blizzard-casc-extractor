@@ -3,34 +3,34 @@
 // This module maintains a database of known-good extractions and validates
 // that changes don't break previously working sprite extractions.
 
-use super::{ValidationError, byte_comparison::ByteComparison};
 use super::visual_validation::{create_pixel_diff_image, VisualComparison};
+use super::{byte_comparison::ByteComparison, ValidationError};
+use log::{debug, info, warn};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
-use log::{debug, info, warn};
 
 /// A known-good extraction that serves as a regression test baseline
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KnownGoodExtraction {
     /// Name/identifier of the sprite
     pub sprite_name: String,
-    
+
     /// Path to the source CASC file
     pub source_file: PathBuf,
-    
+
     /// Path to the expected output PNG
     pub expected_output: PathBuf,
-    
+
     /// Expected sprite metadata
     pub expected_metadata: SpriteMetadata,
-    
+
     /// SHA256 hash of the expected output
     pub sha256_hash: String,
-    
+
     /// Date when this baseline was established
     pub baseline_date: String,
-    
+
     /// Version of the extractor that created this baseline
     pub extractor_version: String,
 }
@@ -40,13 +40,13 @@ pub struct KnownGoodExtraction {
 pub struct SpriteMetadata {
     /// Sprite width in pixels
     pub width: u32,
-    
+
     /// Sprite height in pixels
     pub height: u32,
-    
+
     /// Number of frames (for animated sprites)
     pub frame_count: u32,
-    
+
     /// Sprite format (ANIM, GRP, etc.)
     pub format: String,
 }
@@ -56,13 +56,13 @@ pub struct SpriteMetadata {
 pub struct RegressionTestResult {
     /// Whether the test passed
     pub passed: bool,
-    
+
     /// Name of the sprite tested
     pub sprite_name: String,
-    
+
     /// Details of any regression detected
     pub regression_details: Option<String>,
-    
+
     /// Path to diff image (if regression detected)
     pub diff_image_path: Option<String>,
 }
@@ -72,13 +72,13 @@ pub struct RegressionTestResult {
 struct PixelComparisonResult {
     /// Number of pixels that differ
     different_pixels: usize,
-    
+
     /// Total number of pixels
     total_pixels: usize,
-    
+
     /// Percentage of pixels that differ
     difference_percentage: f64,
-    
+
     /// Path to generated diff image
     diff_image_path: Option<String>,
 }
@@ -87,7 +87,7 @@ struct PixelComparisonResult {
 pub struct RegressionTestSuite {
     /// Database of known-good extractions
     known_good_extractions: HashMap<String, KnownGoodExtraction>,
-    
+
     /// Path to the regression database file
     database_path: PathBuf,
 }
@@ -111,12 +111,12 @@ impl RegressionTestSuite {
     fn load_database(path: &Path) -> Result<HashMap<String, KnownGoodExtraction>, ValidationError> {
         let content = std::fs::read_to_string(path)?;
         let extractions: Vec<KnownGoodExtraction> = serde_json::from_str(&content)?;
-        
+
         let mut map = HashMap::new();
         for extraction in extractions {
             map.insert(extraction.sprite_name.clone(), extraction);
         }
-        
+
         Ok(map)
     }
 
@@ -195,8 +195,9 @@ impl RegressionTestSuite {
         let actual_hash = ByteComparison::calculate_sha256(actual_output)?;
         if actual_hash != known_good.sha256_hash {
             // Hash mismatch - perform detailed pixel-by-pixel comparison
-            let pixel_comparison = self.compare_pixels(&known_good.expected_output, actual_output)?;
-            
+            let pixel_comparison =
+                self.compare_pixels(&known_good.expected_output, actual_output)?;
+
             let details = format!(
                 "REGRESSION DETECTED: {}\n\
                  SHA256 hash mismatch:\n\
@@ -268,7 +269,12 @@ impl RegressionTestSuite {
 
         // Generate diff image if there are differences
         let diff_image_path = if different_pixels > 0 {
-            Some(self.generate_diff_image(expected_path, actual_path, &expected_img, &actual_img)?)
+            Some(self.generate_diff_image(
+                expected_path,
+                actual_path,
+                &expected_img,
+                &actual_img,
+            )?)
         } else {
             None
         };
@@ -301,24 +307,32 @@ impl RegressionTestSuite {
     }
 
     /// Run all regression tests
-    pub fn run_all_tests(&self, output_dir: &Path) -> Result<Vec<RegressionTestResult>, ValidationError> {
-        info!("Running {} regression tests", self.known_good_extractions.len());
+    pub fn run_all_tests(
+        &self,
+        output_dir: &Path,
+    ) -> Result<Vec<RegressionTestResult>, ValidationError> {
+        info!(
+            "Running {} regression tests",
+            self.known_good_extractions.len()
+        );
 
         let mut results = Vec::new();
 
         for (sprite_name, known_good) in &self.known_good_extractions {
             // Find the actual output file
-            let actual_output = output_dir.join(
-                known_good.expected_output
-                    .file_name()
-                    .ok_or_else(|| ValidationError::Io(std::io::Error::new(
+            let actual_output =
+                output_dir.join(known_good.expected_output.file_name().ok_or_else(|| {
+                    ValidationError::Io(std::io::Error::new(
                         std::io::ErrorKind::InvalidInput,
                         "Invalid expected output path",
-                    )))?
-            );
+                    ))
+                })?);
 
             if !actual_output.exists() {
-                warn!("Actual output not found for {}: {:?}", sprite_name, actual_output);
+                warn!(
+                    "Actual output not found for {}: {:?}",
+                    sprite_name, actual_output
+                );
                 results.push(RegressionTestResult {
                     passed: false,
                     sprite_name: sprite_name.clone(),
@@ -354,11 +368,15 @@ impl RegressionTestSuite {
         use std::io::Write;
 
         let mut report = String::new();
-        
+
         // Header
-        report.push_str("╔══════════════════════════════════════════════════════════════════════╗\n");
-        report.push_str("║              REGRESSION TEST SUITE REPORT                            ║\n");
-        report.push_str("╚══════════════════════════════════════════════════════════════════════╝\n\n");
+        report
+            .push_str("╔══════════════════════════════════════════════════════════════════════╗\n");
+        report
+            .push_str("║              REGRESSION TEST SUITE REPORT                            ║\n");
+        report.push_str(
+            "╚══════════════════════════════════════════════════════════════════════╝\n\n",
+        );
 
         // Summary statistics
         let total_tests = results.len();
@@ -371,8 +389,11 @@ impl RegressionTestSuite {
         };
 
         report.push_str(&format!("Test Date: {}\n", chrono::Utc::now().to_rfc3339()));
-        report.push_str(&format!("Extractor Version: {}\n\n", env!("CARGO_PKG_VERSION")));
-        
+        report.push_str(&format!(
+            "Extractor Version: {}\n\n",
+            env!("CARGO_PKG_VERSION")
+        ));
+
         report.push_str("SUMMARY:\n");
         report.push_str(&format!("  Total Tests:  {}\n", total_tests));
         report.push_str(&format!("  Passed:       {} ✅\n", passed_tests));
@@ -389,9 +410,12 @@ impl RegressionTestSuite {
         }
 
         // Detailed results
-        report.push_str("═══════════════════════════════════════════════════════════════════════\n");
+        report
+            .push_str("═══════════════════════════════════════════════════════════════════════\n");
         report.push_str("DETAILED RESULTS:\n");
-        report.push_str("═══════════════════════════════════════════════════════════════════════\n\n");
+        report.push_str(
+            "═══════════════════════════════════════════════════════════════════════\n\n",
+        );
 
         // Group by status
         let passed: Vec<_> = results.iter().filter(|r| r.passed).collect();
@@ -400,19 +424,21 @@ impl RegressionTestSuite {
         // Show failed tests first (most important)
         if !failed.is_empty() {
             report.push_str("FAILED TESTS (REGRESSIONS DETECTED):\n");
-            report.push_str("───────────────────────────────────────────────────────────────────────\n\n");
+            report.push_str(
+                "───────────────────────────────────────────────────────────────────────\n\n",
+            );
 
             for (i, result) in failed.iter().enumerate() {
                 report.push_str(&format!("{}. ❌ {}\n", i + 1, result.sprite_name));
-                
+
                 if let Some(details) = &result.regression_details {
                     report.push_str(&format!("\n{}\n", details));
                 }
-                
+
                 if let Some(diff_path) = &result.diff_image_path {
                     report.push_str(&format!("\n   Diff image: {}\n", diff_path));
                 }
-                
+
                 report.push('\n');
             }
         }
@@ -420,7 +446,9 @@ impl RegressionTestSuite {
         // Show passed tests
         if !passed.is_empty() {
             report.push_str("PASSED TESTS:\n");
-            report.push_str("───────────────────────────────────────────────────────────────────────\n\n");
+            report.push_str(
+                "───────────────────────────────────────────────────────────────────────\n\n",
+            );
 
             for (i, result) in passed.iter().enumerate() {
                 report.push_str(&format!("{}. ✅ {}\n", i + 1, result.sprite_name));
@@ -429,9 +457,11 @@ impl RegressionTestSuite {
         }
 
         // Footer
-        report.push_str("═══════════════════════════════════════════════════════════════════════\n");
+        report
+            .push_str("═══════════════════════════════════════════════════════════════════════\n");
         report.push_str("END OF REGRESSION TEST REPORT\n");
-        report.push_str("═══════════════════════════════════════════════════════════════════════\n");
+        report
+            .push_str("═══════════════════════════════════════════════════════════════════════\n");
 
         // Write report to file
         let mut file = std::fs::File::create(output_path)?;
@@ -481,7 +511,10 @@ impl RegressionTestSuite {
             });
         }
 
-        info!("✅ No regressions detected - all {} tests passed!", results.len());
+        info!(
+            "✅ No regressions detected - all {} tests passed!",
+            results.len()
+        );
         Ok(())
     }
 
@@ -492,13 +525,17 @@ impl RegressionTestSuite {
         actual_output: &Path,
         comparison_output: &Path,
     ) -> Result<(), ValidationError> {
-        use image::{RgbaImage, GenericImageView};
+        use image::{GenericImageView, RgbaImage};
 
-        let known_good = self.known_good_extractions.get(sprite_name)
-            .ok_or_else(|| ValidationError::Io(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("No baseline for sprite: {}", sprite_name),
-            )))?;
+        let known_good = self
+            .known_good_extractions
+            .get(sprite_name)
+            .ok_or_else(|| {
+                ValidationError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("No baseline for sprite: {}", sprite_name),
+                ))
+            })?;
 
         // Load images
         let expected_img = image::open(&known_good.expected_output)?;
@@ -545,9 +582,9 @@ impl RegressionTestSuite {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs::File;
     use std::io::Write;
+    use tempfile::TempDir;
 
     #[test]
     fn test_suite_creation() {
@@ -565,10 +602,13 @@ mod tests {
         let output_file = temp_dir.path().join("test.png");
 
         // Create a test file
-        File::create(&output_file).unwrap().write_all(b"test data").unwrap();
+        File::create(&output_file)
+            .unwrap()
+            .write_all(b"test data")
+            .unwrap();
 
         let mut suite = RegressionTestSuite::new(db_path).unwrap();
-        
+
         let metadata = SpriteMetadata {
             width: 64,
             height: 64,
@@ -576,12 +616,14 @@ mod tests {
             format: "PNG".to_string(),
         };
 
-        suite.add_known_good(
-            "test_sprite".to_string(),
-            PathBuf::from("source.casc"),
-            output_file,
-            metadata,
-        ).unwrap();
+        suite
+            .add_known_good(
+                "test_sprite".to_string(),
+                PathBuf::from("source.casc"),
+                output_file,
+                metadata,
+            )
+            .unwrap();
 
         assert_eq!(suite.count(), 1);
         assert!(suite.has_baseline("test_sprite"));
@@ -593,10 +635,15 @@ mod tests {
         let db_path = temp_dir.path().join("regression_db.json");
         let output_file = temp_dir.path().join("test.png");
 
-        File::create(&output_file).unwrap().write_all(b"test data").unwrap();
+        File::create(&output_file)
+            .unwrap()
+            .write_all(b"test data")
+            .unwrap();
 
         let suite = RegressionTestSuite::new(db_path).unwrap();
-        let result = suite.validate_no_regression("unknown_sprite", &output_file).unwrap();
+        let result = suite
+            .validate_no_regression("unknown_sprite", &output_file)
+            .unwrap();
 
         assert!(result.passed); // Should pass with warning when no baseline exists
     }

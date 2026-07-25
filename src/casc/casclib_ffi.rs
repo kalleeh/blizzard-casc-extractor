@@ -1,5 +1,5 @@
 /// CascLib FFI bindings — single extern block shared by CascArchive and CascStorage.
-use std::ffi::{CString, CStr, c_void, c_char};
+use std::ffi::{c_char, c_void, CStr, CString};
 use std::os::raw::c_int;
 use std::ptr;
 use thiserror::Error;
@@ -57,13 +57,30 @@ const _: () = assert!(std::mem::size_of::<CascFindData>() == 1104);
 extern "C" {
     // Second parameter is dwLocaleMask, NOT a feature-flag field.
     fn CascOpenStorage(path: *const c_char, locale_mask: u32, storage: *mut Handle) -> bool;
-    fn CascOpenOnlineStorage(params: *const c_char, locale_mask: u32, storage: *mut Handle) -> bool;
+    fn CascOpenOnlineStorage(params: *const c_char, locale_mask: u32, storage: *mut Handle)
+        -> bool;
     fn CascCloseStorage(storage: Handle) -> bool;
-    fn CascOpenFile(storage: Handle, filename: *const c_char, locale: u32, flags: u32, file: *mut Handle) -> bool;
-    fn CascReadFile(file: Handle, buffer: *mut u8, bytes_to_read: u32, bytes_read: *mut u32) -> bool;
+    fn CascOpenFile(
+        storage: Handle,
+        filename: *const c_char,
+        locale: u32,
+        flags: u32,
+        file: *mut Handle,
+    ) -> bool;
+    fn CascReadFile(
+        file: Handle,
+        buffer: *mut u8,
+        bytes_to_read: u32,
+        bytes_read: *mut u32,
+    ) -> bool;
     fn CascCloseFile(file: Handle) -> bool;
     fn CascGetFileSize(hFile: Handle, pdwFileSizeHigh: *mut Dword) -> Dword;
-    fn CascFindFirstFile(storage: Handle, mask: *const c_char, find_data: *mut CascFindData, listfile: *const c_char) -> Handle;
+    fn CascFindFirstFile(
+        storage: Handle,
+        mask: *const c_char,
+        find_data: *mut CascFindData,
+        listfile: *const c_char,
+    ) -> Handle;
     fn CascFindNextFile(find: Handle, find_data: *mut CascFindData) -> bool;
     fn CascFindClose(find: Handle) -> bool;
 }
@@ -80,14 +97,18 @@ impl CascArchive {
     }
 
     pub fn open(path: &str) -> Result<Self, CascLibError> {
-        let c_path = CString::new(path).map_err(|e| CascLibError::InvalidPath { reason: e.to_string() })?;
+        let c_path = CString::new(path).map_err(|e| CascLibError::InvalidPath {
+            reason: e.to_string(),
+        })?;
         let mut handle: Handle = ptr::null_mut();
 
         unsafe {
             if CascOpenStorage(c_path.as_ptr(), 0, &mut handle) {
                 Ok(Self { handle })
             } else {
-                Err(CascLibError::OpenFailed { path: path.to_string() })
+                Err(CascLibError::OpenFailed {
+                    path: path.to_string(),
+                })
             }
         }
     }
@@ -101,25 +122,39 @@ impl CascArchive {
     /// because that argument is `dwLocaleMask` (the old value 0x40 silently
     /// meant CASC_LOCALE_ZHCN).
     pub fn open_online(params: &str) -> Result<Self, CascLibError> {
-        let c_params = CString::new(params).map_err(|e| CascLibError::InvalidPath { reason: e.to_string() })?;
+        let c_params = CString::new(params).map_err(|e| CascLibError::InvalidPath {
+            reason: e.to_string(),
+        })?;
         let mut handle: Handle = ptr::null_mut();
 
         unsafe {
             if CascOpenOnlineStorage(c_params.as_ptr(), CASC_LOCALE_ALL, &mut handle) {
                 Ok(Self { handle })
             } else {
-                Err(CascLibError::OpenFailed { path: params.to_string() })
+                Err(CascLibError::OpenFailed {
+                    path: params.to_string(),
+                })
             }
         }
     }
 
     pub fn extract_file(&self, filename: &str) -> Result<Vec<u8>, CascLibError> {
-        let c_filename = CString::new(filename).map_err(|e| CascLibError::InvalidPath { reason: e.to_string() })?;
+        let c_filename = CString::new(filename).map_err(|e| CascLibError::InvalidPath {
+            reason: e.to_string(),
+        })?;
         let mut file_handle: Handle = ptr::null_mut();
 
         unsafe {
-            if !CascOpenFile(self.handle, c_filename.as_ptr(), CASC_LOCALE_ALL, 0, &mut file_handle) {
-                return Err(CascLibError::FileNotFound { path: filename.to_string() });
+            if !CascOpenFile(
+                self.handle,
+                c_filename.as_ptr(),
+                CASC_LOCALE_ALL,
+                0,
+                &mut file_handle,
+            ) {
+                return Err(CascLibError::FileNotFound {
+                    path: filename.to_string(),
+                });
             }
 
             let mut file_size_high: Dword = 0;
@@ -130,7 +165,9 @@ impl CascArchive {
             const CASC_INVALID_SIZE: Dword = 0xFFFF_FFFF;
             if file_size_low == CASC_INVALID_SIZE && file_size_high == 0 {
                 CascCloseFile(file_handle);
-                return Err(CascLibError::ReadFailed { path: filename.to_string() });
+                return Err(CascLibError::ReadFailed {
+                    path: filename.to_string(),
+                });
             }
             let file_size = ((file_size_high as u64) << 32) | (file_size_low as u64);
 
@@ -148,9 +185,16 @@ impl CascArchive {
             let mut buffer = vec![0u8; file_size as usize];
             let mut bytes_read: Dword = 0;
 
-            if !CascReadFile(file_handle, buffer.as_mut_ptr(), file_size as Dword, &mut bytes_read) {
+            if !CascReadFile(
+                file_handle,
+                buffer.as_mut_ptr(),
+                file_size as Dword,
+                &mut bytes_read,
+            ) {
                 CascCloseFile(file_handle);
-                return Err(CascLibError::ReadFailed { path: filename.to_string() });
+                return Err(CascLibError::ReadFailed {
+                    path: filename.to_string(),
+                });
             }
 
             buffer.truncate(bytes_read as usize);
@@ -176,14 +220,18 @@ pub struct CascStorage {
 
 impl CascStorage {
     pub fn open(path: &str) -> Result<Self, CascLibError> {
-        let c_path = CString::new(path).map_err(|e| CascLibError::InvalidPath { reason: e.to_string() })?;
+        let c_path = CString::new(path).map_err(|e| CascLibError::InvalidPath {
+            reason: e.to_string(),
+        })?;
         let mut handle: Handle = ptr::null_mut();
 
         unsafe {
             if CascOpenStorage(c_path.as_ptr(), 0, &mut handle) {
                 Ok(Self { handle })
             } else {
-                Err(CascLibError::OpenFailed { path: path.to_string() })
+                Err(CascLibError::OpenFailed {
+                    path: path.to_string(),
+                })
             }
         }
     }
@@ -206,12 +254,8 @@ impl CascStorage {
         };
 
         unsafe {
-            let find_handle = CascFindFirstFile(
-                self.handle,
-                mask.as_ptr(),
-                &mut find_data,
-                ptr::null(),
-            );
+            let find_handle =
+                CascFindFirstFile(self.handle, mask.as_ptr(), &mut find_data, ptr::null());
             // CascFindFirstFile signals failure with INVALID_HANDLE_VALUE ((HANDLE)-1),
             // not NULL. Checking only for null let a broken archive fall through to
             // the loop and return an empty list as success, so callers reported

@@ -8,11 +8,11 @@
 //! - Create reusable configuration profiles
 //! - Enable progress reporting and user feedback options
 
+use crate::filter::{FormatFilterOption, UnityFilterMode, UnityWrapMode};
+use crate::resolution::ResolutionTier;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use crate::resolution::ResolutionTier;
-use crate::filter::{FormatFilterOption, UnityFilterMode, UnityWrapMode};
 
 /// Main configuration structure for the CASC sprite extractor
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -191,7 +191,6 @@ impl Default for OutputSettings {
     }
 }
 
-
 impl Default for UnityExportSettings {
     fn default() -> Self {
         Self {
@@ -237,8 +236,7 @@ mod tests {
     fn extraction_config_default_roundtrip() {
         let config = ExtractionConfig::default();
         let json = serde_json::to_string(&config).expect("serialize failed");
-        let decoded: ExtractionConfig =
-            serde_json::from_str(&json).expect("deserialize failed");
+        let decoded: ExtractionConfig = serde_json::from_str(&json).expect("deserialize failed");
         assert_eq!(
             decoded.output_settings.overwrite_behavior,
             OverwriteBehavior::IfNewer

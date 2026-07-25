@@ -1,29 +1,60 @@
-use std::fmt;
 use crate::anim::{AnimPalette, PaletteType};
+use std::fmt;
 
 /// Errors that can occur during GRP parsing
 #[derive(Debug)]
 pub enum GrpError {
     InvalidHeader(String),
-    InvalidDimensions { frame_count: u16, width: u16, height: u16 },
-    FrameOffsetOutOfBounds { frame_index: usize, offset: usize, data_size: usize },
+    InvalidDimensions {
+        frame_count: u16,
+        width: u16,
+        height: u16,
+    },
+    FrameOffsetOutOfBounds {
+        frame_index: usize,
+        offset: usize,
+        data_size: usize,
+    },
     RleDecodingFailed(String),
-    InsufficientData { expected: usize, actual: usize },
+    InsufficientData {
+        expected: usize,
+        actual: usize,
+    },
 }
 
 impl fmt::Display for GrpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             GrpError::InvalidHeader(msg) => write!(f, "Invalid GRP header: {}", msg),
-            GrpError::InvalidDimensions { frame_count, width, height } => {
-                write!(f, "Invalid GRP dimensions: {}x{} pixels, {} frames", width, height, frame_count)
+            GrpError::InvalidDimensions {
+                frame_count,
+                width,
+                height,
+            } => {
+                write!(
+                    f,
+                    "Invalid GRP dimensions: {}x{} pixels, {} frames",
+                    width, height, frame_count
+                )
             }
-            GrpError::FrameOffsetOutOfBounds { frame_index, offset, data_size } => {
-                write!(f, "Frame {} offset {} exceeds data size {}", frame_index, offset, data_size)
+            GrpError::FrameOffsetOutOfBounds {
+                frame_index,
+                offset,
+                data_size,
+            } => {
+                write!(
+                    f,
+                    "Frame {} offset {} exceeds data size {}",
+                    frame_index, offset, data_size
+                )
             }
             GrpError::RleDecodingFailed(msg) => write!(f, "RLE decoding failed: {}", msg),
             GrpError::InsufficientData { expected, actual } => {
-                write!(f, "Insufficient data: expected {}, got {}", expected, actual)
+                write!(
+                    f,
+                    "Insufficient data: expected {}, got {}",
+                    expected, actual
+                )
             }
         }
     }
@@ -53,42 +84,61 @@ impl GrpFile {
     pub fn parse(data: &[u8]) -> Result<Self, GrpError> {
         // Validate minimum header size
         if data.len() < 6 {
-            return Err(GrpError::InvalidHeader(
-                format!("File too small: {} bytes, minimum 6 required", data.len())
-            ));
+            return Err(GrpError::InvalidHeader(format!(
+                "File too small: {} bytes, minimum 6 required",
+                data.len()
+            )));
         }
-        
+
         // Parse header
         let frame_count = u16::from_le_bytes([data[0], data[1]]);
         let width = u16::from_le_bytes([data[2], data[3]]);
         let height = u16::from_le_bytes([data[4], data[5]]);
-        
-        log::debug!("GRP header: {} frames, {}x{} pixels", frame_count, width, height);
-        
+
+        log::debug!(
+            "GRP header: {} frames, {}x{} pixels",
+            frame_count,
+            width,
+            height
+        );
+
         // Validate dimensions
         if frame_count == 0 {
-            return Err(GrpError::InvalidDimensions { frame_count, width, height });
+            return Err(GrpError::InvalidDimensions {
+                frame_count,
+                width,
+                height,
+            });
         }
         if width == 0 || height == 0 {
-            return Err(GrpError::InvalidDimensions { frame_count, width, height });
+            return Err(GrpError::InvalidDimensions {
+                frame_count,
+                width,
+                height,
+            });
         }
-        
+
         // Reasonable bounds checking to prevent excessive memory allocation
         if frame_count > 1000 || width > 2048 || height > 2048 {
-            return Err(GrpError::InvalidDimensions { frame_count, width, height });
+            return Err(GrpError::InvalidDimensions {
+                frame_count,
+                width,
+                height,
+            });
         }
-        
+
         // Calculate and validate frame offset table size (8 bytes per frame)
         let offset_table_size = frame_count as usize * 8;
         let header_size = 6 + offset_table_size;
-        
+
         if data.len() < header_size {
-            return Err(GrpError::InvalidHeader(
-                format!("File too small for offset table: {} bytes, {} required", 
-                       data.len(), header_size)
-            ));
+            return Err(GrpError::InvalidHeader(format!(
+                "File too small for offset table: {} bytes, {} required",
+                data.len(),
+                header_size
+            )));
         }
-        
+
         // Parse frame offset table with bounds checking
         // Format: xOffset(1), yOffset(1), unknown(2), fileOffset(4)
         let mut frame_offsets = Vec::with_capacity(frame_count as usize);
@@ -100,7 +150,7 @@ impl GrpFile {
                 data[offset_pos + 2],
                 data[offset_pos + 3],
             ]) as usize;
-            
+
             // Validate frame offset is within data bounds
             if offset >= data.len() {
                 return Err(GrpError::FrameOffsetOutOfBounds {
@@ -109,34 +159,35 @@ impl GrpFile {
                     data_size: data.len(),
                 });
             }
-            
+
             frame_offsets.push(offset);
         }
-        
+
         log::debug!("Frame offsets: {:?}", frame_offsets);
-        
+
         // Parse all frames
         let mut frames = Vec::with_capacity(frame_count as usize);
         for (i, &frame_offset) in frame_offsets.iter().enumerate() {
             // Calculate frame data size using next DIFFERENT offset or end of file
-            let next_offset = frame_offsets.iter()
+            let next_offset = frame_offsets
+                .iter()
                 .skip(i + 1)
                 .find(|&&offset| offset != frame_offset && offset > frame_offset)
                 .copied()
                 .unwrap_or(data.len());
-            
+
             if next_offset <= frame_offset {
-                return Err(GrpError::InvalidHeader(
-                    format!("Frame {} has invalid size: offset {} to {}", 
-                           i, frame_offset, next_offset)
-                ));
+                return Err(GrpError::InvalidHeader(format!(
+                    "Frame {} has invalid size: offset {} to {}",
+                    i, frame_offset, next_offset
+                )));
             }
-            
+
             let frame_data = &data[frame_offset..next_offset];
             let frame = Self::parse_frame(frame_data, width, height, i)?;
             frames.push(frame);
         }
-        
+
         Ok(GrpFile {
             frame_count,
             width,
@@ -144,9 +195,14 @@ impl GrpFile {
             frames,
         })
     }
-    
+
     /// Parse a single frame with run-length decoding
-    fn parse_frame(frame_data: &[u8], width: u16, height: u16, frame_index: usize) -> Result<GrpFrame, GrpError> {
+    fn parse_frame(
+        frame_data: &[u8],
+        width: u16,
+        height: u16,
+        frame_index: usize,
+    ) -> Result<GrpFrame, GrpError> {
         let pixel_count = (width as usize) * (height as usize);
         let mut pixel_data = vec![0u8; pixel_count];
 
@@ -164,8 +220,12 @@ impl GrpFile {
         let line_count = first_offset / 2;
 
         if line_count > height as usize {
-            log::warn!("Frame {}: Line count {} exceeds height {}, using height",
-                      frame_index, line_count, height);
+            log::warn!(
+                "Frame {}: Line count {} exceeds height {}, using height",
+                frame_index,
+                line_count,
+                height
+            );
         }
 
         let actual_line_count = line_count.min(height as usize);
@@ -177,17 +237,28 @@ impl GrpFile {
             if offset_pos + 1 >= frame_data.len() {
                 break;
             }
-            let offset = u16::from_le_bytes([frame_data[offset_pos], frame_data[offset_pos + 1]]) as usize;
+            let offset =
+                u16::from_le_bytes([frame_data[offset_pos], frame_data[offset_pos + 1]]) as usize;
             line_offsets.push(offset);
         }
 
-        log::debug!("Frame {}: {} lines, first offset: {}", frame_index, line_offsets.len(), first_offset);
+        log::debug!(
+            "Frame {}: {} lines, first offset: {}",
+            frame_index,
+            line_offsets.len(),
+            first_offset
+        );
 
         // Decode each line
         for (line_idx, &line_offset) in line_offsets.iter().enumerate() {
             if line_offset >= frame_data.len() {
-                log::warn!("Frame {}: Line {} offset {} exceeds frame data size {}",
-                          frame_index, line_idx, line_offset, frame_data.len());
+                log::warn!(
+                    "Frame {}: Line {} offset {} exceeds frame data size {}",
+                    frame_index,
+                    line_idx,
+                    line_offset,
+                    frame_data.len()
+                );
                 continue;
             }
 
@@ -204,8 +275,13 @@ impl GrpFile {
             };
 
             if line_end <= line_offset {
-                log::warn!("Frame {}: Line {} has invalid range {}..{}",
-                          frame_index, line_idx, line_offset, line_end);
+                log::warn!(
+                    "Frame {}: Line {} has invalid range {}..{}",
+                    frame_index,
+                    line_idx,
+                    line_offset,
+                    line_end
+                );
                 continue;
             }
 
@@ -273,84 +349,87 @@ impl GrpFile {
 
         Ok(pixels)
     }
-    
+
     /// Get a specific frame by index
     pub fn get_frame(&self, index: usize) -> Option<&GrpFrame> {
         self.frames.get(index)
     }
-    
+
     /// Get the first frame (most commonly used)
     pub fn get_first_frame(&self) -> Option<&GrpFrame> {
         self.frames.first()
     }
-    
+
     /// Convert all frames to RGBA using StarCraft palette
-    pub fn convert_all_frames_to_rgba(&self, palette: &AnimPalette) -> Result<Vec<Vec<u8>>, GrpError> {
+    pub fn convert_all_frames_to_rgba(
+        &self,
+        palette: &AnimPalette,
+    ) -> Result<Vec<Vec<u8>>, GrpError> {
         let mut rgba_frames = Vec::with_capacity(self.frames.len());
-        
+
         for frame in &self.frames {
             let rgba_data = frame.to_rgba_with_transparency(palette)?;
             rgba_frames.push(rgba_data);
         }
-        
+
         Ok(rgba_frames)
     }
-    
+
     /// Convert all frames to RGBA using default StarCraft unit palette
     pub fn convert_all_frames_to_rgba_default(&self) -> Result<Vec<Vec<u8>>, GrpError> {
         let palette = AnimPalette::default_starcraft_unit_palette();
         self.convert_all_frames_to_rgba(&palette)
     }
-    
+
     /// Create a StarCraft-compatible palette optimized for GRP sprites
     pub fn create_grp_optimized_palette() -> AnimPalette {
         let mut colors = Vec::with_capacity(256);
-        
+
         // Index 0: Transparent (StarCraft convention)
         colors.push([0, 0, 0, 0]);
-        
+
         // Colors 1-15: Grayscale ramp (common in StarCraft sprites)
         for i in 1..16 {
             let gray = (i * 17) as u8; // 17, 34, 51, ..., 255
             colors.push([gray, gray, gray, 255]);
         }
-        
+
         // Colors 16-31: Red player colors
         for i in 0..16 {
             let intensity = 128 + (i * 8) as u8; // 128-248 range
             colors.push([255, intensity, intensity, 255]);
         }
-        
-        // Colors 32-47: Blue player colors  
+
+        // Colors 32-47: Blue player colors
         for i in 0..16 {
             let intensity = 128 + (i * 8) as u8;
             colors.push([intensity, intensity, 255, 255]);
         }
-        
+
         // Colors 48-63: Green/teal player colors
         for i in 0..16 {
             let intensity = 128 + (i * 8) as u8;
             colors.push([intensity, 255, intensity, 255]);
         }
-        
+
         // Colors 64-79: Yellow player colors
         for i in 0..16 {
             let intensity = 200 + (i * 3) as u8; // Bright yellows
             colors.push([255, 255, intensity, 255]);
         }
-        
+
         // Colors 80-95: Purple player colors
         for i in 0..16 {
             let intensity = 128 + (i * 8) as u8;
             colors.push([255, intensity, 255, 255]);
         }
-        
+
         // Colors 96-111: Orange player colors
         for i in 0..16 {
             let intensity = 128 + (i * 8) as u8;
             colors.push([255, intensity, 128, 255]);
         }
-        
+
         // Colors 112-127: Brown/tan colors (terrain)
         for i in 0..16 {
             let r = 139 + (i * 4) as u8;
@@ -358,7 +437,7 @@ impl GrpFile {
             let b = 19 + (i * 2) as u8;
             colors.push([r, g, b, 255]);
         }
-        
+
         // Colors 128-255: Fill with varied colors for effects and details
         for i in 128..256 {
             let r = ((i * 7) % 256) as u8;
@@ -366,7 +445,7 @@ impl GrpFile {
             let b = ((i * 13) % 256) as u8;
             colors.push([r, g, b, 255]);
         }
-        
+
         AnimPalette {
             colors,
             palette_type: PaletteType::Unit,
@@ -382,13 +461,19 @@ impl GrpFrame {
     /// `transparent_index` — palette index that should always be rendered fully
     ///                       transparent (alpha 0); `None` means no forced
     ///                       transparency.
-    fn to_rgba_internal(&self, palette: Option<&AnimPalette>, transparent_index: Option<u8>) -> Result<Vec<u8>, GrpError> {
+    fn to_rgba_internal(
+        &self,
+        palette: Option<&AnimPalette>,
+        transparent_index: Option<u8>,
+    ) -> Result<Vec<u8>, GrpError> {
         let pixel_count = (self.width as usize) * (self.height as usize);
         let mut rgba_pixels = Vec::with_capacity(pixel_count * 4);
 
         match palette {
             Some(pal) => {
-                pal.validate().map_err(|e| GrpError::RleDecodingFailed(format!("Palette validation failed: {}", e)))?;
+                pal.validate().map_err(|e| {
+                    GrpError::RleDecodingFailed(format!("Palette validation failed: {}", e))
+                })?;
                 for &index in &self.pixel_data {
                     let mut color = pal.get_color(index);
                     if transparent_index == Some(index) {
@@ -438,37 +523,55 @@ impl GrpFrame {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_grp_header_validation() {
         // Test file too small
         let small_data = vec![0u8; 5];
-        assert!(matches!(GrpFile::parse(&small_data), Err(GrpError::InvalidHeader(_))));
-        
+        assert!(matches!(
+            GrpFile::parse(&small_data),
+            Err(GrpError::InvalidHeader(_))
+        ));
+
         // Test zero dimensions
         let zero_frames = vec![0, 0, 32, 0, 32, 0]; // 0 frames, 32x32
-        assert!(matches!(GrpFile::parse(&zero_frames), Err(GrpError::InvalidDimensions { .. })));
-        
+        assert!(matches!(
+            GrpFile::parse(&zero_frames),
+            Err(GrpError::InvalidDimensions { .. })
+        ));
+
         let zero_width = vec![1, 0, 0, 0, 32, 0]; // 1 frame, 0x32
-        assert!(matches!(GrpFile::parse(&zero_width), Err(GrpError::InvalidDimensions { .. })));
-        
+        assert!(matches!(
+            GrpFile::parse(&zero_width),
+            Err(GrpError::InvalidDimensions { .. })
+        ));
+
         let zero_height = vec![1, 0, 32, 0, 0, 0]; // 1 frame, 32x0
-        assert!(matches!(GrpFile::parse(&zero_height), Err(GrpError::InvalidDimensions { .. })));
+        assert!(matches!(
+            GrpFile::parse(&zero_height),
+            Err(GrpError::InvalidDimensions { .. })
+        ));
     }
-    
+
     #[test]
     fn test_grp_offset_table_validation() {
         // Create header for 1 frame, 32x32
         let mut data = vec![1, 0, 32, 0, 32, 0]; // 6 bytes header
 
         // File too small for offset table (needs 14 bytes: 6 header + 8 per frame)
-        assert!(matches!(GrpFile::parse(&data), Err(GrpError::InvalidHeader(_))));
+        assert!(matches!(
+            GrpFile::parse(&data),
+            Err(GrpError::InvalidHeader(_))
+        ));
 
         // Add full 8-byte frame entry with fileOffset=200, which is beyond the 14-byte file
         data.extend_from_slice(&[0, 0, 0, 0, 200, 0, 0, 0]); // x=0,y=0,unk=0,fileOffset=200
-        assert!(matches!(GrpFile::parse(&data), Err(GrpError::FrameOffsetOutOfBounds { .. })));
+        assert!(matches!(
+            GrpFile::parse(&data),
+            Err(GrpError::FrameOffsetOutOfBounds { .. })
+        ));
     }
-    
+
     #[test]
     fn test_valid_grp_parsing() {
         // Create a minimal valid GRP file.
@@ -477,44 +580,44 @@ mod tests {
         // then RLE in [0x40+count, value] format.
         let mut data = vec![1, 0, 2, 0, 2, 0]; // 1 frame, 2x2 pixels
         data.extend_from_slice(&[0, 0, 0, 0, 14, 0, 0, 0]); // frame entry: fileOffset=14
-        // Frame data at offset 14: 2-line offset table, then 2 RLE lines
-        data.extend_from_slice(&[4, 0, 6, 0]);  // line offsets: line 0 at +4, line 1 at +6
-        data.extend_from_slice(&[0x42, 255]);   // line 0: 2 pixels of index 255
-        data.extend_from_slice(&[0x42, 255]);   // line 1: 2 pixels of index 255
-        
+                                                            // Frame data at offset 14: 2-line offset table, then 2 RLE lines
+        data.extend_from_slice(&[4, 0, 6, 0]); // line offsets: line 0 at +4, line 1 at +6
+        data.extend_from_slice(&[0x42, 255]); // line 0: 2 pixels of index 255
+        data.extend_from_slice(&[0x42, 255]); // line 1: 2 pixels of index 255
+
         let grp = GrpFile::parse(&data).expect("Should parse valid GRP");
         assert_eq!(grp.frame_count, 1);
         assert_eq!(grp.width, 2);
         assert_eq!(grp.height, 2);
         assert_eq!(grp.frames.len(), 1);
-        
+
         let frame = grp.get_first_frame().expect("Should have first frame");
         assert_eq!(frame.width, 2);
         assert_eq!(frame.height, 2);
         assert_eq!(frame.pixel_data.len(), 4); // 2x2 pixels
-        
+
         // All pixels should be 255 due to RLE
         for &pixel in &frame.pixel_data {
             assert_eq!(pixel, 255);
         }
     }
-    
+
     #[test]
     fn test_rle_decoding() {
         // Create GRP with multiple RLE runs (1 frame, 3x2 = 6 pixels).
         // RLE encoding: [0x40+count, value] for run-length, [count, v0, v1...] for literals.
         let mut data = vec![1, 0, 3, 0, 2, 0]; // 1 frame, 3x2 pixels (6 total)
         data.extend_from_slice(&[0, 0, 0, 0, 14, 0, 0, 0]); // frame entry: fileOffset=14
-        data.extend_from_slice(&[4, 0, 8, 0]);   // line offsets: line 0 at +4, line 1 at +8
-        // Line 0: 2 pixels of 100 then 1 pixel of 200
-        data.extend_from_slice(&[0x42, 100]);   // 2 pixels of 100
-        data.extend_from_slice(&[0x41, 200]);   // 1 pixel of 200
-        // Line 1: 3 pixels of 200
-        data.extend_from_slice(&[0x43, 200]);   // 3 pixels of 200
-        
+        data.extend_from_slice(&[4, 0, 8, 0]); // line offsets: line 0 at +4, line 1 at +8
+                                               // Line 0: 2 pixels of 100 then 1 pixel of 200
+        data.extend_from_slice(&[0x42, 100]); // 2 pixels of 100
+        data.extend_from_slice(&[0x41, 200]); // 1 pixel of 200
+                                              // Line 1: 3 pixels of 200
+        data.extend_from_slice(&[0x43, 200]); // 3 pixels of 200
+
         let grp = GrpFile::parse(&data).expect("Should parse GRP with RLE");
         let frame = grp.get_first_frame().expect("Should have first frame");
-        
+
         assert_eq!(frame.pixel_data.len(), 6); // 3x2 pixels
         assert_eq!(frame.pixel_data[0], 100);
         assert_eq!(frame.pixel_data[1], 100);
@@ -523,7 +626,7 @@ mod tests {
         assert_eq!(frame.pixel_data[4], 200);
         assert_eq!(frame.pixel_data[5], 200);
     }
-    
+
     #[test]
     fn test_rle_code_byte_0x40_is_a_zero_length_run() {
         // 0x40 is the one code byte where `byte > 0x40` and `byte & 0x40` diverge:
@@ -531,9 +634,9 @@ mod tests {
         // consumed 65 bytes and desynchronised the rest of the line.
         let mut data = vec![1, 0, 3, 0, 1, 0]; // 1 frame, 3x1
         data.extend_from_slice(&[0, 0, 0, 0, 14, 0, 0, 0]);
-        data.extend_from_slice(&[2, 0]);       // one line offset
-        data.extend_from_slice(&[0x40, 99]);   // zero-length run of 99 → writes nothing
-        data.extend_from_slice(&[0x43, 7]);    // run of 3 pixels of 7
+        data.extend_from_slice(&[2, 0]); // one line offset
+        data.extend_from_slice(&[0x40, 99]); // zero-length run of 99 → writes nothing
+        data.extend_from_slice(&[0x43, 7]); // run of 3 pixels of 7
 
         let grp = GrpFile::parse(&data).expect("0x40 run should decode");
         let frame = grp.get_first_frame().expect("frame");
@@ -552,48 +655,54 @@ mod tests {
         // Byte 0 in literal mode means copy 0 pixels — a no-op, frame stays zeroed.
         let mut data = vec![1, 0, 2, 0, 2, 0];
         data.extend_from_slice(&[0, 0, 0, 0, 14, 0, 0, 0]);
-        data.extend_from_slice(&[4, 0, 6, 0]);   // line offsets
-        data.extend_from_slice(&[0, 255]);        // literal copy of 0 pixels
-        data.extend_from_slice(&[0x42, 1]);       // line 1: 2 pixels of 1
+        data.extend_from_slice(&[4, 0, 6, 0]); // line offsets
+        data.extend_from_slice(&[0, 255]); // literal copy of 0 pixels
+        data.extend_from_slice(&[0x42, 1]); // line 1: 2 pixels of 1
         let result = GrpFile::parse(&data);
-        assert!(result.is_ok(), "tolerant decoder should not error on zero literal count");
+        assert!(
+            result.is_ok(),
+            "tolerant decoder should not error on zero literal count"
+        );
 
         // Run exceeding line width is clamped to the buffer boundary.
         let mut data = vec![1, 0, 2, 0, 2, 0];
         data.extend_from_slice(&[0, 0, 0, 0, 14, 0, 0, 0]);
         data.extend_from_slice(&[4, 0, 6, 0]);
-        data.extend_from_slice(&[0x45, 255]);     // run of 5 into a 2-pixel line — clamped
+        data.extend_from_slice(&[0x45, 255]); // run of 5 into a 2-pixel line — clamped
         data.extend_from_slice(&[0x42, 1]);
         let result = GrpFile::parse(&data);
-        assert!(result.is_ok(), "tolerant decoder should clamp oversized runs");
+        assert!(
+            result.is_ok(),
+            "tolerant decoder should clamp oversized runs"
+        );
     }
-    
+
     #[test]
     fn test_multiple_frames() {
         // 2 frames, 2x2 each. Header=6, 2 entries×8=16 → frame 0 at 22, frame 1 at 30.
         let mut data = vec![2, 0, 2, 0, 2, 0];
         data.extend_from_slice(&[0, 0, 0, 0, 22, 0, 0, 0]); // frame 0 entry: fileOffset=22
         data.extend_from_slice(&[0, 0, 0, 0, 30, 0, 0, 0]); // frame 1 entry: fileOffset=30
-        // Frame 0 at offset 22 (8 bytes): 2 lines, 2 pixels each of value 100
-        data.extend_from_slice(&[4, 0, 6, 0]);   // line offsets
-        data.extend_from_slice(&[0x42, 100]);    // line 0: 2 × 100
-        data.extend_from_slice(&[0x42, 100]);    // line 1: 2 × 100
-        // Frame 1 at offset 30 (8 bytes): 2 lines, 2 pixels each of value 200
+                                                            // Frame 0 at offset 22 (8 bytes): 2 lines, 2 pixels each of value 100
+        data.extend_from_slice(&[4, 0, 6, 0]); // line offsets
+        data.extend_from_slice(&[0x42, 100]); // line 0: 2 × 100
+        data.extend_from_slice(&[0x42, 100]); // line 1: 2 × 100
+                                              // Frame 1 at offset 30 (8 bytes): 2 lines, 2 pixels each of value 200
         data.extend_from_slice(&[4, 0, 6, 0]);
         data.extend_from_slice(&[0x42, 200]);
         data.extend_from_slice(&[0x42, 200]);
-        
+
         let grp = GrpFile::parse(&data).expect("Should parse multi-frame GRP");
         assert_eq!(grp.frame_count, 2);
         assert_eq!(grp.frames.len(), 2);
-        
+
         // Check frame 0
         let frame0 = &grp.frames[0];
         assert_eq!(frame0.pixel_data.len(), 4);
         for &pixel in &frame0.pixel_data {
             assert_eq!(pixel, 100);
         }
-        
+
         // Check frame 1
         let frame1 = &grp.frames[1];
         assert_eq!(frame1.pixel_data.len(), 4);
@@ -601,99 +710,109 @@ mod tests {
             assert_eq!(pixel, 200);
         }
     }
-    
+
     #[test]
     fn test_grp_palette_integration() {
         // 1 frame, 2x2: pixel[0]=0 (transparent), rest=15.
         let mut data = vec![1, 0, 2, 0, 2, 0];
         data.extend_from_slice(&[0, 0, 0, 0, 14, 0, 0, 0]); // fileOffset=14
-        data.extend_from_slice(&[4, 0, 8, 0]);   // line offsets: line 0 at +4, line 1 at +8
+        data.extend_from_slice(&[4, 0, 8, 0]); // line offsets: line 0 at +4, line 1 at +8
         data.extend_from_slice(&[0x41, 0, 0x41, 15]); // line 0: 1×0, 1×15
-        data.extend_from_slice(&[0x42, 15]);     // line 1: 2×15
-        
+        data.extend_from_slice(&[0x42, 15]); // line 1: 2×15
+
         let grp = GrpFile::parse(&data).expect("Should parse GRP");
         let frame = grp.get_first_frame().expect("Should have first frame");
-        
+
         // Test conversion to RGBA with default palette
         let rgba_data = frame.to_rgba().expect("Should convert to RGBA");
         assert_eq!(rgba_data.len(), 16); // 4 pixels * 4 bytes (RGBA)
-        
+
         // First pixel should be transparent (index 0)
         assert_eq!(rgba_data[0..4], [0, 0, 0, 0]); // Transparent
-        
+
         // Other pixels (indices 1-3, palette index 15) should be opaque.
         // We don't hard-code the exact RGB color since that depends on which palette
         // to_rgba() uses internally; just verify alpha=255 (not transparent).
         for i in 1..4 {
             let start_idx = i * 4;
-            assert_eq!(rgba_data[start_idx + 3], 255, "pixel {} should be opaque", i);
+            assert_eq!(
+                rgba_data[start_idx + 3],
+                255,
+                "pixel {} should be opaque",
+                i
+            );
         }
     }
-    
+
     #[test]
     fn test_grp_transparency_preservation() {
         // 1 frame, 3x1: pixels [0, 5, 0].
         let mut data = vec![1, 0, 3, 0, 1, 0]; // 1 frame, 3x1 pixels
         data.extend_from_slice(&[0, 0, 0, 0, 14, 0, 0, 0]); // fileOffset=14
-        // 1 line: first_offset=2 → line_count=1, line 0 starts at +2
-        data.extend_from_slice(&[2, 0]);  // line offset: line 0 at +2
+                                                            // 1 line: first_offset=2 → line_count=1, line 0 starts at +2
+        data.extend_from_slice(&[2, 0]); // line offset: line 0 at +2
         data.extend_from_slice(&[0x41, 0, 0x41, 5, 0x41, 0]); // line 0: [0, 5, 0]
-        
+
         let grp = GrpFile::parse(&data).expect("Should parse GRP");
         let frame = grp.get_first_frame().expect("Should have first frame");
-        
+
         let palette = GrpFile::create_grp_optimized_palette();
-        let rgba_data = frame.to_rgba_with_transparency(&palette).expect("Should convert with transparency");
-        
+        let rgba_data = frame
+            .to_rgba_with_transparency(&palette)
+            .expect("Should convert with transparency");
+
         assert_eq!(rgba_data.len(), 12); // 3 pixels * 4 bytes (RGBA)
-        
+
         // First pixel: transparent (index 0)
         assert_eq!(rgba_data[0..4], [0, 0, 0, 0]);
-        
+
         // Second pixel: colored (index 5)
         let expected_color = palette.get_color(5);
         assert_eq!(rgba_data[4..8], expected_color);
-        
+
         // Third pixel: transparent (index 0)
         assert_eq!(rgba_data[8..12], [0, 0, 0, 0]);
     }
-    
+
     #[test]
     fn test_grp_optimized_palette_structure() {
         let palette = GrpFile::create_grp_optimized_palette();
-        
+
         // Should have 256 colors
         assert_eq!(palette.colors.len(), 256);
-        
+
         // Index 0 should be transparent
         assert_eq!(palette.colors[0], [0, 0, 0, 0]);
-        
+
         // Colors 1-15 should be grayscale
         for i in 1..16 {
             let expected_gray = (i * 17) as u8;
-            assert_eq!(palette.colors[i], [expected_gray, expected_gray, expected_gray, 255]);
+            assert_eq!(
+                palette.colors[i],
+                [expected_gray, expected_gray, expected_gray, 255]
+            );
         }
-        
+
         // Colors 16-31 should be red tones
         for i in 16..32 {
             let color = palette.colors[i];
             assert_eq!(color[0], 255); // Red channel should be max
             assert_eq!(color[3], 255); // Alpha should be opaque
         }
-        
+
         // All non-transparent colors should be opaque
         for i in 1..256 {
             assert_eq!(palette.colors[i][3], 255, "Color {} should be opaque", i);
         }
     }
-    
+
     #[test]
     fn test_grp_all_frames_conversion() {
         // 2 frames, 2x2 each. Same layout as test_multiple_frames.
         let mut data = vec![2, 0, 2, 0, 2, 0];
         data.extend_from_slice(&[0, 0, 0, 0, 22, 0, 0, 0]); // frame 0 at 22
         data.extend_from_slice(&[0, 0, 0, 0, 30, 0, 0, 0]); // frame 1 at 30
-        // Frame 0: 4 pixels of 10
+                                                            // Frame 0: 4 pixels of 10
         data.extend_from_slice(&[4, 0, 6, 0]);
         data.extend_from_slice(&[0x42, 10]);
         data.extend_from_slice(&[0x42, 10]);
@@ -701,24 +820,28 @@ mod tests {
         data.extend_from_slice(&[4, 0, 6, 0]);
         data.extend_from_slice(&[0x42, 20]);
         data.extend_from_slice(&[0x42, 20]);
-        
+
         let grp = GrpFile::parse(&data).expect("Should parse multi-frame GRP");
-        
+
         // Test converting all frames
-        let rgba_frames = grp.convert_all_frames_to_rgba_default().expect("Should convert all frames");
+        let rgba_frames = grp
+            .convert_all_frames_to_rgba_default()
+            .expect("Should convert all frames");
         assert_eq!(rgba_frames.len(), 2);
-        
+
         // Each frame should have 16 bytes (4 pixels * 4 bytes RGBA)
         for frame_data in &rgba_frames {
             assert_eq!(frame_data.len(), 16);
         }
-        
+
         // Test with custom palette
         let palette = GrpFile::create_grp_optimized_palette();
-        let rgba_frames_custom = grp.convert_all_frames_to_rgba(&palette).expect("Should convert with custom palette");
+        let rgba_frames_custom = grp
+            .convert_all_frames_to_rgba(&palette)
+            .expect("Should convert with custom palette");
         assert_eq!(rgba_frames_custom.len(), 2);
     }
-    
+
     #[test]
     fn test_grp_invalid_palette_index_handling() {
         // 1 frame, 2x2, all pixels = palette index 255.
@@ -727,28 +850,30 @@ mod tests {
         data.extend_from_slice(&[4, 0, 6, 0]);
         data.extend_from_slice(&[0x42, 255]); // line 0: 2×255
         data.extend_from_slice(&[0x42, 255]); // line 1: 2×255
-        
+
         let grp = GrpFile::parse(&data).expect("Should parse GRP");
         let frame = grp.get_first_frame().expect("Should have first frame");
-        
+
         // Should handle invalid indices gracefully (returns magenta)
-        let rgba_data = frame.to_rgba().expect("Should convert even with invalid indices");
+        let rgba_data = frame
+            .to_rgba()
+            .expect("Should convert even with invalid indices");
         assert_eq!(rgba_data.len(), 16); // 4 pixels * 4 bytes
-        
+
         // All pixels should have some color (either valid palette color or magenta fallback)
         for chunk in rgba_data.chunks(4) {
             assert_eq!(chunk.len(), 4); // Each pixel should have RGBA
             assert_eq!(chunk[3], 255); // Alpha should be opaque for non-transparent indices
         }
     }
-    
+
     #[test]
     fn test_grp_performance_optimization() {
         // Create a large GRP sprite (128x128 = 16384 pixels > 4096 threshold)
         let width = 128u16;
         let height = 128u16;
         let pixel_count = (width as usize) * (height as usize);
-        
+
         // Build frame data: line offset table (height×2 bytes) then RLE lines.
         // Each line: 8 runs of 16 pixels using [0x50, value] (0x40+16=0x50).
         let bytes_per_line = 8usize * 2; // 8 runs × 2 bytes each
@@ -779,22 +904,29 @@ mod tests {
             }
         }
         data.extend_from_slice(&frame_data);
-        
+
         let grp = GrpFile::parse(&data).expect("Should parse large GRP");
         let frame = grp.get_first_frame().expect("Should have first frame");
-        
+
         assert_eq!(frame.pixel_data.len(), pixel_count);
-        
+
         // Test optimized conversion
         let palette = GrpFile::create_grp_optimized_palette();
-        let rgba_data = frame.to_rgba_optimized(&palette).expect("Should convert with optimization");
-        
+        let rgba_data = frame
+            .to_rgba_optimized(&palette)
+            .expect("Should convert with optimization");
+
         assert_eq!(rgba_data.len(), pixel_count * 4); // RGBA
-        
+
         // Test that optimized and regular conversion produce the same result
-        let rgba_data_regular = frame.to_rgba_with_transparency(&palette).expect("Should convert regularly");
-        assert_eq!(rgba_data, rgba_data_regular, "Optimized and regular conversion should match");
-        
+        let rgba_data_regular = frame
+            .to_rgba_with_transparency(&palette)
+            .expect("Should convert regularly");
+        assert_eq!(
+            rgba_data, rgba_data_regular,
+            "Optimized and regular conversion should match"
+        );
+
         // Verify transparency is preserved (index 0 should be transparent)
         for (i, chunk) in rgba_data.chunks(4).enumerate() {
             if frame.pixel_data[i] == 0 {

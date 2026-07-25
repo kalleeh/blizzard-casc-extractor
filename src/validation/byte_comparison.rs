@@ -4,35 +4,35 @@
 // diagnostic information for any mismatches.
 
 use super::ValidationError;
+use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
-use sha2::{Sha256, Digest};
 
 /// Result of a byte-level comparison
 #[derive(Debug, Clone)]
 pub struct ByteComparisonResult {
     /// Whether the files match byte-for-byte
     pub matches: bool,
-    
+
     /// SHA256 hash of the first file
     pub hash1: String,
-    
+
     /// SHA256 hash of the second file
     pub hash2: String,
-    
+
     /// Size of the first file in bytes
     pub size1: u64,
-    
+
     /// Size of the second file in bytes
     pub size2: u64,
-    
+
     /// First byte offset where files differ (if they differ)
     pub first_diff_offset: Option<usize>,
-    
+
     /// Path to hex dump file (if generated)
     pub hex_dump_path: Option<String>,
-    
+
     /// Detailed diagnostic message
     pub diagnostic: String,
 }
@@ -129,14 +129,8 @@ impl ByteComparison {
             "Files differ but no specific offset found".to_string()
         };
 
-        let mut result = ByteComparisonResult::failure(
-            hash1,
-            hash2,
-            size1,
-            size2,
-            first_diff,
-            diagnostic,
-        );
+        let mut result =
+            ByteComparisonResult::failure(hash1, hash2, size1, size2, first_diff, diagnostic);
 
         // Generate hex dump if requested and we found a difference
         if generate_hex_dump {
@@ -318,11 +312,7 @@ impl ByteComparison {
     }
 
     /// Generate a detailed byte-level report comparing two files
-    pub fn generate_report(
-        file1: &Path,
-        file2: &Path,
-        result: &ByteComparisonResult,
-    ) -> String {
+    pub fn generate_report(file1: &Path, file2: &Path, result: &ByteComparisonResult) -> String {
         let mut report = String::new();
 
         report.push_str("=== Byte-Level Comparison Report ===\n\n");
@@ -342,7 +332,10 @@ impl ByteComparison {
             report.push_str(&format!("Diagnostic: {}\n", result.diagnostic));
 
             if let Some(offset) = result.first_diff_offset {
-                report.push_str(&format!("\nFirst difference at offset: 0x{:08X} ({} bytes)\n", offset, offset));
+                report.push_str(&format!(
+                    "\nFirst difference at offset: 0x{:08X} ({} bytes)\n",
+                    offset, offset
+                ));
             }
 
             if let Some(hex_dump) = &result.hex_dump_path {
@@ -364,7 +357,7 @@ mod tests {
     fn test_sha256_calculation() {
         let temp_dir = TempDir::new().unwrap();
         let file = temp_dir.path().join("test.bin");
-        
+
         let mut f = File::create(&file).unwrap();
         f.write_all(b"test data").unwrap();
         drop(f);
@@ -394,8 +387,14 @@ mod tests {
         let file1 = temp_dir.path().join("file1.bin");
         let file2 = temp_dir.path().join("file2.bin");
 
-        File::create(&file1).unwrap().write_all(b"data one").unwrap();
-        File::create(&file2).unwrap().write_all(b"data two").unwrap();
+        File::create(&file1)
+            .unwrap()
+            .write_all(b"data one")
+            .unwrap();
+        File::create(&file2)
+            .unwrap()
+            .write_all(b"data two")
+            .unwrap();
 
         let result = ByteComparison::compare_files(&file1, &file2, false).unwrap();
         assert!(!result.matches);
@@ -409,8 +408,14 @@ mod tests {
         let file1 = temp_dir.path().join("file1.bin");
         let file2 = temp_dir.path().join("file2.bin");
 
-        File::create(&file1).unwrap().write_all(b"abcdefgh").unwrap();
-        File::create(&file2).unwrap().write_all(b"abcdXfgh").unwrap();
+        File::create(&file1)
+            .unwrap()
+            .write_all(b"abcdefgh")
+            .unwrap();
+        File::create(&file2)
+            .unwrap()
+            .write_all(b"abcdXfgh")
+            .unwrap();
 
         let diff = ByteComparison::find_first_difference(&file1, &file2).unwrap();
         assert_eq!(diff, Some(4)); // 'e' vs 'X' at offset 4

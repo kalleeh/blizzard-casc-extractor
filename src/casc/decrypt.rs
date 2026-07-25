@@ -7,11 +7,28 @@ use std::collections::HashMap;
 /// See https://wowdev.wiki/CASC for updates
 const ENCRYPTION_KEYS: &[(u64, [u8; 16])] = &[
     // StarCraft II
-    (0xD0CAE11366CEEA83, [0x00, 0x41, 0x61, 0x07, 0x8E, 0x5A, 0x61, 0x20, 0x32, 0x1E, 0xA5, 0xFF, 0xE4, 0xDC, 0xD1, 0x26]),
-    
+    (
+        0xD0CAE11366CEEA83,
+        [
+            0x00, 0x41, 0x61, 0x07, 0x8E, 0x5A, 0x61, 0x20, 0x32, 0x1E, 0xA5, 0xFF, 0xE4, 0xDC,
+            0xD1, 0x26,
+        ],
+    ),
     // Warcraft III Reforged
-    (0x6E4296823E7D561E, [0xC0, 0xBF, 0xA2, 0x94, 0x3A, 0xC3, 0xE9, 0x22, 0x86, 0xE4, 0x44, 0x3E, 0xE3, 0x56, 0x0D, 0x65]),
-    (0xE04D60E31DDEBF63, [0x26, 0x3D, 0xB5, 0xC4, 0x02, 0xDA, 0x8D, 0x4D, 0x68, 0x63, 0x09, 0xCB, 0x2E, 0x32, 0x54, 0xD0]),
+    (
+        0x6E4296823E7D561E,
+        [
+            0xC0, 0xBF, 0xA2, 0x94, 0x3A, 0xC3, 0xE9, 0x22, 0x86, 0xE4, 0x44, 0x3E, 0xE3, 0x56,
+            0x0D, 0x65,
+        ],
+    ),
+    (
+        0xE04D60E31DDEBF63,
+        [
+            0x26, 0x3D, 0xB5, 0xC4, 0x02, 0xDA, 0x8D, 0x4D, 0x68, 0x63, 0x09, 0xCB, 0x2E, 0x32,
+            0x54, 0xD0,
+        ],
+    ),
 ];
 
 pub struct CascDecryptor {
@@ -85,11 +102,16 @@ impl CascDecryptor {
         offset += 1;
 
         if encryption_type != b'S' && encryption_type != b'A' {
-            return Err(format!("Unsupported encryption type: {}", encryption_type as char));
+            return Err(format!(
+                "Unsupported encryption type: {}",
+                encryption_type as char
+            ));
         }
 
         // Find encryption key
-        let key = self.key_map.get(&key_name)
+        let key = self
+            .key_map
+            .get(&key_name)
             .ok_or_else(|| format!("Unknown encryption key: 0x{:016X}", key_name))?;
 
         // XOR vector with frame index
@@ -107,7 +129,10 @@ impl CascDecryptor {
                 Ok(decrypted)
             }
             b'A' => Err("AES decryption not implemented".to_string()),
-            _ => Err(format!("Unknown encryption type: {}", encryption_type as char)),
+            _ => Err(format!(
+                "Unknown encryption type: {}",
+                encryption_type as char
+            )),
         }
     }
 }

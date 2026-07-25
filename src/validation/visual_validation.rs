@@ -47,31 +47,31 @@ pub fn create_pixel_diff_image(
 pub struct VisualComparisonResult {
     /// Whether the images match pixel-for-pixel
     pub pixel_perfect_match: bool,
-    
+
     /// Perceptual hash of the first image
     pub perceptual_hash1: u64,
-    
+
     /// Perceptual hash of the second image
     pub perceptual_hash2: u64,
-    
+
     /// Hamming distance between perceptual hashes (0 = identical)
     pub perceptual_distance: u32,
-    
+
     /// Number of pixels that differ
     pub different_pixels: usize,
-    
+
     /// Total number of pixels
     pub total_pixels: usize,
-    
+
     /// Percentage of pixels that differ
     pub difference_percentage: f64,
-    
+
     /// Path to diff image (if generated)
     pub diff_image_path: Option<String>,
-    
+
     /// Path to side-by-side comparison (if generated)
     pub comparison_image_path: Option<String>,
-    
+
     /// Detailed diagnostic message
     pub diagnostic: String,
 }
@@ -256,7 +256,10 @@ impl VisualComparison {
     /// Creates an image where:
     /// - Matching pixels are shown in grayscale
     /// - Different pixels are highlighted in red
-    fn generate_diff_image(img1: &DynamicImage, img2: &DynamicImage) -> Result<String, ValidationError> {
+    fn generate_diff_image(
+        img1: &DynamicImage,
+        img2: &DynamicImage,
+    ) -> Result<String, ValidationError> {
         // Save diff image
         let output_dir = std::env::temp_dir().join("casc_validation");
         std::fs::create_dir_all(&output_dir)?;
@@ -271,7 +274,10 @@ impl VisualComparison {
     }
 
     /// Generate a side-by-side comparison image
-    fn generate_side_by_side(img1: &DynamicImage, img2: &DynamicImage) -> Result<String, ValidationError> {
+    fn generate_side_by_side(
+        img1: &DynamicImage,
+        img2: &DynamicImage,
+    ) -> Result<String, ValidationError> {
         let (width, height) = img1.dimensions();
         let mut comparison = RgbaImage::new(width * 2 + 10, height);
 
@@ -326,13 +332,25 @@ impl VisualComparison {
         report.push_str(&format!("Image 1: {:?}\n", image1));
         report.push_str(&format!("Image 2: {:?}\n\n", image2));
 
-        report.push_str(&format!("Perceptual Hash 1: 0x{:016X}\n", result.perceptual_hash1));
-        report.push_str(&format!("Perceptual Hash 2: 0x{:016X}\n", result.perceptual_hash2));
-        report.push_str(&format!("Perceptual Distance: {} bits\n\n", result.perceptual_distance));
+        report.push_str(&format!(
+            "Perceptual Hash 1: 0x{:016X}\n",
+            result.perceptual_hash1
+        ));
+        report.push_str(&format!(
+            "Perceptual Hash 2: 0x{:016X}\n",
+            result.perceptual_hash2
+        ));
+        report.push_str(&format!(
+            "Perceptual Distance: {} bits\n\n",
+            result.perceptual_distance
+        ));
 
         report.push_str(&format!("Total Pixels: {}\n", result.total_pixels));
         report.push_str(&format!("Different Pixels: {}\n", result.different_pixels));
-        report.push_str(&format!("Difference: {:.4}%\n\n", result.difference_percentage));
+        report.push_str(&format!(
+            "Difference: {:.4}%\n\n",
+            result.difference_percentage
+        ));
 
         if result.pixel_perfect_match {
             report.push_str("✅ IMAGES MATCH PIXEL-FOR-PIXEL\n");
@@ -396,8 +414,10 @@ mod tests {
     #[test]
     fn test_perceptual_hash() {
         // Same image → same hash (deterministic).
-        let img1 = DynamicImage::ImageRgba8(RgbaImage::from_pixel(100, 100, Rgba([128, 128, 128, 255])));
-        let img2 = DynamicImage::ImageRgba8(RgbaImage::from_pixel(100, 100, Rgba([128, 128, 128, 255])));
+        let img1 =
+            DynamicImage::ImageRgba8(RgbaImage::from_pixel(100, 100, Rgba([128, 128, 128, 255])));
+        let img2 =
+            DynamicImage::ImageRgba8(RgbaImage::from_pixel(100, 100, Rgba([128, 128, 128, 255])));
         assert_eq!(
             VisualComparison::calculate_perceptual_hash(&img1),
             VisualComparison::calculate_perceptual_hash(&img2),
@@ -411,8 +431,12 @@ mod tests {
             *pixel = Rgba([v, v, v, 255]);
         }
         let hash_uniform = VisualComparison::calculate_perceptual_hash(&img1);
-        let hash_gradient = VisualComparison::calculate_perceptual_hash(&DynamicImage::ImageRgba8(gradient));
-        assert_ne!(hash_uniform, hash_gradient, "uniform vs gradient should differ");
+        let hash_gradient =
+            VisualComparison::calculate_perceptual_hash(&DynamicImage::ImageRgba8(gradient));
+        assert_ne!(
+            hash_uniform, hash_gradient,
+            "uniform vs gradient should differ"
+        );
     }
 
     #[test]
