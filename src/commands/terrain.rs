@@ -1,5 +1,6 @@
 //! Tileset and map-terrain rendering: VR4 geometry, DXT1 decode, CHK parsing.
 
+use super::support::write_atomic;
 use crate::QualityLevel;
 use anyhow::{Context as _, Result};
 use casc_extractor::casc::casclib_ffi::CascArchive;
@@ -118,7 +119,7 @@ pub fn cmd_extract_tileset_megatile(
         "atlas_height": atlas_h,
     });
     let json_path = output.join(format!("{}_megatile_{}.json", tileset, tile_size));
-    std::fs::write(&json_path, serde_json::to_string_pretty(&meta)?)?;
+    write_atomic(&json_path, serde_json::to_string_pretty(&meta)?.as_bytes())?;
 
     Ok(())
 }
@@ -343,7 +344,7 @@ pub fn cmd_extract_tileset_atlas(
         "atlas_height": atlas_h,
     });
     let meta_path = output.join(format!("{}_{}_atlas.json", tileset, tile_size));
-    fs::write(&meta_path, serde_json::to_string_pretty(&meta)?)?;
+    write_atomic(&meta_path, serde_json::to_string_pretty(&meta)?.as_bytes())?;
 
     Ok(())
 }
@@ -872,7 +873,7 @@ pub fn cmd_extract_map_terrain(
         "height_levels": height_levels,
     });
     let json_path = output.join(format!("{}_terrain.json", safe_name));
-    fs::write(&json_path, serde_json::to_string_pretty(&meta)?)?;
+    write_atomic(&json_path, serde_json::to_string_pretty(&meta)?.as_bytes())?;
 
     println!(
         "Saved: {:?} ({}×{}, {} tiles)",
@@ -1063,7 +1064,7 @@ pub fn cmd_extract_map_terrain_dual(
         },
         "id_map": unique_ids.iter().enumerate().map(|(i, &id)| [id as u32, i as u32]).collect::<Vec<_>>(),
     });
-    fs::write(&json_path, serde_json::to_string_pretty(&meta)?)?;
+    write_atomic(&json_path, serde_json::to_string_pretty(&meta)?.as_bytes())?;
 
     println!(
         "Saved diffuse: {:?} ({}×{}, {} tiles)",

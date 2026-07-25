@@ -294,10 +294,10 @@ casc-extractor config init
 {
   "quality_settings": {
     "format_filter": "All",
-    "png_compression_level": 6
+    "png_compression_level": 1
   },
   "output_settings": {
-    "output_directory": "output",
+    "output_directory": "extracted",
     "overwrite_behavior": "IfNewer",
     "metadata_options": { "generate_json": true },
     "unity_settings": { "pixels_per_unit": 100.0 }
@@ -313,7 +313,7 @@ casc-extractor config init
 | Field | Type | Description |
 |-------|------|-------------|
 | `quality_settings.format_filter` | `All`\|`Png`\|`Images` | When set to `Png`, implies `--convert-to-png` on all extract commands |
-| `quality_settings.png_compression_level` | 0–9 | PNG compression (default: 6) |
+| `quality_settings.png_compression_level` | 0–9 | PNG compression (default: 1). Applies to every PNG written. Sprite sheets reach 4072×1560, so this is the dominant cost of a run: measured over three sprites, level 1 takes 0.7s for 62 MB and level 9 takes 3.1s for 59 MB. Pixels are identical at every level — only file size and time change. |
 | `output_settings.overwrite_behavior` | enum | `Always` `Never` `IfNewer` `Backup` `Prompt` |
 | `output_settings.metadata_options.generate_json` | bool | Write Unity-compatible JSON per sprite |
 | `output_settings.unity_settings.pixels_per_unit` | float | Pixels-per-unit in JSON metadata (default: 100) |
@@ -355,7 +355,7 @@ src/
 │   └── hd_parser.rs    — HdAnimFile, layer extraction, team-colour helpers
 ├── casc/               — CascLib FFI, archive discovery, file enumeration
 ├── config/             — ExtractionConfig (serde JSON) + FormatFilterOption
-├── dds_converter.rs    — DDS → PNG (BC1/BC3) via ddsfile + texture2ddecoder
+├── dds_converter.rs    — DDS → PNG (BC1/BC3) via ddsfile + texture2ddecoder; atomic writes
 ├── grp/                — GRP (SD) parser, RLE decoder, spritesheet builder
 ├── sprite/export.rs    — ExportConfig, export_anim pipeline
 ├── mapping/            — YAML sprite-name → CASC-path loader

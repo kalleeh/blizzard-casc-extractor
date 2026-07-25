@@ -262,7 +262,7 @@ pub fn cmd_sounds_extract(
             for variant in &variants {
                 match archive.extract_file(variant) {
                     Ok(data) if !data.is_empty() => {
-                        fs::write(&dest, &data)?;
+                        write_atomic(&dest, &data)?;
                         println!("  {:>7} bytes  {}  ->  {}", data.len(), variant, out_name);
                         found = true;
                         extracted += 1;
@@ -289,7 +289,7 @@ pub fn cmd_sounds_extract(
             let files = listing.as_deref().unwrap_or(&[]);
             let stem = out_name.trim_end_matches(".ogg").trim_end_matches(".wav");
             if let Some(data) = discover_sound(archive, files, stem) {
-                fs::write(&dest, &data)?;
+                write_atomic(&dest, &data)?;
                 println!("  {:>7} bytes  (discovered)  ->  {}", data.len(), out_name);
                 extracted += 1;
             } else {

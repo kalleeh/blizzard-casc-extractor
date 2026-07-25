@@ -143,11 +143,76 @@ pub fn dds_to_png(dds_data: &[u8]) -> io::Result<RgbaImage> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Failed to create image buffer"))
 }
 
+/// Write `data` to `path` atomically: write a sibling temp file, then rename.
+///
+/// Prevents a truncated artefact from surviving an interrupt or a full disk, which
+/// the `Never`/`IfNewer` overwrite modes would otherwise mistake for completed work.
+pub fn write_atomic(path: &std::path::Path, data: &[u8]) -> io::Result<()> {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(".tmp");
+    let tmp = path.with_file_name(name);
+    if let Err(e) = std::fs::write(&tmp, data) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
+/// Write an RGBA image as a PNG at the given compression level, atomically.
+///
+/// The encode goes to a sibling temp file which is then renamed over the target,
+/// so an interrupt or a full disk cannot leave a truncated PNG behind — which
+/// matters because `Never`/`IfNewer` overwrite modes treat any existing file as
+/// complete work.
+pub fn save_rgba_as_png(
+    img: &RgbaImage,
+    output_path: &std::path::Path,
+    compression: png::Compression,
+) -> io::Result<()> {
+    use std::io::BufWriter;
+
+    let tmp_path = output_path.with_extension("png.tmp");
+    {
+        let file = std::fs::File::create(&tmp_path)?;
+        let mut encoder = png::Encoder::new(BufWriter::new(file), img.width(), img.height());
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.set_compression(compression);
+        let mut writer = encoder
+            .write_header()
+            .map_err(|e| io::Error::other(format!("PNG header error: {}", e)))?;
+        writer
+            .write_image_data(img.as_raw())
+            .map_err(|e| io::Error::other(format!("PNG write error: {}", e)))?;
+    }
+    match std::fs::rename(&tmp_path, output_path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp_path);
+            Err(e)
+        }
+    }
+}
+
+/// Decode `dds_data` and write it as a PNG using the default compression.
 pub fn save_dds_as_png(dds_data: &[u8], output_path: &std::path::Path) -> io::Result<()> {
+    save_dds_as_png_with(dds_data, output_path, png::Compression::Fast)
+}
+
+/// As [`save_dds_as_png`], with an explicit compression level.
+pub fn save_dds_as_png_with(
+    dds_data: &[u8],
+    output_path: &std::path::Path,
+    compression: png::Compression,
+) -> io::Result<()> {
     let img = dds_to_png(dds_data)?;
-    img.save(output_path)
-        .map_err(|e| io::Error::other(format!("PNG save error: {}", e)))?;
-    Ok(())
+    save_rgba_as_png(&img, output_path, compression)
 }
 
 /// Build the team-colour mask PNG from the raw DDS bytes of the `teamcolor` layer.
@@ -226,6 +291,33 @@ mod tests {
         for (i, px) in rgba.chunks_exact(4).enumerate() {
             assert_eq!(px[3], 255, "pixel {} must be opaque in 4-colour mode", i);
         }
+    }
+
+    #[test]
+    fn write_atomic_replaces_content_and_leaves_no_temp() {
+        let dir = std::env::temp_dir().join(format!("wa_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("out.bin");
+
+        write_atomic(&target, b"first").unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"first");
+
+        // Overwriting must fully replace, not append or partially patch.
+        write_atomic(&target, b"second-and-longer").unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"second-and-longer");
+
+        // No .tmp residue is left behind on success.
+        assert!(!dir.join("out.bin.tmp").exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn write_atomic_leaves_target_untouched_when_it_cannot_write() {
+        // A non-existent parent makes the temp write fail; the original file (if
+        // any) and the directory must be left exactly as they were.
+        let missing = std::env::temp_dir().join("wa_no_such_dir_xyz/out.bin");
+        assert!(write_atomic(&missing, b"data").is_err());
+        assert!(!missing.exists());
     }
 
     #[test]

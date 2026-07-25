@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multiple `MTXM` chunks in a CHK were concatenated instead of last-writer-wins.
 - `build.rs` emitted Mach-O `@loader_path` rpaths on all platforms, leaving Linux
   builds with no usable rpath (ELF needs `$ORIGIN`).
+- Output files were written non-atomically, so an interrupt or a full disk could
+  leave a truncated PNG/JSON/DDS that the `Never` and `IfNewer` overwrite modes
+  then treated as completed work. Artefact writes now go to a sibling temp file
+  and are renamed into place.
+- `quality_settings.png_compression_level` only ever reached the spritesheet
+  writer; every per-sprite PNG used the image crate's default regardless of the
+  setting. It is now honoured everywhere.
 - Terrain rendered with the wrong tileset for every map with `ERA >= 2`: BW's
   canonical ids are `2=install, 3=ashworld, 4=jungle`, so lava maps were drawn
   with jungle art.
@@ -73,6 +80,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   indicatif 0.18. This also removed duplicate `bitflags` and `syn` copies.
 - `calculate_file_size` no longer rescans every index per entry (was quadratic),
   and `sounds extract` enumerates the archive at most once per run.
+- Default `png_compression_level` lowered from 6 to 1. Now that the setting is
+  actually applied to every PNG, level 6 would have made a default run ~4x slower
+  to save ~5% of output size (0.7s/62 MB vs 1.35s/59 MB over three sprites, which
+  extrapolates to roughly 2min vs 7min for a full 1000-sprite extraction). Pixels
+  are identical at every level.
+- Deleted `src/resolution` (420 lines): nothing outside the module referenced it,
+  and the CLI's own `QualityLevel` covers the same job.
 
 - DDS → PNG decoding is done in-process (BC1/BC3 via `ddsfile` +
   `texture2ddecoder`) instead of spawning ImageMagick per file. A full SD run

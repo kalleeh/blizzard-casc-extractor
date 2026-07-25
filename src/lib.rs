@@ -10,7 +10,6 @@ pub mod grp;
 pub mod mapping;
 pub mod palette;
 pub mod progress;
-pub mod resolution;
 pub mod sprite;
 pub mod validation;
 
@@ -24,7 +23,6 @@ pub use config::{
 };
 pub use grp::{GrpError, GrpFile, GrpFrame};
 pub use progress::ProgressReporter;
-pub use resolution::ResolutionTier;
 pub use sprite::export::{export_anim, generate_metadata, ExportConfig, ExportResult};
 pub use validation::{
     ByteComparison, ByteComparisonResult, KnownGoodExtraction, RegressionTestSuite,

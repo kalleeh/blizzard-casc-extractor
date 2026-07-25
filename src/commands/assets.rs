@@ -257,7 +257,7 @@ pub fn cmd_extract_mainmenu(
                             ok += 1;
                         }
                         Err(e) => {
-                            std::fs::write(output.join(out_name), &data)?;
+                            write_atomic(&output.join(out_name), &data)?;
                             println!(
                                 "  ⚠ {} → {} (PNG failed: {}, saved raw DDS)",
                                 casc_path, out_name, e
@@ -266,7 +266,7 @@ pub fn cmd_extract_mainmenu(
                         }
                     }
                 } else {
-                    std::fs::write(output.join(out_name), &data)?;
+                    write_atomic(&output.join(out_name), &data)?;
                     println!("  ✓ {} → {} ({} bytes)", casc_path, out_name, data.len());
                     ok += 1;
                 }
@@ -315,7 +315,7 @@ pub fn cmd_extract_dat(
         for p in *paths {
             if let Ok(d) = archive.extract_file(p) {
                 if !d.is_empty() {
-                    std::fs::write(output.join(name), &d)?;
+                    write_atomic(&output.join(name), &d)?;
                     println!("  ✓ {} → {} ({} bytes)", p, name, d.len());
                     ok += 1;
                     found = true;

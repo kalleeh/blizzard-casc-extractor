@@ -47,7 +47,13 @@ pub struct QualitySettings {
     /// Format filter for output files
     pub format_filter: FormatFilterOption,
 
-    /// PNG compression level (0-9, higher = smaller files)
+    /// PNG compression level (0-9, higher = smaller files, much slower).
+    ///
+    /// Defaults to 1 (fast). Sprite sheets reach 4072x1560, where encoding
+    /// dominates a run: measured over three sprites, level 1 takes 0.35s for
+    /// 62 MB while level 6 takes 1.35s for 59 MB — roughly 4x the time to save
+    /// 5% of the space, which extrapolates to ~2min vs ~7min for a full
+    /// 1000-sprite extraction. Raise it if output size matters more than time.
     pub png_compression_level: u32,
 }
 
@@ -130,7 +136,7 @@ impl Default for QualitySettings {
     fn default() -> Self {
         Self {
             format_filter: FormatFilterOption::All,
-            png_compression_level: 6,
+            png_compression_level: 1,
         }
     }
 }
@@ -175,7 +181,7 @@ mod tests {
             decoded.output_settings.overwrite_behavior,
             OverwriteBehavior::IfNewer
         );
-        assert_eq!(decoded.quality_settings.png_compression_level, 6);
+        assert_eq!(decoded.quality_settings.png_compression_level, 1);
     }
 
     #[test]
@@ -187,7 +193,7 @@ mod tests {
             config.output_settings.overwrite_behavior,
             OverwriteBehavior::Never
         );
-        assert_eq!(config.quality_settings.png_compression_level, 6);
+        assert_eq!(config.quality_settings.png_compression_level, 1);
         assert!(config.filter_settings.include_patterns.is_none());
     }
 

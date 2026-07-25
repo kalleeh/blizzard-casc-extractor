@@ -1,13 +1,11 @@
 use crate::anim::HdAnimFile;
-use crate::dds_converter::save_dds_as_png;
+use crate::dds_converter::{save_dds_as_png_with, save_rgba_as_png, write_atomic};
 use anyhow::{Context, Result};
 /// Reusable HD anim export logic extracted from the `extract_hd` binary.
 ///
 /// `SpriteExporter` consolidates DDS saving, PNG conversion (with optional
 /// team-color-mask stripping), and Unity-compatible JSON metadata generation
 /// into a single, testable unit that multiple binaries can share.
-use std::fs::File;
-use std::io::Write;
 use std::path::Path;
 
 // ---------------------------------------------------------------------------
@@ -32,6 +30,12 @@ pub struct ExportConfig {
     /// Valid values: "diffuse", "teamcolor", "normal", "specular", "emissive", "ao"
     /// Default: ["diffuse"] — same as current behaviour.
     pub layers: Vec<String>,
+    /// PNG compression for the images this writes.
+    ///
+    /// Sprite sheets here are large (up to 4072x1560), where the cost is real:
+    /// `Fast` encodes one in ~70ms, `Balanced` ~620ms for ~19% smaller output.
+    /// `Fast` is the default so a full 1000-sprite run stays quick.
+    pub png_compression: png::Compression,
 }
 
 impl Default for ExportConfig {
@@ -43,6 +47,7 @@ impl Default for ExportConfig {
             generate_metadata: true,
             pixels_per_unit: 100.0,
             layers: vec!["diffuse".to_string()],
+            png_compression: png::Compression::Fast,
         }
     }
 }
@@ -92,9 +97,7 @@ pub fn export_anim(
             // Optionally save the raw DDS for reference.
             if config.save_dds {
                 let dds_path = output_base.with_extension("dds");
-                File::create(&dds_path)
-                    .with_context(|| format!("creating DDS file {}", dds_path.display()))?
-                    .write_all(diffuse)
+                write_atomic(&dds_path, diffuse)
                     .with_context(|| format!("writing DDS file {}", dds_path.display()))?;
             }
 
@@ -108,7 +111,7 @@ pub fn export_anim(
                 // the raw diffuse by the player colour where the mask is set,
                 // so altering the diffuse here would make the documented
                 // formula reproduce something the game never renders.
-                save_dds_as_png(diffuse, &png_path)
+                save_dds_as_png_with(diffuse, &png_path, config.png_compression)
                     .with_context(|| format!("writing diffuse PNG {}", png_path.display()))?;
 
                 // ---------------------------------------------------------
@@ -125,9 +128,10 @@ pub fn export_anim(
 
                     match anim.team_color_mask_image() {
                         Some(Ok(tc_img)) => {
-                            tc_img.save(&tc_png_path).with_context(|| {
-                                format!("saving TC mask PNG {}", tc_png_path.display())
-                            })?;
+                            save_rgba_as_png(&tc_img, &tc_png_path, config.png_compression)
+                                .with_context(|| {
+                                    format!("saving TC mask PNG {}", tc_png_path.display())
+                                })?;
                             tc_mask_written = true;
                         }
                         Some(Err(e)) => {
@@ -140,7 +144,7 @@ pub fn export_anim(
                 // ---------------------------------------------------------
                 // Plain diffuse export (no TC processing)
                 // ---------------------------------------------------------
-                save_dds_as_png(diffuse, &png_path)
+                save_dds_as_png_with(diffuse, &png_path, config.png_compression)
                     .with_context(|| format!("writing diffuse PNG {}", png_path.display()))?;
             }
         }
@@ -195,7 +199,9 @@ pub fn export_anim(
                     let layer_png_path =
                         output_base.with_file_name(format!("{}_{}.png", stem, lname));
 
-                    if let Err(e) = save_dds_as_png(layer_dds, &layer_png_path) {
+                    if let Err(e) =
+                        save_dds_as_png_with(layer_dds, &layer_png_path, config.png_compression)
+                    {
                         eprintln!("     Warning: could not export {} layer: {}", lname, e);
                     }
                 }
@@ -208,9 +214,7 @@ pub fn export_anim(
     if config.generate_metadata {
         let json_path = output_base.with_extension("json");
         let metadata = generate_metadata_with_config(anim, &name, config.pixels_per_unit);
-        File::create(&json_path)
-            .with_context(|| format!("creating metadata file {}", json_path.display()))?
-            .write_all(metadata.as_bytes())
+        write_atomic(&json_path, metadata.as_bytes())
             .with_context(|| format!("writing metadata file {}", json_path.display()))?;
     }
 

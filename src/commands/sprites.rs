@@ -12,7 +12,7 @@ use casc_extractor::{export_anim, ExportConfig};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{BufWriter, Write};
+use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 
 #[allow(clippy::too_many_arguments)]
@@ -37,6 +37,9 @@ pub fn cmd_extract_anim(
     println!("Output:   {:?}\n", output);
 
     let overwrite = config.output_settings.overwrite_behavior;
+    // quality_settings.png_compression_level previously only reached the
+    // spritesheet writer; every per-sprite PNG used the image crate default.
+    let sprite_png_compression = png_compression(config.quality_settings.png_compression_level);
     let gen_meta = config.output_settings.metadata_options.generate_json;
     let pixels_per_unit = config.output_settings.unity_settings.pixels_per_unit;
 
@@ -47,7 +50,7 @@ pub fn cmd_extract_anim(
         if !should_skip(&output_path, overwrite, session_start) {
             match archive.extract_file(casc_path) {
                 Ok(data) => {
-                    File::create(&output_path)?.write_all(&data)?;
+                    write_atomic(&output_path, &data)?;
                     println!("  mainSD.anim ({:.1} MB)", data.len() as f64 / 1_000_000.0);
 
                     if convert_to_png {
@@ -67,6 +70,7 @@ pub fn cmd_extract_anim(
                                         generate_metadata: gen_meta,
                                         pixels_per_unit,
                                         layers: layers.clone(),
+                                        png_compression: sprite_png_compression,
                                     };
                                     match export_anim(
                                         &anim,
@@ -288,8 +292,7 @@ pub fn cmd_extract_anim(
             if let Ok(data) = archive.extract_file(&casc_path) {
                 let output_path = output.join(format!("main_{:03}.anim", id));
                 if !should_skip(&output_path, overwrite, session_start) {
-                    if let Err(e) = File::create(&output_path).and_then(|mut f| f.write_all(&data))
-                    {
+                    if let Err(e) = write_atomic(&output_path, &data) {
                         eprintln!("Warning: could not write {:?}: {}", output_path, e);
                     } else {
                         extracted.push((id, output_path));
@@ -354,6 +357,7 @@ pub fn cmd_extract_anim(
                             generate_metadata: gen_meta,
                             pixels_per_unit,
                             layers: layers_ref.clone(),
+                            png_compression: sprite_png_compression,
                         };
                         match export_anim(&anim, &output_path.with_extension(""), &export_cfg) {
                             Ok(result) => {
@@ -422,7 +426,7 @@ pub fn cmd_extract_anim(
                     continue;
                 }
 
-                File::create(&output_path)?.write_all(&data)?;
+                write_atomic(&output_path, &data)?;
 
                 let mapped_name = id_to_name.get(&id.to_string()).cloned();
                 if let Some(ref name) = mapped_name {
@@ -515,7 +519,7 @@ pub fn cmd_extract_tileset(
     let results: Vec<anyhow::Result<()>> = extracted
         .par_iter()
         .map(|(_output_name, output_path, data)| -> anyhow::Result<()> {
-            File::create(output_path)?.write_all(data)?;
+            write_atomic(output_path, data)?;
             let mut note = String::new();
             if convert_to_png {
                 // .dds.vr4 files have a 20-byte VR4 header before the DDS data.
@@ -589,7 +593,7 @@ pub fn cmd_extract_effect(
     let results: Vec<anyhow::Result<()>> = extracted
         .par_iter()
         .map(|(_output_name, output_path, data)| -> anyhow::Result<()> {
-            File::create(output_path)?.write_all(data)?;
+            write_atomic(output_path, data)?;
             let mut note = String::new();
             if convert_to_png {
                 let png_path = output_path.with_extension("png");

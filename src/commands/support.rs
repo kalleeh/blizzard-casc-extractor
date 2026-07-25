@@ -11,6 +11,8 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+pub use casc_extractor::dds_converter::write_atomic;
+
 /// Join a caller-supplied relative name onto `base`, guaranteeing the result
 /// stays inside `base`.
 ///
