@@ -594,10 +594,9 @@ mod tests {
         let install_path = create_mock_casc_installation(&temp_dir);
 
         let navigator = CascNavigator::new();
-        let result = navigator.analyze_path(&install_path);
-
-        assert!(result.is_ok());
-        let installation = result.unwrap();
+        let installation = navigator
+            .analyze_path(&install_path)
+            .expect("a mock CASC installation should analyse cleanly");
         assert_eq!(installation.version, GameVersion::Remastered);
         assert_eq!(installation.file_system_type, FileSystemType::CASC);
         assert!(installation.is_valid);
@@ -609,10 +608,9 @@ mod tests {
         let install_path = create_mock_mpq_installation(&temp_dir);
 
         let navigator = CascNavigator::new();
-        let result = navigator.analyze_path(&install_path);
-
-        assert!(result.is_ok());
-        let installation = result.unwrap();
+        let installation = navigator
+            .analyze_path(&install_path)
+            .expect("a mock MPQ installation should analyse cleanly");
         assert_eq!(installation.version, GameVersion::Classic);
         assert_eq!(installation.file_system_type, FileSystemType::MPQ);
         assert!(installation.is_valid);

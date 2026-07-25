@@ -2536,9 +2536,10 @@ mod tests {
             palette: None,
         };
 
-        let result = texture.decode_pixels();
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), data);
+        let decoded = texture
+            .decode_pixels()
+            .expect("uncompressed RGBA should decode");
+        assert_eq!(decoded, data);
     }
 
     #[test]
@@ -2558,10 +2559,9 @@ mod tests {
             palette: None,
         };
 
-        let result = texture.decode_pixels();
-        assert!(result.is_ok());
-
-        let decoded = result.unwrap();
+        let decoded = texture
+            .decode_pixels()
+            .expect("indexed8 texture should decode");
         assert_eq!(decoded.len(), 16); // 4 pixels * 4 components
 
         // Check first pixel (gray value 128)
@@ -2711,10 +2711,9 @@ mod tests {
             sprites: vec![],
         };
 
-        let result = anim_file.extract_frame_pixels(&texture_pixels, 2, 2, &frame);
-        assert!(result.is_ok());
-
-        let extracted_pixels = result.unwrap();
+        let extracted_pixels = anim_file
+            .extract_frame_pixels(&texture_pixels, 2, 2, &frame)
+            .expect("frame pixels should extract");
         assert_eq!(extracted_pixels.len(), 16); // 2x2 pixels * 4 components
 
         // Check that pixels are extracted correctly
@@ -2962,10 +2961,9 @@ mod tests {
         let output_dir = temp_dir.path();
 
         // Convert to PNG
-        let result = anim_file.to_png(output_dir, "test_sprite");
-        assert!(result.is_ok());
-
-        let conversion_result = result.unwrap();
+        let conversion_result = anim_file
+            .to_png(output_dir, "test_sprite")
+            .expect("PNG conversion should succeed");
 
         // Verify that PNG files can be read by the image crate
         for png_file in &conversion_result.png_files {
@@ -3182,166 +3180,77 @@ mod tests {
     mod comprehensive_anim_tests {
         use super::*;
         use std::fs;
-        use std::time::Instant;
         use tempfile::TempDir;
 
-        /// Performance benchmark for ZLIB decompression
+        /// Round-trip correctness for every decompression path.
+        ///
+        /// These replace three `#[ignore]`d wall-clock throughput assertions that
+        /// therefore never ran. Throughput is now measured by
+        /// `benches/extraction.rs::bench_texture_decompress`, where timing is the
+        /// point; what matters here is that each path decodes back to the exact
+        /// input, which is checked on every `cargo test` run.
         #[test]
-        #[ignore = "performance benchmark — run with --release"]
-        fn benchmark_zlib_decompression_performance() {
+        fn every_compression_path_round_trips_exactly() {
             use flate2::write::ZlibEncoder;
-            use flate2::Compression;
             use std::io::Write;
 
-            // Create large test data (1MB of RGBA data)
-            let width = 512;
-            let height = 512;
-            let rgba_data: Vec<u8> = (0..width * height * 4).map(|i| (i % 256) as u8).collect();
+            let width: u16 = 512;
+            let height: u16 = 512;
+            let rgba: Vec<u8> = (0..(width as usize * height as usize * 4))
+                .map(|i| (i % 256) as u8)
+                .collect();
 
-            // Compress the data with ZLIB
-            let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-            encoder.write_all(&rgba_data).unwrap();
-            let compressed_data = encoder.finish().unwrap();
-
-            // Create texture with compressed data
-            let texture = Texture {
-                format: TextureFormat::ZlibCompressedRGBA,
-                width: width as u16,
-                height: height as u16,
-                data: compressed_data,
-                compression_type: CompressionType::Zlib,
-                pixel_format: PixelFormat::RGBA32,
-                uncompressed_size: Some(rgba_data.len()),
-                palette: None,
+            let zlib_data = {
+                let mut e = ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+                e.write_all(&rgba).unwrap();
+                e.finish().unwrap()
             };
+            let lz4_data = lz4_flex::compress_prepend_size(&rgba);
 
-            // Benchmark decompression performance
-            let start_time = Instant::now();
-            let iterations = 10;
+            let cases = vec![
+                (
+                    "zlib",
+                    TextureFormat::ZlibCompressedRGBA,
+                    CompressionType::Zlib,
+                    zlib_data,
+                    Some(rgba.len()),
+                ),
+                (
+                    "lz4",
+                    TextureFormat::LZ4CompressedRGBA,
+                    CompressionType::Lz4,
+                    lz4_data,
+                    Some(rgba.len()),
+                ),
+                (
+                    "uncompressed",
+                    TextureFormat::RGBA,
+                    CompressionType::None,
+                    rgba.clone(),
+                    None,
+                ),
+            ];
 
-            for _ in 0..iterations {
-                let result = texture.decode_pixels();
-                assert!(result.is_ok(), "ZLIB decompression should succeed");
-                let decoded = result.unwrap();
-                assert_eq!(decoded.len(), rgba_data.len());
+            for (name, format, compression_type, data, uncompressed_size) in cases {
+                let texture = Texture {
+                    format,
+                    width,
+                    height,
+                    data,
+                    compression_type,
+                    pixel_format: PixelFormat::RGBA32,
+                    uncompressed_size,
+                    palette: None,
+                };
+                let decoded = texture
+                    .decode_pixels()
+                    .unwrap_or_else(|e| panic!("{} decode failed: {}", name, e));
+                assert_eq!(
+                    decoded, rgba,
+                    "{} did not round-trip to the original bytes",
+                    name
+                );
             }
-
-            let elapsed = start_time.elapsed();
-            let avg_time_ms = elapsed.as_millis() as f64 / iterations as f64;
-            let throughput_mb_s =
-                (rgba_data.len() as f64 / 1024.0 / 1024.0) / (avg_time_ms / 1000.0);
-
-            println!("✅ ZLIB Decompression Performance:");
-            println!("   • Average time: {:.2}ms per 1MB", avg_time_ms);
-            println!("   • Throughput: {:.1} MB/s", throughput_mb_s);
-
-            // Performance target: should decompress at least 25 MB/s (realistic threshold)
-            assert!(
-                throughput_mb_s > 25.0,
-                "ZLIB decompression too slow: {:.1} MB/s",
-                throughput_mb_s
-            );
-        }
-
-        /// Performance benchmark for LZ4 decompression
-        #[test]
-        #[ignore = "performance benchmark — run with --release"]
-        fn benchmark_lz4_decompression_performance() {
-            // Create large test data (1MB of RGBA data)
-            let width = 512;
-            let height = 512;
-            let rgba_data: Vec<u8> = (0..width * height * 4).map(|i| (i % 256) as u8).collect();
-
-            // Compress the data with LZ4
-            let compressed_data = lz4_flex::compress_prepend_size(&rgba_data);
-
-            // Create texture with compressed data
-            let texture = Texture {
-                format: TextureFormat::LZ4CompressedRGBA,
-                width: width as u16,
-                height: height as u16,
-                data: compressed_data,
-                compression_type: CompressionType::Lz4,
-                pixel_format: PixelFormat::RGBA32,
-                uncompressed_size: Some(rgba_data.len()),
-                palette: None,
-            };
-
-            // Benchmark decompression performance
-            let start_time = Instant::now();
-            let iterations = 10;
-
-            for _ in 0..iterations {
-                let result = texture.decode_pixels();
-                assert!(result.is_ok(), "LZ4 decompression should succeed");
-                let decoded = result.unwrap();
-                assert_eq!(decoded.len(), rgba_data.len());
-            }
-
-            let elapsed = start_time.elapsed();
-            let avg_time_ms = elapsed.as_millis() as f64 / iterations as f64;
-            let throughput_mb_s =
-                (rgba_data.len() as f64 / 1024.0 / 1024.0) / (avg_time_ms / 1000.0);
-
-            println!("✅ LZ4 Decompression Performance:");
-            println!("   • Average time: {:.2}ms per 1MB", avg_time_ms);
-            println!("   • Throughput: {:.1} MB/s", throughput_mb_s);
-
-            // Performance target: LZ4 should be faster than ZLIB (>20 MB/s)
-            assert!(
-                throughput_mb_s > 20.0,
-                "LZ4 decompression too slow: {:.1} MB/s",
-                throughput_mb_s
-            );
-        }
-
-        /// Performance benchmark for uncompressed data processing
-        #[test]
-        #[ignore = "performance benchmark — run with --release"]
-        fn benchmark_uncompressed_processing_performance() {
-            // Create large test data (1MB of RGBA data)
-            let width = 512;
-            let height = 512;
-            let rgba_data: Vec<u8> = (0..width * height * 4).map(|i| (i % 256) as u8).collect();
-
-            // Create texture with uncompressed data
-            let texture = Texture {
-                format: TextureFormat::RGBA,
-                width: width as u16,
-                height: height as u16,
-                data: rgba_data.clone(),
-                compression_type: CompressionType::None,
-                pixel_format: PixelFormat::RGBA32,
-                uncompressed_size: None,
-                palette: None,
-            };
-
-            // Benchmark processing performance
-            let start_time = Instant::now();
-            let iterations = 100;
-
-            for _ in 0..iterations {
-                let result = texture.decode_pixels();
-                assert!(result.is_ok(), "Uncompressed processing should succeed");
-                let decoded = result.unwrap();
-                assert_eq!(decoded.len(), rgba_data.len());
-            }
-
-            let elapsed = start_time.elapsed();
-            let avg_time_ms = elapsed.as_millis() as f64 / iterations as f64;
-            let throughput_mb_s =
-                (rgba_data.len() as f64 / 1024.0 / 1024.0) / (avg_time_ms / 1000.0);
-
-            println!("✅ Uncompressed Processing Performance:");
-            println!("   • Average time: {:.2}ms per 1MB", avg_time_ms);
-            println!("   • Throughput: {:.1} MB/s", throughput_mb_s);
-
-            // Performance target: uncompressed should be fast (>60 MB/s)
-            assert!(
-                throughput_mb_s > 60.0,
-                "Uncompressed processing too slow: {:.1} MB/s",
-                throughput_mb_s
-            );
         }
 
         /// Integration test with realistic ANIM file structure

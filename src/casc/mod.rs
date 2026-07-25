@@ -1332,10 +1332,8 @@ mod tests {
         temp_file.flush().unwrap();
 
         // Test parsing from file
-        let result = IndexFile::parse_from_file(temp_file.path());
-        assert!(result.is_ok());
-
-        let index_file = result.unwrap();
+        let index_file = IndexFile::parse_from_file(temp_file.path())
+            .expect("a well-formed index file should parse");
         assert_eq!(index_file.bucket_index, 5);
         assert_eq!(index_file.entries.len(), 1);
         assert_eq!(index_file.entries[0].key, [1, 2, 3, 4, 5, 6, 7, 8, 9]);

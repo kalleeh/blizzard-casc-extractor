@@ -536,10 +536,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let install_path = create_mock_legitimate_installation(&temp_dir);
 
-        let result = EncryptionHandler::new(&install_path);
-        assert!(result.is_ok());
-
-        let handler = result.unwrap();
+        let handler = EncryptionHandler::new(&install_path)
+            .expect("a legitimate mock installation should be accepted");
         assert!(handler.is_legitimate_installation());
     }
 
@@ -624,19 +622,22 @@ mod tests {
         let install_path = create_mock_legitimate_installation(&temp_dir);
         let handler = EncryptionHandler::new(&install_path).unwrap();
 
-        // Test with mock encrypted data (using simple XOR for testing)
-        let original_data = b"secret content";
+        // This key path is a repeating XOR against the registered key bytes. The
+        // built-in "default_salsa20" key is a 32-byte zero placeholder, so XOR is
+        // the identity: the payload after the 8-byte header must come back
+        // unchanged. Asserting only is_ok() hid the fact that this test previously
+        // encrypted with 0x42 and decrypted with 0x00, so it could never round-trip.
+        let payload = b"secret content";
         let mut encrypted_data = Vec::new();
         encrypted_data.extend_from_slice(b"SALS\x00\x00\x00\x00"); // Header
+        encrypted_data.extend_from_slice(payload);
 
-        // Simple XOR encryption for testing
-        let key_bytes = &[0x42; 32]; // Mock key
-        for &byte in original_data {
-            encrypted_data.push(byte ^ key_bytes[0]);
-        }
-
-        // The decryption should work (though with our simplified implementation)
-        let result = handler.decrypt_data(&encrypted_data, Some("default_salsa20"));
-        assert!(result.is_ok());
+        let decrypted = handler
+            .decrypt_data(&encrypted_data, Some("default_salsa20"))
+            .expect("decryption with a known key should succeed");
+        assert_eq!(
+            decrypted, payload,
+            "a zero key must leave the payload byte-identical"
+        );
     }
 }

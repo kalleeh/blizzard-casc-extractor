@@ -1,3 +1,4 @@
+use casc_extractor::anim::{CompressionType, PixelFormat, Texture, TextureFormat};
 use casc_extractor::grp::{GrpFile, GrpFrame};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use png::Compression;
@@ -288,6 +289,76 @@ fn bench_png_compression(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
+// Texture decompression throughput
+// ---------------------------------------------------------------------------
+
+/// Decompression throughput for the three texture paths.
+///
+/// These were previously wall-clock `assert!(throughput > N MB/s)` unit tests
+/// marked `#[ignore]`, so they never ran anywhere and guarded nothing. Timing
+/// belongs in criterion, which measures it properly and records a baseline;
+/// correctness is covered by ordinary tests in `src/anim`.
+fn bench_texture_decompress(c: &mut Criterion) {
+    const W: u16 = 512;
+    const H: u16 = 512;
+    let rgba: Vec<u8> = (0..(W as usize * H as usize * 4))
+        .map(|i| (i % 256) as u8)
+        .collect();
+
+    let zlib_data = {
+        use flate2::write::ZlibEncoder;
+        use std::io::Write;
+        let mut e = ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        e.write_all(&rgba).unwrap();
+        e.finish().unwrap()
+    };
+    let lz4_data = lz4_flex::compress_prepend_size(&rgba);
+
+    let cases = [
+        (
+            "zlib",
+            TextureFormat::ZlibCompressedRGBA,
+            CompressionType::Zlib,
+            zlib_data,
+            Some(rgba.len()),
+        ),
+        (
+            "lz4",
+            TextureFormat::LZ4CompressedRGBA,
+            CompressionType::Lz4,
+            lz4_data,
+            Some(rgba.len()),
+        ),
+        (
+            "uncompressed",
+            TextureFormat::RGBA,
+            CompressionType::None,
+            rgba.clone(),
+            None,
+        ),
+    ];
+
+    let mut group = c.benchmark_group("texture_decompress");
+    group.throughput(Throughput::Bytes(rgba.len() as u64));
+    for (name, format, compression_type, data, uncompressed_size) in cases {
+        let texture = Texture {
+            format,
+            width: W,
+            height: H,
+            data,
+            compression_type,
+            pixel_format: PixelFormat::RGBA32,
+            uncompressed_size,
+            palette: None,
+        };
+        group.bench_function(BenchmarkId::from_parameter(name), |b| {
+            b.iter(|| texture.decode_pixels().expect("decode"))
+        });
+    }
+    group.finish();
+}
+
+// ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
 
@@ -297,5 +368,6 @@ criterion_group!(
     bench_grp_to_rgba,
     bench_filter,
     bench_png_compression,
+    bench_texture_decompress,
 );
 criterion_main!(benches);
