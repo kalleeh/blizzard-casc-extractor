@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-25
+
 ### Fixed
 
 - SD ANIM parsing panicked on a slice index when the header's `layer_count`
@@ -34,6 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multiple `MTXM` chunks in a CHK were concatenated instead of last-writer-wins.
 - `build.rs` emitted Mach-O `@loader_path` rpaths on all platforms, leaving Linux
   builds with no usable rpath (ELF needs `$ORIGIN`).
+- CI and release packaging copied only the bare `libcasc.so`, but CascLib links with
+  soname `libcasc.so.1`, so Linux binaries failed to start.
+- SD sprite names depended on the working directory: the mapping was read from a
+  relative path, so running from anywhere but the repo root produced
+  `mainSD_sprite_NNN.png` instead of mapped names.
+- Unity's shipped `StarcraftSpriteImporter.cs` declared a JSON schema the extractor
+  no longer emits, so `sheetHeight` deserialized to 0 and every sliced frame rect got
+  a negative Y.
 - Output files were written non-atomically, so an interrupt or a full disk could
   leave a truncated PNG/JSON/DDS that the `Never` and `IfNewer` overwrite modes
   then treated as completed work. Artefact writes now go to a sibling temp file
@@ -80,6 +90,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   indicatif 0.18. This also removed duplicate `bitflags` and `syn` copies.
 - `calculate_file_size` no longer rescans every index per entry (was quadratic),
   and `sounds extract` enumerates the archive at most once per run.
+- All artefact writes are atomic (temp sibling + rename), so an interrupt or a full
+  disk can no longer leave a truncated file that `Never`/`IfNewer` treat as done.
 - Default `png_compression_level` lowered from 6 to 1. Now that the setting is
   actually applied to every PNG, level 6 would have made a default run ~4x slower
   to save ~5% of output size (0.7s/62 MB vs 1.35s/59 MB over three sprites, which
@@ -106,7 +118,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   committed data, so no pixel regression could ever be caught.
 - CI now also runs on macOS (the primary development platform, and the only one
   where CascLib builds as a framework), gates `cargo fmt --check`, and asserts the
-  binary runs with all loader environment variables unset.
+  binary runs with all loader environment variables unset. All third-party actions
+  are pinned to commit SHAs.
+- `CLAUDE.md` documents the archive-format facts this code was historically wrong
+  about, plus the validated `--online` behaviour.
+- Releases now ship a tarball containing `lib/`, verified by running the packaged
+  binary before publishing — the v0.1.0 artefact could not start at all.
 
 ### Security
 
@@ -155,5 +172,6 @@ production-readiness pass for correctness, robustness, and operability.
   hardcoded index, fixing `--team-color-mask` output.
 - Parallel DDS→PNG race condition in rayon threads (atomic temp-file counter).
 
-[Unreleased]: https://github.com/kalleeh/blizzard-casc-extractor/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/kalleeh/blizzard-casc-extractor/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/kalleeh/blizzard-casc-extractor/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/kalleeh/blizzard-casc-extractor/releases/tag/v0.1.0
