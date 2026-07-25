@@ -102,8 +102,8 @@ pub fn should_skip(
 pub fn png_compression(level: u32) -> png::Compression {
     match level {
         0..=2 => png::Compression::Fast,
-        7..=9 => png::Compression::Best,
-        _ => png::Compression::Default,
+        7..=9 => png::Compression::High,
+        _ => png::Compression::Balanced,
     }
 }
 

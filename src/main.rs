@@ -930,17 +930,17 @@ mod tests {
 
     #[test]
     fn png_compression_level_5_is_default() {
-        assert!(matches!(png_compression(5), png::Compression::Default));
+        assert!(matches!(png_compression(5), png::Compression::Balanced));
     }
 
     #[test]
     fn png_compression_level_9_is_best() {
-        assert!(matches!(png_compression(9), png::Compression::Best));
+        assert!(matches!(png_compression(9), png::Compression::High));
     }
 
     #[test]
     fn png_compression_level_7_is_best() {
-        assert!(matches!(png_compression(7), png::Compression::Best));
+        assert!(matches!(png_compression(7), png::Compression::High));
     }
 
     // -----------------------------------------------------------------------

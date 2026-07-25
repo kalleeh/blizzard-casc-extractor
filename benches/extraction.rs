@@ -256,8 +256,8 @@ fn bench_png_compression(c: &mut Criterion) {
 
     let levels: &[(u32, &str, Compression)] = &[
         (1, "level_1_fast", Compression::Fast),
-        (6, "level_6_default", Compression::Default),
-        (9, "level_9_best", Compression::Best),
+        (6, "level_6_balanced", Compression::Balanced),
+        (9, "level_9_high", Compression::High),
     ];
 
     let mut group = c.benchmark_group("png_write");

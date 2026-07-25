@@ -2947,7 +2947,7 @@ mod tests {
 
     #[test]
     fn test_png_file_validity() {
-        use image::io::Reader as ImageReader;
+        use image::ImageReader;
         use tempfile::TempDir;
 
         // Create a simple anim file with proper texture data
