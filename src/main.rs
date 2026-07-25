@@ -758,6 +758,50 @@ fn load_config(path: Option<&Path>) -> ExtractionConfig {
     }
 }
 
+/// CascLib product code for StarCraft: Remastered (its CDN path is `tpr/sc1live`).
+const ONLINE_PRODUCT: &str = "s1";
+/// Region used when the local install does not tell us one.
+const ONLINE_REGION_FALLBACK: &str = "us";
+
+/// Read the active CDN region (`Branch`) from a local `.build.info`.
+///
+/// The region is part of CascLib's online params string, and picking the wrong
+/// one points at a CDN that may not carry this build. `.build.info` is a
+/// pipe-delimited table whose header names the columns, so find `Branch` by name
+/// rather than by position, and take the row whose `Active` column is 1.
+fn detect_cdn_region(install_path: Option<&Path>) -> Option<String> {
+    let dir = locate_starcraft(install_path).ok()?;
+    let text = fs::read_to_string(dir.join(".build.info")).ok()?;
+    let mut lines = text.lines();
+    let header: Vec<&str> = lines.next()?.split('|').collect();
+    // Column names carry a `!TYPE:SIZE` suffix, e.g. `Branch!STRING:0`.
+    let col = |name: &str| {
+        header
+            .iter()
+            .position(|h| h.split('!').next().map(str::trim) == Some(name))
+    };
+    let branch_idx = col("Branch")?;
+    let active_idx = col("Active");
+
+    for line in lines {
+        let fields: Vec<&str> = line.split('|').collect();
+        let is_active = active_idx
+            .and_then(|i| fields.get(i))
+            .map(|v| v.trim() == "1")
+            .unwrap_or(true);
+        if !is_active {
+            continue;
+        }
+        if let Some(branch) = fields.get(branch_idx) {
+            let branch = branch.trim();
+            if !branch.is_empty() {
+                return Some(branch.to_string());
+            }
+        }
+    }
+    None
+}
+
 const INSTALL_PATH_HINT: &str =
     "Hint: Use --install-path to specify the StarCraft directory.\n\
      Common paths: /Applications/StarCraft (macOS), ~/.local/share/StarCraft or ~/.wine/drive_c/Program Files/StarCraft (Linux)";
@@ -3107,13 +3151,30 @@ fn main() -> Result<()> {
                     online,
                 } => {
                     if online {
-                        let install_path = locate_starcraft(cli.install_path.as_deref())
-                            .map_err(|e| anyhow::anyhow!("Could not locate StarCraft install path: {}\n{}", e, INSTALL_PATH_HINT))?
-                            .into_os_string()
-                            .into_string()
-                            .map_err(|p| anyhow::anyhow!("Install path is not valid UTF-8: {:?}", p))?;
-                        let online_archive = CascArchive::open_online(&install_path)
-                            .map_err(|e| anyhow::anyhow!("Failed to open CASC archive in online mode: {}", e))?;
+                        // CascOpenOnlineStorage wants `cache_path:product:region`,
+                        // not an install directory: the cache is where CDN-fetched
+                        // data lands, and the product code selects the game (`s1`
+                        // is StarCraft: Remastered).
+                        let cache_dir = dirs::cache_dir()
+                            .unwrap_or_else(std::env::temp_dir)
+                            .join("casc-extractor-online");
+                        fs::create_dir_all(&cache_dir).with_context(|| {
+                            format!("creating online cache directory {}", cache_dir.display())
+                        })?;
+                        let cache_str = cache_dir
+                            .to_str()
+                            .ok_or_else(|| anyhow::anyhow!("Cache path is not valid UTF-8: {:?}", cache_dir))?;
+                        let region = detect_cdn_region(cli.install_path.as_deref())
+                            .unwrap_or_else(|| ONLINE_REGION_FALLBACK.to_string());
+                        // Fields are separated by CASC_PARAM_SEPARATOR ('*'), not ':'
+                        // — a colon would be swallowed by Windows drive-letter paths.
+                        let params = format!("{}*{}*{}", cache_str, ONLINE_PRODUCT, region);
+                        let online_archive = CascArchive::open_online(&params)
+                            .map_err(|e| anyhow::anyhow!(
+                                "Failed to open online CASC storage ({}): {}\n\
+                                 Online mode downloads from Blizzard's CDN and needs network access.",
+                                params, e
+                            ))?;
                         cmd_extract_raw(
                             &online_archive,
                             cli.install_path.as_deref(),

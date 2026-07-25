@@ -1755,7 +1755,35 @@ mod tests {
                 }
             }
         }
-        
+
+        #[test]
+        /// The parsers the CLI actually uses must never panic on malformed input.
+        /// A plain random-bytes strategy almost never produces a valid header, so
+        /// the magic and version are forced and the interesting fields fuzzed.
+        fn sd_and_hd_parsers_never_panic_on_malformed_headers(
+            layer_count in any::<u16>(),
+            sprite_count in 0u16..64,
+            // Lengths clustered on the 332-byte header boundary: a file just long
+            // enough to pass the header length check is exactly where an
+            // unvalidated count reads past the end. A uniform random length
+            // almost never lands here.
+            tail_len in prop::sample::select(vec![0usize, 1, 100, 318, 319, 320, 321, 388, 600]),
+            fill in any::<u8>(),
+        ) {
+            for version in [0x0101u16, 0x0202, 0x0204] {
+                let mut data = vec![0u8; 12];
+                data[0..4].copy_from_slice(b"ANIM");
+                data[4..6].copy_from_slice(&version.to_le_bytes());
+                data[8..10].copy_from_slice(&layer_count.to_le_bytes());
+                data[10..12].copy_from_slice(&sprite_count.to_le_bytes());
+                data.resize(12 + tail_len, fill);
+
+                // Only assert absence of panics; any Err is a fine outcome.
+                let _ = SdAnimFile::parse(&data);
+                let _ = hd_parser::HdAnimFile::parse(&data);
+            }
+        }
+
         #[test]
         // **Feature: casc-sprite-extractor, Property 8: Pixel Data Decoding**
         // **Validates: Requirements 2.3**
@@ -3473,6 +3501,7 @@ pub struct SdAnimFile {
     pub sprites: Vec<SdSprite>,
 }
 
+#[derive(Default)]
 pub struct SdSprite {
     pub frame_count: u16,
     /// Width of the texture atlas (first / diffuse layer).
@@ -3528,6 +3557,15 @@ impl SdAnimFile {
         }
 
         // ── layer names ───────────────────────────────────────────────────────
+        // The header reserves exactly SD_LAYER_NAME_SLOTS name slots, so a
+        // larger layer_count would read the sprite offset table as name text
+        // (or index past a minimal file entirely).
+        if layer_count as usize > SD_LAYER_NAME_SLOTS {
+            return Err(AnimError::InvalidString(format!(
+                "layer_count {} exceeds the {} name slots in the SD ANIM header",
+                layer_count, SD_LAYER_NAME_SLOTS
+            )));
+        }
         let layer_names_start = 12_usize;
         let layer_names_end   = layer_names_start + SD_LAYER_NAME_SLOTS * SD_LAYER_NAME_LEN;
         if file_len < layer_names_end {
@@ -3571,7 +3609,16 @@ impl SdAnimFile {
                 data[off_pos + 3],
             ]) as usize;
 
-            sprites.push(Self::parse_sprite(data, sp_off)?);
+            // One malformed sprite must not discard the other ~998. Callers key
+            // names off the sprite index, so a failed entry is pushed as an
+            // empty placeholder (which they already skip) rather than dropped.
+            match Self::parse_sprite(data, sp_off) {
+                Ok(sprite) => sprites.push(sprite),
+                Err(e) => {
+                    log::warn!("SD sprite {} at offset {} failed to parse: {}", i, sp_off, e);
+                    sprites.push(SdSprite::default());
+                }
+            }
         }
 
         Ok(SdAnimFile {

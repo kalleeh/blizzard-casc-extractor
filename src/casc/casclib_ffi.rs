@@ -55,7 +55,9 @@ const _: () = assert!(std::mem::size_of::<CascFindData>() == 1104);
 
 #[link(name = "casc")]
 extern "C" {
-    fn CascOpenStorage(path: *const c_char, flags: u32, storage: *mut Handle) -> bool;
+    // Second parameter is dwLocaleMask, NOT a feature-flag field.
+    fn CascOpenStorage(path: *const c_char, locale_mask: u32, storage: *mut Handle) -> bool;
+    fn CascOpenOnlineStorage(params: *const c_char, locale_mask: u32, storage: *mut Handle) -> bool;
     fn CascCloseStorage(storage: Handle) -> bool;
     fn CascOpenFile(storage: Handle, filename: *const c_char, locale: u32, flags: u32, file: *mut Handle) -> bool;
     fn CascReadFile(file: Handle, buffer: *mut u8, bytes_to_read: u32, bytes_read: *mut u32) -> bool;
@@ -90,16 +92,23 @@ impl CascArchive {
         }
     }
 
-    pub fn open_online(path: &str) -> Result<Self, CascLibError> {
-        const CASC_FEATURE_ONLINE: u32 = 0x00000040;
-        let c_path = CString::new(path).map_err(|e| CascLibError::InvalidPath { reason: e.to_string() })?;
+    /// Open CDN-backed online storage.
+    ///
+    /// `params` is CascLib's `cache_path*product*region` string — e.g.
+    /// `/tmp/casc-cache*s1*eu` — *not* a plain install directory. Fields are
+    /// separated by `CASC_PARAM_SEPARATOR` (`'*'`). This must go through
+    /// `CascOpenOnlineStorage`; passing a flag to `CascOpenStorage` cannot work,
+    /// because that argument is `dwLocaleMask` (the old value 0x40 silently
+    /// meant CASC_LOCALE_ZHCN).
+    pub fn open_online(params: &str) -> Result<Self, CascLibError> {
+        let c_params = CString::new(params).map_err(|e| CascLibError::InvalidPath { reason: e.to_string() })?;
         let mut handle: Handle = ptr::null_mut();
 
         unsafe {
-            if CascOpenStorage(c_path.as_ptr(), CASC_FEATURE_ONLINE, &mut handle) {
+            if CascOpenOnlineStorage(c_params.as_ptr(), CASC_LOCALE_ALL, &mut handle) {
                 Ok(Self { handle })
             } else {
-                Err(CascLibError::OpenFailed { path: path.to_string() })
+                Err(CascLibError::OpenFailed { path: params.to_string() })
             }
         }
     }
@@ -115,6 +124,14 @@ impl CascArchive {
 
             let mut file_size_high: Dword = 0;
             let file_size_low = CascGetFileSize(file_handle, &mut file_size_high);
+            // On failure CascGetFileSize returns CASC_INVALID_SIZE and leaves
+            // pdwFileSizeHigh untouched; without this the size reads as 4294967295
+            // and surfaces as a bogus "file too large" error.
+            const CASC_INVALID_SIZE: Dword = 0xFFFF_FFFF;
+            if file_size_low == CASC_INVALID_SIZE && file_size_high == 0 {
+                CascCloseFile(file_handle);
+                return Err(CascLibError::ReadFailed { path: filename.to_string() });
+            }
             let file_size = ((file_size_high as u64) << 32) | (file_size_low as u64);
 
             if file_size == 0 {
@@ -195,13 +212,20 @@ impl CascStorage {
                 &mut find_data,
                 ptr::null(),
             );
-            if find_handle.is_null() {
+            // CascFindFirstFile signals failure with INVALID_HANDLE_VALUE ((HANDLE)-1),
+            // not NULL. Checking only for null let a broken archive fall through to
+            // the loop and return an empty list as success, so callers reported
+            // "0 files found" and exited 0.
+            const INVALID_HANDLE_VALUE: Handle = usize::MAX as Handle;
+            if find_handle.is_null() || find_handle == INVALID_HANDLE_VALUE {
                 return Err(CascLibError::ListFailed);
             }
 
             let mut files = Vec::new();
             loop {
-                if find_data.file_available != 0 {
+                // bFileAvailable is a DWORD:1 bitfield; the remaining 31 bits are
+                // padding the library never explicitly initialises.
+                if find_data.file_available & 1 != 0 {
                     let filename = CStr::from_ptr(find_data.file_name.as_ptr())
                         .to_string_lossy()
                         .to_string();

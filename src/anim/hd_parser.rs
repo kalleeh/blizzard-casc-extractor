@@ -82,13 +82,31 @@ impl HdAnimFile {
         // Extract layer DDS data
         let mut layer_data = Vec::new();
         for (i, img) in entry.images.iter().enumerate() {
+            if i >= header.layers as usize {
+                continue;
+            }
             // Only extract actual layers (not empty slots)
-            if i < header.layers as usize && img.size > 0 {
-                cursor.seek(SeekFrom::Start(img.ptr as u64))?;
-                let mut data = vec![0u8; img.size as usize];
-                cursor.read_exact(&mut data)?;
-                layer_data.push(data);
-            } else if i < header.layers as usize {
+            if img.size > 0 {
+                // ptr/size are raw u32s from the file. Validate the span against
+                // the buffer *before* allocating: seeking past EOF succeeds
+                // silently, so an absurd size would allocate up to 4 GiB and only
+                // then fail in read_exact.
+                let start = img.ptr as u64;
+                let end = start + img.size as u64;
+                if end > data.len() as u64 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!(
+                            "layer {} spans {}..{} which exceeds the {}-byte file",
+                            i, start, end, data.len()
+                        ),
+                    ));
+                }
+                cursor.seek(SeekFrom::Start(start))?;
+                let mut buf = vec![0u8; img.size as usize];
+                cursor.read_exact(&mut buf)?;
+                layer_data.push(buf);
+            } else {
                 layer_data.push(Vec::new());
             }
         }
