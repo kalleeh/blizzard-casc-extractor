@@ -8,11 +8,17 @@
 //! - Create reusable configuration profiles
 //! - Enable progress reporting and user feedback options
 
-use crate::filter::{FormatFilterOption, UnityFilterMode, UnityWrapMode};
-use crate::resolution::ResolutionTier;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::PathBuf;
+
+/// Which converted image formats an extraction should emit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FormatFilterOption {
+    Png,
+    Jpeg,
+    Images,
+    All,
+}
 
 /// Main configuration structure for the CASC sprite extractor
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -32,19 +38,12 @@ pub struct ExtractionConfig {
     /// File filtering settings
     #[serde(default)]
     pub filter_settings: FilterSettings,
-
-    /// Custom settings for extensibility
-    #[serde(default)]
-    pub custom_settings: HashMap<String, serde_json::Value>,
 }
 
 /// Quality and output configuration settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct QualitySettings {
-    /// Resolution tier preference
-    pub resolution_tier: ResolutionTier,
-
     /// Format filter for output files
     pub format_filter: FormatFilterOption,
 
@@ -77,33 +76,17 @@ pub struct FeedbackSettings {
     pub verbose_logging: bool,
 }
 
-/// Unity-specific export settings
+/// Unity-specific export settings.
+///
+/// Only the knobs the extractor actually honours are modelled here. Unknown keys
+/// in a config file are ignored, so files written for earlier versions (which
+/// carried filter/wrap modes, mipmaps, pivots and a Unity `.meta` toggle that
+/// nothing ever read) still load.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UnityExportSettings {
-    /// Enable Unity-compatible output
-    pub enabled: bool,
-
-    /// Pixels per unit setting
+    /// Pixels per unit written into the sprite metadata JSON
     pub pixels_per_unit: f32,
-
-    /// Texture filter mode
-    pub filter_mode: UnityFilterMode,
-
-    /// Texture wrap mode
-    pub wrap_mode: UnityWrapMode,
-
-    /// Compression quality (0-100)
-    pub compression_quality: u32,
-
-    /// Generate mipmaps
-    pub generate_mipmaps: bool,
-
-    /// Sprite pivot point
-    pub pivot_point: UnityPivot,
-
-    /// Generate .meta files
-    pub generate_meta_files: bool,
 }
 
 /// Metadata generation options
@@ -112,15 +95,6 @@ pub struct UnityExportSettings {
 pub struct MetadataOptions {
     /// Generate JSON metadata files
     pub generate_json: bool,
-
-    /// Generate Unity .meta files
-    pub generate_unity_meta: bool,
-
-    /// Include animation data
-    pub include_animation_data: bool,
-
-    /// Include database information
-    pub include_database_info: bool,
 }
 
 /// File overwrite behavior
@@ -138,23 +112,8 @@ pub enum OverwriteBehavior {
     Backup,
 }
 
-/// Unity pivot point options
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum UnityPivot {
-    Center,
-    TopLeft,
-    TopCenter,
-    TopRight,
-    MiddleLeft,
-    MiddleRight,
-    BottomLeft,
-    BottomCenter,
-    BottomRight,
-    Custom(f32, f32),
-}
-
 /// File filtering settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FilterSettings {
     /// Include patterns (regex)
@@ -163,9 +122,6 @@ pub struct FilterSettings {
     /// Exclude patterns (regex)
     pub exclude_patterns: Option<Vec<String>>,
 
-    /// Resolution tier filter
-    pub resolution_tier: ResolutionTier,
-
     /// Maximum number of files to process
     pub max_files: Option<u64>,
 }
@@ -173,7 +129,6 @@ pub struct FilterSettings {
 impl Default for QualitySettings {
     fn default() -> Self {
         Self {
-            resolution_tier: ResolutionTier::All,
             format_filter: FormatFilterOption::All,
             png_compression_level: 6,
         }
@@ -194,14 +149,7 @@ impl Default for OutputSettings {
 impl Default for UnityExportSettings {
     fn default() -> Self {
         Self {
-            enabled: false,
             pixels_per_unit: 100.0,
-            filter_mode: UnityFilterMode::Bilinear,
-            wrap_mode: UnityWrapMode::Clamp,
-            compression_quality: 50,
-            generate_mipmaps: false,
-            pivot_point: UnityPivot::Center,
-            generate_meta_files: true,
         }
     }
 }
@@ -210,20 +158,6 @@ impl Default for MetadataOptions {
     fn default() -> Self {
         Self {
             generate_json: true,
-            generate_unity_meta: false,
-            include_animation_data: true,
-            include_database_info: true,
-        }
-    }
-}
-
-impl Default for FilterSettings {
-    fn default() -> Self {
-        Self {
-            include_patterns: None,
-            exclude_patterns: None,
-            resolution_tier: ResolutionTier::All,
-            max_files: None,
         }
     }
 }
@@ -255,6 +189,39 @@ mod tests {
         );
         assert_eq!(config.quality_settings.png_compression_level, 6);
         assert!(config.filter_settings.include_patterns.is_none());
+    }
+
+    #[test]
+    fn legacy_config_with_removed_keys_still_loads() {
+        // Fields that were deserialized but never read have been removed. Config
+        // files written for earlier versions must keep working, with the settings
+        // that ARE honoured still taking effect.
+        let json = r#"{
+            "quality_settings": {"resolution_tier": "All", "format_filter": "All",
+                                 "png_compression_level": 3},
+            "output_settings": {
+                "output_directory": "/tmp/out",
+                "unity_settings": {"enabled": true, "pixels_per_unit": 64.0,
+                                   "filter_mode": "Bilinear", "wrap_mode": "Clamp",
+                                   "compression_quality": 50, "generate_mipmaps": false,
+                                   "pivot_point": "Center", "generate_meta_files": true},
+                "metadata_options": {"generate_json": true, "generate_unity_meta": false,
+                                     "include_animation_data": true,
+                                     "include_database_info": true},
+                "overwrite_behavior": "Never"
+            },
+            "filter_settings": {"resolution_tier": "All", "max_files": 5},
+            "custom_settings": {"anything": 1}
+        }"#;
+        let config: ExtractionConfig =
+            serde_json::from_str(json).expect("legacy config should still deserialize");
+        assert_eq!(config.quality_settings.png_compression_level, 3);
+        assert_eq!(config.output_settings.unity_settings.pixels_per_unit, 64.0);
+        assert_eq!(
+            config.output_settings.overwrite_behavior,
+            OverwriteBehavior::Never
+        );
+        assert_eq!(config.filter_settings.max_files, Some(5));
     }
 
     #[test]

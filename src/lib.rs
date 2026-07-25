@@ -6,7 +6,6 @@
 pub mod anim;
 pub mod casc;
 pub mod config;
-pub mod filter;
 pub mod grp;
 pub mod mapping;
 pub mod palette;
@@ -23,7 +22,6 @@ pub use config::{
     ExtractionConfig, FeedbackSettings, MetadataOptions, OutputSettings, OverwriteBehavior,
     QualitySettings, UnityExportSettings,
 };
-pub use filter::{FormatFilterOption, UnityFilterMode, UnityWrapMode};
 pub use grp::{GrpError, GrpFile, GrpFrame};
 pub use progress::ProgressReporter;
 pub use resolution::ResolutionTier;

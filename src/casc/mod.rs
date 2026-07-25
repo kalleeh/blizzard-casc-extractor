@@ -723,12 +723,15 @@ impl CascArchive {
         let mut files = Vec::new();
         let mut file_counter = 0u32;
         let mut sprite_candidates = 0u32;
+        let offsets = self.offsets_by_data_file();
 
         // Generate file entries from all indices
         for (index_idx, index) in self.indices.iter().enumerate() {
             for (entry_idx, entry) in index.entries.iter().enumerate() {
                 // Calculate file size for this entry
-                let calculated_size = self.calculate_file_size(entry).unwrap_or(4096) as u32;
+                let calculated_size = self
+                    .calculate_file_size_with(entry, &offsets)
+                    .unwrap_or(4096) as u32;
 
                 // Skip very small files (likely not sprites)
                 if calculated_size < 16 {
@@ -1042,28 +1045,44 @@ impl CascArchive {
         key[0]
     }
 
-    /// Calculate the size of a file entry by finding the next entry or using heuristics
-    fn calculate_file_size(&self, entry: &IndexEntry) -> Result<usize, CascError> {
-        // First, try to find the next entry in the same data file to calculate size
-        let mut next_offset: Option<u32> = None;
-
-        // Look for entries in the same data file with higher offsets
+    /// Sorted offsets per data file, for successor lookups.
+    ///
+    /// Built once and reused: finding each entry's next offset by rescanning every
+    /// index made size calculation quadratic (~58k entries => billions of
+    /// comparisons when listing the whole archive).
+    fn offsets_by_data_file(&self) -> HashMap<u32, Vec<u32>> {
+        let mut map: HashMap<u32, Vec<u32>> = HashMap::new();
         for index in &self.indices {
-            for other_entry in &index.entries {
-                if other_entry.data_file_number == entry.data_file_number
-                    && other_entry.data_file_offset > entry.data_file_offset
-                {
-                    match next_offset {
-                        None => next_offset = Some(other_entry.data_file_offset),
-                        Some(current_next) => {
-                            if other_entry.data_file_offset < current_next {
-                                next_offset = Some(other_entry.data_file_offset);
-                            }
-                        }
-                    }
-                }
+            for entry in &index.entries {
+                map.entry(entry.data_file_number)
+                    .or_default()
+                    .push(entry.data_file_offset);
             }
         }
+        for offsets in map.values_mut() {
+            offsets.sort_unstable();
+            offsets.dedup();
+        }
+        map
+    }
+
+    /// Calculate the size of a file entry by finding the next entry or using heuristics
+    fn calculate_file_size(&self, entry: &IndexEntry) -> Result<usize, CascError> {
+        let offsets = self.offsets_by_data_file();
+        self.calculate_file_size_with(entry, &offsets)
+    }
+
+    /// As [`Self::calculate_file_size`], but reusing a prebuilt offset map.
+    fn calculate_file_size_with(
+        &self,
+        entry: &IndexEntry,
+        offsets: &HashMap<u32, Vec<u32>>,
+    ) -> Result<usize, CascError> {
+        // The next entry in the same data file bounds this one.
+        let next_offset = offsets.get(&entry.data_file_number).and_then(|sorted| {
+            let idx = sorted.partition_point(|&off| off <= entry.data_file_offset);
+            sorted.get(idx).copied()
+        });
 
         // If we found a next entry, calculate size from offset difference
         if let Some(next_off) = next_offset {

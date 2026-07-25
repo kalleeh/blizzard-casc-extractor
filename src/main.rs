@@ -16,8 +16,8 @@ use anyhow::{Context as _, Result};
 use casc_extractor::anim::HdAnimFile;
 use casc_extractor::casc::casclib_ffi::CascArchive;
 use casc_extractor::casc::discovery::locate_starcraft;
+use casc_extractor::config::FormatFilterOption;
 use casc_extractor::config::{ExtractionConfig, OverwriteBehavior};
-use casc_extractor::filter::FormatFilterOption;
 use casc_extractor::grp::GrpFile;
 use casc_extractor::mapping::SpriteMapping;
 use casc_extractor::validation::regression_suite::KnownGoodExtraction;
@@ -726,10 +726,16 @@ fn should_skip(
         }
         OverwriteBehavior::Backup => {
             if path.exists() {
-                let bak = path.with_extension(format!(
-                    "{}.bak",
-                    path.extension().and_then(|e| e.to_str()).unwrap_or("")
-                ));
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                // Pick the first unused suffix so repeated runs keep every
+                // generation; a fixed `.bak` silently destroyed the previous
+                // backup on each run, leaving only one.
+                let mut bak = path.with_extension(format!("{}.bak", ext));
+                let mut generation = 1u32;
+                while bak.exists() && generation <= 1000 {
+                    bak = path.with_extension(format!("{}.bak.{}", ext, generation));
+                    generation += 1;
+                }
                 if let Err(e) = fs::rename(path, &bak) {
                     eprintln!("Warning: could not back up {:?}: {}", path, e);
                 }
@@ -1546,15 +1552,13 @@ fn build_spritesheet(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-/// Scan the archive file listing for an audio entry whose name contains all
-/// words in `stem_hint` (case-insensitive), and try to extract the first match.
-fn discover_sound(
-    archive: &CascArchive,
-    storage: &CascStorage,
-    stem_hint: &str,
-) -> Option<Vec<u8>> {
-    let files = storage.list_files().ok()?;
+/// Scan `files` for an audio entry whose name contains all words in `stem_hint`
+/// (case-insensitive), and try to extract the first match.
+///
+/// Takes the already-enumerated listing rather than a storage handle: this is
+/// called once per unresolved target, and re-walking all ~21k entries each time
+/// made a targets file with many misses O(targets x archive).
+fn discover_sound(archive: &CascArchive, files: &[String], stem_hint: &str) -> Option<Vec<u8>> {
     let hint_lower = stem_hint.to_lowercase();
     // Split hint on '_' to get keywords (e.g. "zergling_attack" -> ["zergling", "att"])
     let keywords: Vec<String> = hint_lower
@@ -1619,6 +1623,8 @@ fn cmd_sounds_extract(
     let total = targets.len();
     let mut extracted = 0usize;
     let mut pre_existing = 0usize;
+    // Filled in on first use by the discovery fallback below.
+    let mut listing: Option<Vec<String>> = None;
 
     for (out_name, candidates) in &targets {
         let dest = join_within(output, out_name)?;
@@ -1652,9 +1658,18 @@ fn cmd_sounds_extract(
         }
 
         if !found {
-            // Fall back to dynamic discovery via the file listing.
+            // Fall back to dynamic discovery via the file listing, enumerating the
+            // archive at most once for the whole run and only if something missed.
+            if listing.is_none() {
+                listing = Some(
+                    storage
+                        .list_files()
+                        .map_err(|e| anyhow::anyhow!("list_files failed: {}", e))?,
+                );
+            }
+            let files = listing.as_deref().unwrap_or(&[]);
             let stem = out_name.trim_end_matches(".ogg").trim_end_matches(".wav");
-            if let Some(data) = discover_sound(archive, storage, stem) {
+            if let Some(data) = discover_sound(archive, files, stem) {
                 fs::write(&dest, &data)?;
                 println!("  {:>7} bytes  (discovered)  ->  {}", data.len(), out_name);
                 extracted += 1;
