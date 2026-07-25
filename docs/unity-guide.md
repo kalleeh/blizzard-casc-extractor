@@ -20,11 +20,16 @@ casc-extractor extract anim --quality hd4 --convert-to-png --output extracted
 
 ```
 extracted/
-├── terran/marine.png      # Sprite sheet (diffuse layer)
-├── terran/marine.json     # Frame metadata for slicing
-├── zerg/guardian.png
-└── zerg/guardian.json
+├── guardian.png       # Sprite sheet (diffuse layer)
+├── guardian.json      # Frame metadata for slicing
+├── firebat.png
+└── firebat.json
 ```
+
+Output is flat. HD uses the mapping key's last segment
+(`animations/zerg/guardian` → `guardian`), while SD uses the full key with
+separators replaced by underscores (`animations_zerg_guardian`). Pass `--raw` for
+numbered `main_NNN` filenames instead.
 
 Add `--team-color-mask` for a `_tc.png` mask beside each sheet, or `--raw` for
 numbered `main_NNN.png` filenames.
@@ -107,12 +112,14 @@ config file.
 
 The automatic importer configures:
 - **Texture Type**: Sprite (2D and UI)
-- **Sprite Mode**: Multiple
-- **Pixels Per Unit**: Matches frame size
+- **Sprite Mode**: Multiple, sliced from the JSON frame rects
 - **Filter Mode**: Point (pixel-perfect)
 - **Compression**: None (preserve quality)
 - **Alpha**: Transparency enabled
 - **Pivot**: Bottom-center (perfect for RTS units)
+
+It does **not** set pixels-per-unit — the `pixelsPerUnit` value in the JSON is
+informational, so set it on the importer yourself if it matters to your scene scale.
 
 ## Animation Settings
 
@@ -127,7 +134,7 @@ Animations are created with:
 
 ```csharp
 // Get sprite from sheet
-Sprite[] sprites = Resources.LoadAll<Sprite>("StarCraftSprites/terran/units/marine");
+Sprite[] sprites = Resources.LoadAll<Sprite>("StarCraftSprites/guardian");
 SpriteRenderer renderer = GetComponent<SpriteRenderer>();
 renderer.sprite = sprites[0]; // First frame
 ```
@@ -136,12 +143,15 @@ renderer.sprite = sprites[0]; // First frame
 
 ```csharp
 // Load and play animation
-AnimationClip clip = Resources.Load<AnimationClip>("StarCraftSprites/terran/units/marine_anim");
+AnimationClip clip = Resources.Load<AnimationClip>("StarCraftSprites/guardian_anim");
 Animator animator = GetComponent<Animator>();
 animator.Play(clip.name);
 ```
 
 ### ECS Integration (Unity 6.2)
+
+Illustrative only — `SpriteToMeshConverter` is **not** provided by this repo; it
+stands in for whatever sprite-to-mesh helper your project uses.
 
 ```csharp
 // Convert sprite to mesh for Entities Graphics

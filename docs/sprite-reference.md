@@ -8,7 +8,7 @@ Sprites are addressed by ANIM id, not by a hand-curated list:
 
 | Source | Count | Notes |
 |--------|-------|-------|
-| HD 4x | up to 1000 | `anim/main_000.anim` … `main_999.anim`; ~872 ids exist in this build |
+| HD 4x | up to 1000 | `anim/main_000.anim` … `main_999.anim`; 868 ids exist in this build |
 | HD 2x | up to 1000 | Same ids under `HD2/` |
 | SD | 868 | All inside the single `SD/mainSD.anim` (38 MB, ANIM v0x0101) |
 
@@ -21,7 +21,7 @@ casc-extractor inspect sprites --max-id 1000
 ## Naming
 
 `mappings/starcraft-remastered.yaml` maps readable names to archive paths. It has
-~1040 entries, keyed by name and valued by CASC path:
+~1070 entries, keyed by name and valued by CASC path:
 
 ```yaml
 animations/terran/battlecruiser: anim/main_218.anim
@@ -31,6 +31,10 @@ animations/zerg/guardian: anim/main_025.anim
 `extract anim` inverts this to name its output, so you get `battlecruiser.anim`
 rather than `main_218.anim`. Pass `--raw` for numbered filenames, or `--name-map
 my.json` to override with your own `{"218": "some/name"}` table.
+
+Output is flat, and the two quality paths flatten differently: HD keeps the key's
+last segment (`animations/zerg/guardian` → `guardian.png`) while SD uses the whole
+key with separators replaced by underscores (`animations_zerg_guardian.png`).
 
 Most entries are `animations/<race>/<unit>`, but the file also covers effects and
 scenery — flames, blood variants, selection circles, vespene smoke, mineral fields,
