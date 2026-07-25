@@ -337,6 +337,13 @@ Purple `#88409C`, Orange `#F88C14`, Yellow `#FCFC38`.
 Full algorithm, layer layout, and Python reference implementation:
 **[docs/team-color.md](docs/team-color.md)**
 
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for build, test and CI mechanics.
+[`CLAUDE.md`](CLAUDE.md) records the archive-format facts this code was historically
+wrong about, and why pixel output must be verified visually rather than inferred —
+written for AI agents, but the gotchas apply to anyone.
+
 ## Architecture
 
 ```

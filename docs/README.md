@@ -35,4 +35,6 @@ Complete list of extractable sprites.
 
 - [Main README](../README.md)
 - [Contributing Guide](../CONTRIBUTING.md)
+- [Notes for AI agents](../CLAUDE.md) — archive-format gotchas and the
+  verify-the-pixels rule; useful to humans too
 - [License](../LICENSE)
