@@ -16,16 +16,14 @@ jobs:
           - target: aarch64-apple-darwin
             runner: macos-latest
             lib_name: libcasc.dylib
-            lib_path_var: DYLD_LIBRARY_PATH
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
             lib_name: libcasc.so
-            lib_path_var: LD_LIBRARY_PATH
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
         with:
           toolchain: stable
           target: ${{ matrix.target }}
@@ -52,8 +50,6 @@ jobs:
           fi
 
       - name: Build release binary
-        env:
-          ${{ matrix.lib_path_var }}: lib
         run: cargo build --release --target ${{ matrix.target }}
 
       # Ship the native library alongside the binary. Publishing the bare
@@ -85,16 +81,20 @@ jobs:
             fi
           else
             cp "lib/${{ matrix.lib_name }}" "${STAGE}/lib/"
-            patchelf --set-rpath '$ORIGIN/lib' "${STAGE}/casc-extractor" \
-              || echo "patchelf unavailable; LD_LIBRARY_PATH=lib may be required"
+            # build.rs emits $ORIGIN/lib for ELF targets, so no patching is needed.
+            # This used to call patchelf without installing it, silently falling
+            # back to a package that required LD_LIBRARY_PATH.
           fi
 
-          # Verify the packaged layout actually runs before publishing it.
-          ( cd "${STAGE}" && ./casc-extractor --version )
+          # Verify the packaged layout runs with no loader env vars before
+          # publishing it — that is the exact failure that shipped in v0.1.0.
+          ( cd "${STAGE}" \
+            && env -u LD_LIBRARY_PATH -u DYLD_LIBRARY_PATH -u DYLD_FRAMEWORK_PATH \
+               ./casc-extractor --version )
 
           tar czf "${STAGE}.tar.gz" "${STAGE}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: casc-extractor-${{ github.ref_name }}-${{ matrix.target }}
           path: casc-extractor-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
@@ -108,11 +108,11 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           merge-multiple: true
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           name: ${{ github.ref_name }}
           draft: true
