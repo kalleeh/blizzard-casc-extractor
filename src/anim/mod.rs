@@ -6,6 +6,7 @@ use std::io::Cursor;
 ///
 /// This module provides functionality for parsing .anim sprite files
 /// and converting them to PNG format with metadata extraction.
+#[cfg(test)]
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -311,7 +312,8 @@ pub enum TextureFormat {
     LZ4CompressedIndexed8,
 }
 
-#[allow(dead_code)]
+/// Returned by the test-only `AnimFile::to_png`.
+#[cfg(test)]
 #[derive(Debug)]
 pub struct ConversionResult {
     pub png_files: Vec<PathBuf>,
@@ -319,7 +321,8 @@ pub struct ConversionResult {
     pub frame_count: usize,
 }
 
-#[allow(dead_code)]
+/// Metadata emitted by the test-only `AnimFile::to_png`.
+#[cfg(test)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SpriteMetadata {
     pub name: String,
