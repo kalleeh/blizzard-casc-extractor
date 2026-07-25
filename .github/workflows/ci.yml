@@ -10,9 +10,17 @@ permissions:
   contents: read
 
 jobs:
-  ci:
-    name: ci
-    runs-on: ubuntu-latest
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS is the primary development platform and the only one where
+        # CascLib builds as a framework, which is what build.rs and the release
+        # packaging target. Testing Linux alone let a macOS-only framework bug
+        # reach a tag before it was noticed.
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -29,7 +37,15 @@ jobs:
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           cmake --build /tmp/CascLib/build --parallel
           mkdir -p lib
-          cp /tmp/CascLib/build/libcasc.so lib/
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            # Mirror the framework layout build.rs links against, matching the
+            # dylib's own @rpath install name.
+            mkdir -p lib/casc.framework/Versions/1.0.0
+            cp /tmp/CascLib/build/casc.framework/casc lib/casc.framework/Versions/1.0.0/casc
+            ln -sf casc.framework/Versions/1.0.0/casc lib/libcasc.dylib
+          else
+            cp /tmp/CascLib/build/libcasc.so lib/
+          fi
 
       - name: cargo fmt
         run: cargo fmt --check
@@ -42,20 +58,44 @@ jobs:
       - name: cargo test (lib)
         env:
           RUSTFLAGS: "-D warnings"
-          LD_LIBRARY_PATH: lib
         run: cargo test --lib
 
       - name: cargo test (integration)
         env:
           RUSTFLAGS: "-D warnings"
-          LD_LIBRARY_PATH: lib
         run: cargo test --tests
+
+      # The rpaths embedded by build.rs should make loader env vars unnecessary.
+      # Assert that separately from the suites above so a regression here is
+      # reported as its own failure rather than looking like a broken test.
+      - name: verify no loader env vars are needed
+        run: |
+          cargo build --release
+          env -u LD_LIBRARY_PATH -u DYLD_LIBRARY_PATH -u DYLD_FRAMEWORK_PATH \
+            ./target/release/casc-extractor --version
 
       - name: cargo clippy
         env:
           RUSTFLAGS: "-D warnings"
         run: cargo clippy --all-targets -- -D warnings
 
+      # The binary cannot open a real archive here, but the CLI surface must
+      # still resolve — this catches a subcommand wired to a missing handler.
+      - name: smoke test CLI surface
+        run: |
+          ./target/release/casc-extractor extract anim --help > /dev/null
+          ./target/release/casc-extractor extract map-terrain --help > /dev/null
+          ./target/release/casc-extractor sounds extract --help > /dev/null
+          ./target/release/casc-extractor inspect files --help > /dev/null
+
+  audit:
+    name: audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
       - name: cargo audit
         run: |
           cargo install cargo-audit --locked

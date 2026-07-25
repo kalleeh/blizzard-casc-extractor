@@ -1,16 +1,28 @@
 fn main() {
     println!("cargo:rustc-link-search=native=lib");
     println!("cargo:rustc-link-lib=dylib=casc");
-    // @loader_path is the directory containing the binary:
-    //   debug:   target/debug/   -> ../../lib = tools/casc-extractor/lib/
-    //   release: target/release/ -> ../../lib = tools/casc-extractor/lib/
-    // The dylib's own install name is @rpath/casc.framework/Versions/1.0.0/casc,
-    // so lib/casc.framework/Versions/1.0.0/casc must resolve (symlink created below).
-    println!("cargo:rustc-link-arg=-Wl,-rpath,@loader_path/../../lib");
-    // Test/bench binaries live one directory deeper, in target/debug/deps/, so
-    // they need an extra ".." to reach the project-root lib/. Emitting both rpaths
-    // (dyld tries each LC_RPATH in order) lets `cargo test --lib` find the
-    // framework without requiring DYLD_LIBRARY_PATH/DYLD_FRAMEWORK_PATH.
-    //   deps:    target/debug/deps/ -> ../../../lib = tools/casc-extractor/lib/
-    println!("cargo:rustc-link-arg=-Wl,-rpath,@loader_path/../../../lib");
+
+    // Embed rpaths so the binary finds libcasc without LD_LIBRARY_PATH /
+    // DYLD_LIBRARY_PATH. Each is relative to the directory holding the executable:
+    //   target/{debug,release}/       -> ../../lib
+    //   target/{debug,release}/deps/  -> ../../../lib   (test and bench binaries)
+    //   alongside the binary          -> ./lib          (release packaging layout)
+    //
+    // The token differs by platform — `$ORIGIN` for ELF, `@loader_path` for
+    // Mach-O — and using the wrong one silently yields no usable rpath at all.
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let origin = match target_os.as_str() {
+        "macos" | "ios" => "@loader_path",
+        // Windows resolves DLLs by search path, not rpath.
+        "windows" => return,
+        _ => "$ORIGIN",
+    };
+
+    for suffix in ["/../../lib", "/../../../lib", "/lib"] {
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{}{}", origin, suffix);
+    }
+
+    // ELF linkers may mark the rpath as "new dtags" (RUNPATH), which is not
+    // inherited by transitive loads; libcasc has no further dependencies here, so
+    // RUNPATH is sufficient and no extra flag is needed.
 }
