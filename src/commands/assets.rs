@@ -146,11 +146,9 @@ pub fn cmd_extract_cmdicons(
 
     std::fs::create_dir_all(output)?;
     let write_png = |path: &std::path::Path, data: &[u8]| -> anyhow::Result<()> {
-        let f = std::fs::File::create(path)?;
-        let mut enc = png::Encoder::new(std::io::BufWriter::new(f), sw as u32, sh as u32);
-        enc.set_color(png::ColorType::Rgba);
-        enc.set_depth(png::BitDepth::Eight);
-        enc.write_header()?.write_image_data(data)?;
+        let img = image::RgbaImage::from_raw(sw as u32, sh as u32, data.to_vec())
+            .ok_or_else(|| anyhow::anyhow!("icon buffer does not match {}x{}", sw, sh))?;
+        casc_extractor::dds_converter::save_rgba_as_png(&img, path, png::Compression::Fast)?;
         Ok(())
     };
 
@@ -192,9 +190,9 @@ pub fn cmd_extract_cmdicons(
             "width": max_w, "height": max_h
         })).collect::<Vec<_>>()
     });
-    std::fs::write(
-        output.join("cmdicons.json"),
-        serde_json::to_string_pretty(&meta)?,
+    write_atomic(
+        &output.join("cmdicons.json"),
+        serde_json::to_string_pretty(&meta)?.as_bytes(),
     )?;
     println!("  Saved {}", output.join("cmdicons.json").display());
     Ok(())
@@ -452,7 +450,7 @@ pub fn cmd_extract_raw(
                     fs::create_dir_all(parent)?;
                 }
 
-                fs::write(&local_path, &data)
+                write_atomic(&local_path, &data)
                     .with_context(|| format!("Failed to write {:?}", local_path))?;
 
                 if !written.insert(local_path.clone()) {

@@ -340,7 +340,7 @@ pub fn cmd_sounds_export_targets(output: &Path) -> Result<()> {
         .collect();
     let json = serde_json::to_string_pretty(&entries)
         .map_err(|e| anyhow::anyhow!("Failed to serialize targets: {}", e))?;
-    fs::write(output, json.as_bytes())
+    write_atomic(output, json.as_bytes())
         .map_err(|e| anyhow::anyhow!("Failed to write targets to {:?}: {}", output, e))?;
     println!("Sound targets written to {:?}", output);
     println!(

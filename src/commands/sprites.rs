@@ -11,8 +11,7 @@ use casc_extractor::mapping::SpriteMapping;
 use casc_extractor::{export_anim, ExportConfig};
 use rayon::prelude::*;
 use std::collections::HashMap;
-use std::fs::{self, File};
-use std::io::BufWriter;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 #[allow(clippy::too_many_arguments)]
@@ -661,13 +660,8 @@ pub fn build_spritesheet(
         }
     }
 
-    let file = File::create(output_path)?;
-    let w = BufWriter::new(file);
-    let mut encoder = png::Encoder::new(w, sheet_width, sheet_height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder.set_compression(compression);
-    let mut writer = encoder.write_header()?;
-    writer.write_image_data(&sheet_data)?;
+    let sheet = image::RgbaImage::from_raw(sheet_width, sheet_height, sheet_data)
+        .ok_or_else(|| anyhow::anyhow!("spritesheet buffer does not match declared size"))?;
+    casc_extractor::dds_converter::save_rgba_as_png(&sheet, output_path, compression)?;
     Ok(())
 }

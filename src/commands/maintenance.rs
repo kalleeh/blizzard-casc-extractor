@@ -1,5 +1,6 @@
 //! `config` and `validate` subcommands.
 
+use super::support::write_atomic;
 use anyhow::Result;
 use casc_extractor::config::ExtractionConfig;
 use casc_extractor::validation::regression_suite::KnownGoodExtraction;
@@ -13,7 +14,7 @@ pub fn cmd_config_init(output: &Path) -> Result<()> {
     let cfg = ExtractionConfig::default();
     let json = serde_json::to_string_pretty(&cfg)
         .map_err(|e| anyhow::anyhow!("Failed to serialize config: {}", e))?;
-    fs::write(output, json.as_bytes())
+    write_atomic(output, json.as_bytes())
         .map_err(|e| anyhow::anyhow!("Failed to write config to {:?}: {}", output, e))?;
     println!("Config written to {:?}", output);
     Ok(())
@@ -97,7 +98,9 @@ pub fn cmd_validate_register(file: &Path, suite_path: &Path) -> Result<()> {
 
     let json = serde_json::to_string_pretty(&entries)
         .map_err(|e| anyhow::anyhow!("Cannot serialize suite: {}", e))?;
-    fs::write(suite_path, json.as_bytes())
+    // Atomic in particular here: a half-written suite would corrupt the very
+    // baselines that guard pixel output, and `validate run` would then fail to parse.
+    write_atomic(suite_path, json.as_bytes())
         .map_err(|e| anyhow::anyhow!("Cannot write suite {:?}: {}", suite_path, e))?;
 
     println!(
