@@ -5,7 +5,7 @@
 //!   support     — path safety, overwrite policy, config, archive opening
 //!   sprites     — extract anim / tileset / effect
 //!   terrain     — tileset atlases, map-terrain, VR4 and CHK parsing
-//!   assets      — cmdicons, mainmenu, dat, raw
+//!   assets      — cmdicons, cursors, mainmenu, dat, raw
 //!   sounds      — sounds extract / list / probe / export-targets
 //!   inspect     — inspect sprites / archive / files
 //!   maintenance — config init, validate register / run
@@ -366,6 +366,21 @@ enum ExtractCommands {
         save_raw: bool,
     },
 
+    /// Extract the in-game mouse cursors (cursor\*.dds.grp) as one PNG strip each.
+    ///
+    /// Writes `<stem>.png` per cursor — arrow, drag, illegal, the targ*/mag* reticle
+    /// triples and the eight scroll arrows — plus a `cursors.json` manifest with each
+    /// one's frame count and cell size.  Cursors are animated (magg has 14 frames), so
+    /// each PNG is a horizontal strip of equally-sized cells.
+    ///
+    /// Same container as cmdicons, but the frames are UNCOMPRESSED 32-bit RGBA rather
+    /// than BC1, so no block decoding is involved.
+    Cursors {
+        /// Output directory
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+
     /// Extract raw bytes from one or more CASC archive paths without any processing.
     ///
     /// Files that are CDN-only (not present in the local install) will be checked
@@ -671,6 +686,10 @@ fn main() -> Result<()> {
                         tint.get(2).copied().unwrap_or(84),
                     ];
                     cmd_extract_cmdicons(&archive, &out, tint_rgb, save_raw)?;
+                }
+                ExtractCommands::Cursors { output: cur_output } => {
+                    let out = cur_output.unwrap_or_else(|| output.join("ui/cursors"));
+                    cmd_extract_cursors(&archive, &out)?;
                 }
                 ExtractCommands::Raw {
                     file_paths,

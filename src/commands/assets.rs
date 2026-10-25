@@ -198,6 +198,159 @@ pub fn cmd_extract_cmdicons(
     Ok(())
 }
 
+/// The in-game mouse cursors, as `(archive stem, output stem)`.
+///
+/// BW's full set. `arrow` is the default pointer; the `targ*`/`mag*` triples are the
+/// targeting reticles and magnifier variants in green/yellow/red (valid / neutral /
+/// hostile target); `drag` is the drag-select cursor, `illegal` the "cannot do that"
+/// cross, and the eight `scroll*` are the map-edge scroll arrows.
+const CURSOR_STEMS: &[&str] = &[
+    "arrow", "drag", "illegal", "time",
+    "targg", "targy", "targr",
+    "magg", "magy", "magr",
+    "scrollu", "scrolld", "scrolll", "scrollr",
+    "scrollul", "scrollur", "scrolldl", "scrolldr",
+];
+
+/// Extract SC:R's mouse cursors (`cursor\*.dds.grp`) as one PNG strip each.
+///
+/// ## File format
+/// Identical container to `cmdicons.dds.grp` (see [`cmd_extract_cmdicons`]): a
+/// 20-byte pre-header —
+///   `u32 total_file_size | u16 frame_count | u16 flags | u32 zero |
+///    u16 max_width | u16 max_height | u32 frame_alloc`
+/// — followed by `frame_count` standalone DDS files, each with its own `DDS ` magic.
+///
+/// ## But the pixels are NOT DXT-compressed
+/// Unlike cmdicons' greyscale BC1, cursor frames are **uncompressed 32-bit RGBA**
+/// (`DDSPF_RGB | DDSPF_ALPHAPIXELS`, i.e. pixel-format flags `0x41`, bit count 32,
+/// masks `R=0x000000ff G=0x0000ff00 B=0x00ff0000 A=0xff000000`). So the payload is
+/// copied straight out at 4 bytes per pixel and needs no block decode — and the
+/// masks say the byte order really is R,G,B,A, not the BGRA that `glue\*.dds`
+/// backgrounds use.
+///
+/// ## Output
+/// One horizontal strip per cursor (`frame_count` cells of `max_width × max_height`),
+/// plus a `cursors.json` manifest giving each cursor's frame count and cell size.
+/// Cursors are animated in BW — `magg` has 14 frames — so a strip keeps the frames
+/// addressable without inventing a packing scheme.
+pub fn cmd_extract_cursors(
+    archive: &casc_extractor::casc::casclib_ffi::CascArchive,
+    output: &std::path::Path,
+) -> anyhow::Result<()> {
+    std::fs::create_dir_all(output)?;
+    let mut manifest = Vec::new();
+    let mut extracted = 0usize;
+    let mut skipped = 0usize;
+
+    for stem in CURSOR_STEMS {
+        let casc_path = format!("cursor\\{stem}.dds.grp");
+        let Ok(raw) = archive.extract_file(&casc_path) else {
+            println!("  skipped (not in local install): {casc_path}");
+            skipped += 1;
+            continue;
+        };
+        if raw.len() < 20 {
+            println!("  skipped (truncated): {casc_path}");
+            skipped += 1;
+            continue;
+        }
+
+        let frames = u16::from_le_bytes([raw[4], raw[5]]) as usize;
+        let max_w = u16::from_le_bytes([raw[12], raw[13]]) as usize;
+        let max_h = u16::from_le_bytes([raw[14], raw[15]]) as usize;
+        if frames == 0 || max_w == 0 || max_h == 0 {
+            println!("  skipped (empty header): {casc_path}");
+            skipped += 1;
+            continue;
+        }
+
+        // Locate each embedded DDS the same way cmdicons does.
+        let mut positions: Vec<usize> = Vec::new();
+        let mut i = 0usize;
+        while let Some(rel) = raw[i..].windows(4).position(|w| w == b"DDS ") {
+            positions.push(rel + i);
+            i = rel + i + 1;
+        }
+        if positions.len() != frames {
+            println!(
+                "  Warning: {stem} declares {frames} frames but holds {} DDS blocks",
+                positions.len()
+            );
+        }
+
+        let sw = max_w * frames;
+        let mut strip = vec![0u8; sw * max_h * 4];
+
+        for (slot, &pos) in positions.iter().enumerate().take(frames) {
+            let end = positions.get(slot + 1).copied().unwrap_or(raw.len());
+            let frame = &raw[pos..end];
+            if frame.len() < 128 {
+                continue;
+            }
+            // DDS header: height at +12, width at +16.
+            let fh = u32::from_le_bytes([frame[12], frame[13], frame[14], frame[15]]) as usize;
+            let fw = u32::from_le_bytes([frame[16], frame[17], frame[18], frame[19]]) as usize;
+            if fw == 0 || fh == 0 || fw > max_w || fh > max_h {
+                continue;
+            }
+            let need = fw * fh * 4;
+            if frame.len() < 128 + need {
+                continue;
+            }
+            let px = &frame[128..128 + need];
+
+            // Centre a smaller frame in its cell, matching cmdicons' behaviour, so
+            // every cell shares one hotspot-relative origin.
+            let xo = slot * max_w + (max_w - fw) / 2;
+            let yo = (max_h - fh) / 2;
+            for y in 0..fh {
+                for x in 0..fw {
+                    let si = (y * fw + x) * 4;
+                    let di = ((yo + y) * sw + xo + x) * 4;
+                    if di + 4 > strip.len() {
+                        continue;
+                    }
+                    strip[di..di + 4].copy_from_slice(&px[si..si + 4]);
+                }
+            }
+        }
+
+        let img = image::RgbaImage::from_raw(sw as u32, max_h as u32, strip)
+            .ok_or_else(|| anyhow::anyhow!("{stem}: buffer does not match {sw}x{max_h}"))?;
+        let png_path = output.join(format!("{stem}.png"));
+        casc_extractor::dds_converter::save_rgba_as_png(&img, &png_path, png::Compression::Fast)?;
+        println!("  Saved {} ({frames} frames, {max_w}x{max_h} each)", png_path.display());
+
+        manifest.push(serde_json::json!({
+            "name": stem,
+            "frameCount": frames,
+            "frameWidth": max_w,
+            "frameHeight": max_h,
+            "sheetWidth": sw,
+            "sheetHeight": max_h,
+        }));
+        extracted += 1;
+    }
+
+    if extracted == 0 {
+        anyhow::bail!("No cursors extracted — none present in the local install.");
+    }
+
+    let meta = serde_json::json!({
+        "layout": "one horizontal strip per cursor; frame N occupies x = N * frameWidth",
+        "pixelFormat": "uncompressed 32-bit RGBA (DDS pf_flags 0x41, no fourcc)",
+        "cursors": manifest,
+    });
+    write_atomic(
+        &output.join("cursors.json"),
+        serde_json::to_string_pretty(&meta)?.as_bytes(),
+    )?;
+    println!("  Saved {}", output.join("cursors.json").display());
+    println!("\n{extracted} cursor(s) extracted, {skipped} skipped.");
+    Ok(())
+}
+
 /// Extract SC:R main-menu assets (backgrounds, logos, music, SFX, button webms).
 pub fn cmd_extract_mainmenu(
     archive: &casc_extractor::casc::casclib_ffi::CascArchive,

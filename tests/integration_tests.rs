@@ -273,6 +273,7 @@ fn every_documented_subcommand_resolves() {
         &["extract", "mainmenu"],
         &["extract", "dat"],
         &["extract", "cmdicons"],
+        &["extract", "cursors"],
         &["extract", "raw"],
         &["sounds", "extract"],
         &["sounds", "list"],
